@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 from pathlib import Path
 
 from app.config import settings
@@ -18,6 +20,25 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _write_text_atomic(path: Path, content: str) -> None:
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path_str = tempfile.mkstemp(dir=str(parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        Path(tmp_path_str).replace(path)
+    except Exception:
+        Path(tmp_path_str).unlink(missing_ok=True)
+        raise
+
+
+def _count_lines(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return len(path.read_text(encoding="utf-8").splitlines())
+
+
 async def read_vault_file(relative_path: str) -> str | None:
     repo_root = Path(settings.ai_memory_repo_path)
     resolved = safe_resolve(repo_root, relative_path)
@@ -34,6 +55,9 @@ async def read_vault_file(relative_path: str) -> str | None:
     return content
 
 
+read_vault_file_raw = read_vault_file
+
+
 async def read_vault_file_lines(relative_path: str, max_lines: int) -> str | None:
     content = await read_vault_file(relative_path)
     if content is None:
@@ -41,3 +65,41 @@ async def read_vault_file_lines(relative_path: str, max_lines: int) -> str | Non
 
     lines = content.splitlines()[:max_lines]
     return "\n".join(lines)
+
+
+async def write_vault_file(relative_path: str, content: str) -> None:
+    repo_root = Path(settings.ai_memory_repo_path)
+    resolved = safe_resolve(repo_root, relative_path)
+    if resolved is None:
+        log.warning("memory_files.write.path_traversal", path=relative_path)
+        msg = f"Path traversal blocked: {relative_path}"
+        raise ValueError(msg)
+
+    await asyncio.to_thread(_write_text_atomic, resolved, content)
+    log.debug("memory_files.write.success", path=relative_path, length=len(content))
+
+
+async def append_vault_file(relative_path: str, content: str) -> None:
+    existing = await read_vault_file(relative_path)
+    new_content = (existing or "") + content
+    await write_vault_file(relative_path, new_content)
+
+
+async def ensure_vault_dir(relative_path: str) -> None:
+    repo_root = Path(settings.ai_memory_repo_path)
+    resolved = safe_resolve(repo_root, relative_path)
+    if resolved is None:
+        log.warning("memory_files.ensure_dir.path_traversal", path=relative_path)
+        msg = f"Path traversal blocked: {relative_path}"
+        raise ValueError(msg)
+
+    await asyncio.to_thread(resolved.parent.mkdir, parents=True, exist_ok=True)
+
+
+async def count_vault_file_lines(relative_path: str) -> int:
+    repo_root = Path(settings.ai_memory_repo_path)
+    resolved = safe_resolve(repo_root, relative_path)
+    if resolved is None:
+        return 0
+
+    return await asyncio.to_thread(_count_lines, resolved)

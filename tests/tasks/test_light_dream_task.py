@@ -6,6 +6,7 @@ import pytest
 
 from app.core.exceptions import DreamError
 from app.models.tables import Dream, ExtractedMemory, Transcript
+from app.services.memory_updater import MemoryItem
 
 SAMPLE_EXTRACTION: dict[str, Any] = {
     "no_extract": False,
@@ -354,3 +355,86 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
     pattern = next(m for m in memories if m.type == "patterns")
     assert pattern.vault_target == "patterns"
     assert pattern.content == "Always READ before WRITE"
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_with_file_updates() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock(
+        return_value=[
+            {"path": "MEMORY.md", "action": "append", "line_count": 30, "memory_overflow": False},
+            {"path": "dailys/2026-03-31.md", "action": "create"},
+        ]
+    )
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_update_files.assert_called_once()
+    call_args = mock_update_files.call_args
+    assert call_args[0][0] == dream.id  # dream_id
+    assert isinstance(call_args[0][1], list)  # memories list
+    assert all(isinstance(m, MemoryItem) for m in call_args[0][1])
+    assert len(call_args[0][1]) == 3  # 1 decision + 1 preference + 1 fact
+
+    assert dream.status == "completed"
+    assert dream.files_modified is not None
+    assert len(dream.files_modified) == 2
+
+
+@pytest.mark.asyncio
+async def test_no_extract_skips_file_updates() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=NO_EXTRACT_RESULT)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_update_files.assert_not_called()
+    assert dream.files_modified is None
+
+
+@pytest.mark.asyncio
+async def test_file_update_failure_doesnt_fail_dream() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock(side_effect=RuntimeError("disk full"))
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.memories_extracted == 3
+    assert dream.files_modified is None

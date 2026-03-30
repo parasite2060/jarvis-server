@@ -9,6 +9,7 @@ from app.core.logging import get_logger
 from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.azure_openai import extract_memories
+from app.services.memory_updater import MemoryItem, update_memory_files
 from app.services.memu_client import memu_memorize
 
 log = get_logger("jarvis.tasks.light_dream")
@@ -114,6 +115,52 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             memories_count=memories_count,
         )
 
+    # Step 5b: Update memory files
+    files_modified: list[dict[str, object]] | None = None
+    if extraction_result is not None and not extraction_result.get("no_extract", False):
+        try:
+            memory_items: list[MemoryItem] = []
+            for category in MEMORY_CATEGORIES:
+                items = extraction_result.get(category, [])
+                for item in items:
+                    memory_items.append(
+                        MemoryItem(
+                            type=category.rstrip("s"),
+                            content=item.get("content", ""),
+                            reasoning=item.get("reasoning"),
+                            vault_target=item.get("vault_target"),
+                        )
+                    )
+
+            source_date_str = ""
+            for category in MEMORY_CATEGORIES:
+                items = extraction_result.get(category, [])
+                if items:
+                    source_date_str = items[0].get("source_date", "")
+                    break
+            try:
+                source_date_val = date.fromisoformat(source_date_str)
+            except (ValueError, TypeError):
+                source_date_val = date.today()
+
+            summary = extraction_result.get("summary", "")
+            files_modified = await update_memory_files(
+                dream_id, memory_items, summary, source_date_val
+            )
+            log.info(
+                "light_dream.files_updated",
+                transcript_id=transcript_id,
+                dream_id=dream_id,
+                files_count=len(files_modified),
+            )
+        except Exception as exc:
+            log.warning(
+                "light_dream.files_update_failed",
+                transcript_id=transcript_id,
+                dream_id=dream_id,
+                error=str(exc),
+            )
+
     # Step 6: Store to MemU (fire-and-forget, don't fail the pipeline)
     try:
         messages = [{"role": "user", "content": transcript.parsed_text or ""}]
@@ -145,6 +192,8 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         d.memories_extracted = memories_count
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
+        if files_modified is not None:
+            d.files_modified = files_modified  # type: ignore[assignment]
         await session.commit()
 
     # Step 8: Update transcript status
