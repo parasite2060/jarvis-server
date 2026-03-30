@@ -46,10 +46,11 @@ services:
     networks:
       - jarvis-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 10s
+      start_period: 30s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   postgres:
     image: pgvector/pgvector:pg17
