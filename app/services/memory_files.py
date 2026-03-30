@@ -7,7 +7,7 @@ from app.core.logging import get_logger
 log = get_logger("jarvis.services.memory_files")
 
 
-def _safe_resolve(repo_root: Path, relative_path: str) -> Path | None:
+def safe_resolve(repo_root: Path, relative_path: str) -> Path | None:
     resolved = (repo_root / relative_path).resolve()
     if not resolved.is_relative_to(repo_root.resolve()):
         return None
@@ -20,7 +20,7 @@ def _read_text(path: Path) -> str:
 
 async def read_vault_file(relative_path: str) -> str | None:
     repo_root = Path(settings.ai_memory_repo_path)
-    resolved = _safe_resolve(repo_root, relative_path)
+    resolved = safe_resolve(repo_root, relative_path)
     if resolved is None:
         log.warning("memory_files.read.path_traversal", path=relative_path)
         return None
