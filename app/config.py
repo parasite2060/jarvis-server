@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Azure OpenAI
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
+    azure_openai_deployment: str = ""
 
     # ai-memory repo path
     ai_memory_repo_path: str = "/app/ai-memory"

@@ -1,16 +1,171 @@
+import time
+from datetime import UTC, date, datetime
 from typing import Any
 
+from sqlalchemy import select
+
+from app.core.exceptions import DreamError
 from app.core.logging import get_logger
+from app.models.db import async_session_factory
+from app.models.tables import Dream, ExtractedMemory, Transcript
+from app.services.azure_openai import extract_memories
+from app.services.memu_client import memu_memorize
 
 log = get_logger("jarvis.tasks.light_dream")
 
+MEMORY_CATEGORIES = ("decisions", "preferences", "patterns", "corrections", "facts")
+
 
 async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
-    log.info(
-        "jarvis.light_dream.started",
+    log.info("light_dream.started", transcript_id=transcript_id)
+    start_ms = time.monotonic_ns() // 1_000_000
+
+    # Step 1: Load transcript
+    async with async_session_factory() as session:
+        result = await session.execute(select(Transcript).where(Transcript.id == transcript_id))
+        transcript = result.scalar_one_or_none()
+
+    if transcript is None:
+        log.error("light_dream.transcript_not_found", transcript_id=transcript_id)
+        return
+
+    if transcript.status not in ("queued", "received"):
+        log.warning(
+            "light_dream.unexpected_status",
+            transcript_id=transcript_id,
+            status=transcript.status,
+        )
+
+    log.info("light_dream.transcript_loaded", transcript_id=transcript_id)
+
+    # Step 2: Create dream row
+    dream = Dream(
+        type="light",
+        trigger="auto",
+        status="processing",
         transcript_id=transcript_id,
+        started_at=datetime.now(UTC),
     )
-    log.info(
-        "jarvis.light_dream.completed",
-        transcript_id=transcript_id,
-    )
+    async with async_session_factory() as session:
+        session.add(dream)
+        await session.commit()
+        await session.refresh(dream)
+        dream_id: int = dream.id
+
+    # Step 3: Update transcript with dream reference
+    async with async_session_factory() as session:
+        result = await session.execute(select(Transcript).where(Transcript.id == transcript_id))
+        t = result.scalar_one()
+        t.light_dream_id = dream_id
+        t.status = "processing"
+        await session.commit()
+
+    # Step 4: Call GPT-5.2 extraction
+    extraction_result: dict[str, Any] | None = None
+    extraction_failed = False
+    error_message: str | None = None
+
+    try:
+        extraction_result = await extract_memories(transcript.parsed_text or "")
+        log.info(
+            "light_dream.extraction.completed",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+        )
+    except DreamError as exc:
+        extraction_failed = True
+        error_message = str(exc)
+        log.error(
+            "light_dream.extraction.failed",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            error=error_message,
+        )
+
+    # Step 5: Store extracted memories (skip if extraction failed or NO_EXTRACT)
+    memories_count = 0
+    if extraction_result is not None and not extraction_result.get("no_extract", False):
+        async with async_session_factory() as session:
+            for category in MEMORY_CATEGORIES:
+                items = extraction_result.get(category, [])
+                for item in items:
+                    source_date_str = item.get("source_date", "")
+                    try:
+                        source_date_val = date.fromisoformat(source_date_str)
+                    except (ValueError, TypeError):
+                        source_date_val = date.today()
+
+                    memory = ExtractedMemory(
+                        dream_id=dream_id,
+                        type=category,
+                        content=item.get("content", ""),
+                        reasoning=item.get("reasoning"),
+                        vault_target=item.get("vault_target"),
+                        source_date=source_date_val,
+                    )
+                    session.add(memory)
+                    memories_count += 1
+            await session.commit()
+
+        log.info(
+            "light_dream.memories_stored",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            memories_count=memories_count,
+        )
+
+    # Step 6: Store to MemU (fire-and-forget, don't fail the pipeline)
+    try:
+        messages = [{"role": "user", "content": transcript.parsed_text or ""}]
+        await memu_memorize(messages)
+        log.info(
+            "light_dream.memu_stored",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+        )
+    except Exception as exc:
+        log.warning(
+            "light_dream.memu_failed",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            error=str(exc),
+        )
+
+    # Step 7: Update dream row
+    duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
+
+    async with async_session_factory() as session:
+        dream_result = await session.execute(select(Dream).where(Dream.id == dream_id))
+        d: Dream = dream_result.scalar_one()
+        if extraction_failed:
+            d.status = "failed"
+            d.error_message = error_message
+        else:
+            d.status = "completed"
+        d.memories_extracted = memories_count
+        d.duration_ms = duration_ms
+        d.completed_at = datetime.now(UTC)
+        await session.commit()
+
+    # Step 8: Update transcript status
+    async with async_session_factory() as session:
+        t_result = await session.execute(select(Transcript).where(Transcript.id == transcript_id))
+        t2: Transcript = t_result.scalar_one()
+        t2.status = "failed" if extraction_failed else "processed"
+        await session.commit()
+
+    if extraction_failed:
+        log.error(
+            "light_dream.failed",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            duration_ms=duration_ms,
+        )
+    else:
+        log.info(
+            "light_dream.completed",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            memories_count=memories_count,
+            duration_ms=duration_ms,
+        )
