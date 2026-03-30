@@ -15,11 +15,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     # Azure OpenAI
-    azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
-    azure_openai_deployment: str = "gpt-5.2"
-    azure_openai_embedding_deployment: str = "text-embedding-3-large"
-    azure_openai_api_version: str = "2024-12-01-preview"
+    azure_openai_endpoint: str = ""
 
     # ai-memory repo path
     ai_memory_repo_path: str = "/app/ai-memory"
