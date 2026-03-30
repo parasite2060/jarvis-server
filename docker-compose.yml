@@ -86,6 +86,16 @@ services:
     networks:
       - jarvis-network
 
+  memu-ui:
+    build: ../memu-ui
+    ports:
+      - "8011:80"
+    depends_on:
+      memu-server:
+        condition: service_healthy
+    networks:
+      - jarvis-network
+
   redis:
     image: redis:7-alpine
     ports:
