@@ -46,8 +46,8 @@ async def test_memu_retrieve_makes_correct_post() -> None:
         await memu_retrieve("What framework?", "rag")
 
     mock_client.post.assert_called_once_with(
-        "/api/v3/memory/retrieve",
-        json={"query": "What framework?", "method": "rag"},
+        "/retrieve",
+        json={"query": "What framework?"},
     )
 
 
@@ -124,8 +124,12 @@ async def test_memu_memorize_makes_correct_post() -> None:
         await memu_memorize(messages)
 
     mock_client.post.assert_called_once_with(
-        "/api/v3/memory/memorize",
-        json={"messages": messages},
+        "/memorize",
+        json={
+            "conversation": messages,
+            "user_id": "jarvis",
+            "agent_id": "claude",
+        },
     )
 
 

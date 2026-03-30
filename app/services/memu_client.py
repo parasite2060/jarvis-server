@@ -32,8 +32,8 @@ async def memu_retrieve(query: str, method: str = "rag") -> dict[str, Any]:
     client = _get_client()
     try:
         response = await client.post(
-            "/api/v3/memory/retrieve",
-            json={"query": query, "method": method},
+            "/retrieve",
+            json={"query": query},
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -59,12 +59,20 @@ async def memu_retrieve(query: str, method: str = "rag") -> dict[str, Any]:
     return result
 
 
-async def memu_memorize(messages: list[dict[str, Any]]) -> dict[str, Any]:
+async def memu_memorize(
+    messages: list[dict[str, Any]],
+    user_id: str = "jarvis",
+    agent_id: str = "claude",
+) -> dict[str, Any]:
     client = _get_client()
     try:
         response = await client.post(
-            "/api/v3/memory/memorize",
-            json={"messages": messages},
+            "/memorize",
+            json={
+                "conversation": messages,
+                "user_id": user_id,
+                "agent_id": agent_id,
+            },
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
