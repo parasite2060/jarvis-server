@@ -25,6 +25,7 @@ class Transcript(Base):
         Index("ix_transcripts_session_id", "session_id"),
         Index("ix_transcripts_status", "status"),
         Index("ix_transcripts_created_at", "created_at"),
+        Index("ix_transcripts_session_source", "session_id", "source"),
         {"schema": SCHEMA},
     )
 
@@ -34,6 +35,7 @@ class Transcript(Base):
     raw_content: Mapped[str] = mapped_column(Text, nullable=False)
     parsed_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="received")
     light_dream_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey(f"{SCHEMA}.dreams.id"), nullable=True

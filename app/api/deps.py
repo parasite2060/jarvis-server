@@ -1,9 +1,12 @@
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.db import async_session_factory
 
 security = HTTPBearer()
 
@@ -20,3 +23,8 @@ async def verify_api_key(credentials: Credentials) -> str:
             },
         )
     return credentials.credentials
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_factory() as session:
+        yield session
