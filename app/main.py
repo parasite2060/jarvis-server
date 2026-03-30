@@ -50,6 +50,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     log.info("jarvis.shutdown.begin")
 
+    from app.services.memu_client import close_client
+
+    await close_client()
+
     if hasattr(app.state, "redis_pool"):
         await app.state.redis_pool.aclose()
 

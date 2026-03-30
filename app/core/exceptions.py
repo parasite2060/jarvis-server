@@ -20,3 +20,16 @@ class ValidationError(JarvisError):
 class DreamError(JarvisError):
     def __init__(self, message: str = "Dream processing failed") -> None:
         super().__init__(message, code="DREAM_FAILED")
+
+
+class MemuError(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+class MemuUnavailableError(Exception):
+    def __init__(self, detail: str = "MemU server is unreachable") -> None:
+        super().__init__(detail)
+        self.detail = detail
