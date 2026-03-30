@@ -24,11 +24,16 @@ services:
     ports:
       - "8010:8000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-changeme}
+      - OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-changeme}
+      - OPENAI_BASE_URL=${AZURE_OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=text-embedding-3-large
+      - CHAT_MODEL=gpt-5.2
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - TEMPORAL_HOST=temporal
       - TEMPORAL_PORT=7233
+    volumes:
+      - ./memu-main-override.py:/app/app/main.py:ro
     depends_on:
       postgres:
         condition: service_healthy
