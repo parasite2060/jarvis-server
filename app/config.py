@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     jarvis_log_level: str = "INFO"
 
     # MemU
-    memu_base_url: str = "http://memu-server:8010"
+    memu_base_url: str = "http://memu-server:8000"
 
     @property
     def database_url(self) -> str:
