@@ -9,11 +9,14 @@ from app.core.logging import get_logger
 from app.models.db import async_session_factory
 from app.models.tables import Dream
 from app.services.azure_openai import consolidate_memories
+from app.services.context_cache import invalidate_context_cache
 from app.services.deep_dream import (
+    align_memu_with_memory,
     gather_consolidation_inputs,
     validate_consolidated_output,
     write_consolidated_files,
 )
+from app.services.git_ops import cleanup_branch, create_deep_dream_pr
 from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
@@ -107,9 +110,35 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     except Exception as exc:
         log.warning("deep_dream.manifest.failed", dream_id=dream_id, error=str(exc))
 
-    # Step 7: Update dream row
-    duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
+    # Step 7: Git branch and PR
     stats = consolidation_result.get("stats", {})
+    git_result: dict[str, str] = {"git_branch": "", "git_pr_url": "", "git_pr_status": ""}
+    branch_name: str = ""
+    try:
+        git_result = await create_deep_dream_pr(
+            files_modified, dream_id, source_date, stats  # type: ignore[arg-type]
+        )
+        branch_name = git_result.get("git_branch", "")
+        if git_result.get("git_pr_url"):
+            try:
+                await invalidate_context_cache()
+            except Exception as exc:
+                log.warning("deep_dream.cache_invalidate.failed", error=str(exc))
+    except Exception as exc:
+        log.error("deep_dream.git.failed", dream_id=dream_id, error=str(exc))
+    finally:
+        if branch_name:
+            await cleanup_branch(branch_name)
+
+    # Step 8: MemU alignment
+    memu_sync: dict[str, int] = {"items_synced": 0, "errors": 0}
+    try:
+        memu_sync = await align_memu_with_memory(validated["memory_md"], source_date)
+    except Exception as exc:
+        log.error("deep_dream.memu_align.failed", dream_id=dream_id, error=str(exc))
+
+    # Step 9: Update dream row
+    duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
     input_summary = (
         f"memu_count={len(memu_memories)}, "
         f"memory_md_len={len(memory_md)}, "
@@ -130,6 +159,9 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         d.files_modified = files_modified  # type: ignore[assignment]
+        d.git_branch = git_result.get("git_branch", "")
+        d.git_pr_url = git_result.get("git_pr_url", "")
+        d.git_pr_status = git_result.get("git_pr_status", "")
         d.input_summary = input_summary
         d.output_raw = output_raw
         await session.commit()
@@ -141,6 +173,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         duration_ms=duration_ms,
         memories_extracted=stats.get("total_memories_processed", 0),
         files_count=len(files_modified),
+        git_pr_url=git_result.get("git_pr_url", ""),
+        memu_synced=memu_sync.get("items_synced", 0),
     )
 
 

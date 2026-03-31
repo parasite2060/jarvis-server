@@ -4,7 +4,7 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.services.memory_files import read_vault_file, write_vault_file
-from app.services.memu_client import memu_retrieve
+from app.services.memu_client import memu_memorize, memu_retrieve
 
 log = get_logger("jarvis.services.deep_dream")
 
@@ -126,3 +126,72 @@ async def write_consolidated_files(
     )
 
     return files_modified
+
+
+SECTION_HEADERS = ("## Strong Patterns", "## Decisions", "## Facts")
+
+
+def _extract_memory_entries(memory_md_content: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current_section: str | None = None
+
+    for line in memory_md_content.splitlines():
+        stripped = line.strip()
+        if stripped in SECTION_HEADERS:
+            current_section = stripped.removeprefix("## ")
+            continue
+        if stripped.startswith("## "):
+            current_section = None
+            continue
+        if current_section and stripped.startswith("- "):
+            content = stripped.removeprefix("- ").strip()
+            if content:
+                entries.append({"type": current_section, "content": content})
+
+    return entries
+
+
+async def align_memu_with_memory(
+    memory_md_content: str,
+    source_date: date,
+) -> dict[str, int]:
+    log.info("deep_dream.memu_align.started", source_date=source_date.isoformat())
+
+    entries = _extract_memory_entries(memory_md_content)
+    if not entries:
+        log.info("deep_dream.memu_align.no_entries")
+        return {"items_synced": 0, "errors": 0}
+
+    items_synced = 0
+    errors = 0
+
+    for entry in entries:
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    f"[{entry['type']}] {entry['content']} "
+                    f"(source: deep_dream, date: {source_date.isoformat()}, "
+                    f"type: consolidated_memory)"
+                ),
+            }
+        ]
+        try:
+            await memu_memorize(messages)
+            items_synced += 1
+        except Exception as exc:
+            errors += 1
+            log.warning(
+                "deep_dream.memu_align.item_failed",
+                entry_type=entry["type"],
+                error=str(exc),
+            )
+
+    log.info(
+        "deep_dream.memu_align.completed",
+        items_synced=items_synced,
+        errors=errors,
+        total=len(entries),
+    )
+
+    return {"items_synced": items_synced, "errors": errors}

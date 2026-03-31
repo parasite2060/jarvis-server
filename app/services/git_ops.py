@@ -157,6 +157,110 @@ async def create_dream_pr(
     }
 
 
+async def create_deep_dream_pr(
+    files_modified: list[dict[str, object]],
+    dream_id: int,
+    source_date: date,
+    stats: dict[str, object] | None = None,
+) -> dict[str, str]:
+    date_str = source_date.isoformat()
+    branch_name = f"dream/deep-{date_str}"
+    commit_msg = f"dream(deep): consolidate {date_str}"
+    pr_title = f"dream(deep): consolidate {date_str}"
+
+    file_paths = [
+        str(entry["path"]) for entry in files_modified if "path" in entry and "error" not in entry
+    ]
+
+    if not file_paths:
+        log.info("git_ops.deep_pr.no_files", dream_id=dream_id)
+        return {"git_branch": "", "git_pr_url": "", "git_pr_status": "no_files"}
+
+    config = await read_dream_config()
+    auto_merge = bool(config.get("auto_merge", True))
+
+    # Fetch latest main
+    await run_git(["fetch", "origin", "main"])
+
+    # Handle branch-already-exists by appending suffix
+    try:
+        await run_git(["checkout", "-b", branch_name, "origin/main"])
+    except GitOpsError:
+        suffix = 2
+        while suffix <= 10:
+            candidate = f"{branch_name}-{suffix}"
+            try:
+                await run_git(["checkout", "-b", candidate, "origin/main"])
+                branch_name = candidate
+                break
+            except GitOpsError:
+                suffix += 1
+        else:
+            raise GitOpsError(f"Could not create branch {branch_name} (all suffixes taken)")
+
+    log.info("git_ops.deep_pr.branch_created", branch=branch_name)
+
+    # Stage specific files only
+    await run_git(["add"] + file_paths)
+
+    # Check if there are staged changes
+    try:
+        await run_git(["diff", "--cached", "--quiet"])
+        log.info("git_ops.deep_pr.no_changes", branch=branch_name)
+        return {"git_branch": branch_name, "git_pr_url": "", "git_pr_status": "no_changes"}
+    except GitOpsError:
+        pass
+
+    # Commit
+    await run_git(["commit", "-m", commit_msg])
+    log.info("git_ops.deep_pr.committed", branch=branch_name)
+
+    # Push
+    await run_git(["push", "origin", branch_name])
+    log.info("git_ops.deep_pr.pushed", branch=branch_name)
+
+    # Build PR body
+    stats_section = ""
+    if stats:
+        stats_section = (
+            "\n### Consolidation Stats\n"
+            f"- Duplicates removed: {stats.get('duplicates_removed', 0)}\n"
+            f"- Contradictions resolved: {stats.get('contradictions_resolved', 0)}\n"
+            f"- Patterns promoted: {stats.get('patterns_promoted', 0)}\n"
+            f"- Stale pruned: {stats.get('stale_pruned', 0)}\n"
+        )
+
+    pr_body = (
+        f"## Deep Dream Consolidation\n\n"
+        f"**Dream ID:** {dream_id}\n"
+        f"**Date:** {date_str}\n\n"
+        f"### Changed Files\n"
+        + "\n".join(f"- `{p}`" for p in file_paths)
+        + f"\n\n**Total:** {len(file_paths)} file(s) modified"
+        + stats_section
+    )
+
+    # Create PR
+    pr_stdout, _, _ = await run_gh(
+        ["pr", "create", "--title", pr_title, "--body", pr_body, "--base", "main"]
+    )
+    pr_url = pr_stdout.strip()
+    log.info("git_ops.deep_pr.created", pr_url=pr_url)
+
+    pr_status = "created"
+
+    if auto_merge:
+        await run_gh(["pr", "merge", "--auto", "--squash", "--delete-branch", pr_url])
+        pr_status = "auto_merge_enabled"
+        log.info("git_ops.deep_pr.auto_merge_enabled", pr_url=pr_url)
+
+    return {
+        "git_branch": branch_name,
+        "git_pr_url": pr_url,
+        "git_pr_status": pr_status,
+    }
+
+
 async def cleanup_branch(branch_name: str) -> None:
     try:
         await run_git(["checkout", "main"])

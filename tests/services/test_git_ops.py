@@ -296,3 +296,196 @@ async def test_create_dream_pr_filters_error_entries() -> None:
 
     # Only MEMORY.md should be staged (dailys entry has error)
     assert git_add_args == ["MEMORY.md"]
+
+
+# ── create_deep_dream_pr tests ──
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_correct_branch_name() -> None:
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    async def mock_read_config() -> dict[str, object]:
+        return {"auto_merge": False, "max_memory_lines": 200}
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
+        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
+        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+    ):
+        from app.services.git_ops import create_deep_dream_pr
+
+        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+
+    assert result["git_branch"] == "dream/deep-2026-03-31"
+    assert result["git_pr_url"] == "https://github.com/owner/repo/pull/10"
+    assert result["git_pr_status"] == "created"
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_commit_message_format() -> None:
+    commit_messages: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "commit":
+            commit_messages.append(args[2])
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
+        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
+        patch(
+            "app.services.git_ops.read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        from app.services.git_ops import create_deep_dream_pr
+
+        await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+
+    assert commit_messages == ["dream(deep): consolidate 2026-03-31"]
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_includes_stats_in_pr_body() -> None:
+    pr_bodies: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            body_idx = args.index("--body") + 1
+            pr_bodies.append(args[body_idx])
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+    stats = {
+        "duplicates_removed": 3,
+        "contradictions_resolved": 1,
+        "patterns_promoted": 2,
+        "stale_pruned": 0,
+    }
+
+    with (
+        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
+        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
+        patch(
+            "app.services.git_ops.read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        from app.services.git_ops import create_deep_dream_pr
+
+        await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31), stats=stats)
+
+    assert len(pr_bodies) == 1
+    body = pr_bodies[0]
+    assert "Duplicates removed: 3" in body
+    assert "Contradictions resolved: 1" in body
+    assert "Patterns promoted: 2" in body
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_branch_already_exists_appends_suffix() -> None:
+    branch_attempts: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "checkout" and args[1] == "-b":
+            branch_attempts.append(args[2])
+            if args[2] == "dream/deep-2026-03-31":
+                raise GitOpsError("branch already exists")
+            return ("", "", 0)
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
+        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
+        patch(
+            "app.services.git_ops.read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        from app.services.git_ops import create_deep_dream_pr
+
+        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+
+    assert result["git_branch"] == "dream/deep-2026-03-31-2"
+    assert branch_attempts[0] == "dream/deep-2026-03-31"
+    assert branch_attempts[1] == "dream/deep-2026-03-31-2"
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_respects_auto_merge() -> None:
+    gh_calls: list[list[str]] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        gh_calls.append(args)
+        if args[0] == "pr" and args[1] == "create":
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
+        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
+        patch(
+            "app.services.git_ops.read_dream_config",
+            AsyncMock(return_value={"auto_merge": True}),
+        ),
+    ):
+        from app.services.git_ops import create_deep_dream_pr
+
+        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+
+    assert result["git_pr_status"] == "auto_merge_enabled"
+    merge_calls = [c for c in gh_calls if c[0] == "pr" and c[1] == "merge"]
+    assert len(merge_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_deep_dream_pr_empty_files_skips_git_ops() -> None:
+    from app.services.git_ops import create_deep_dream_pr
+
+    result = await create_deep_dream_pr([], dream_id=5, source_date=date(2026, 3, 31))
+
+    assert result["git_branch"] == ""
+    assert result["git_pr_url"] == ""
+    assert result["git_pr_status"] == "no_files"

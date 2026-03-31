@@ -279,3 +279,100 @@ async def test_write_returns_correct_files_modified() -> None:
     assert result[0] == {"path": "MEMORY.md", "action": "rewrite"}
     assert result[1] == {"path": "dailys/2026-03-31.md", "action": "rewrite"}
     assert result[2] == {"path": "topics/memory-backup-2026-03-31.md", "action": "create"}
+
+
+# ── align_memu_with_memory tests ──
+
+
+CONSOLIDATION_MEMORY_MD = """---
+type: memory
+tags: [memory, index]
+created: 2026-03-01
+updated: 2026-03-31
+last_reviewed: 2026-03-31
+---
+
+# Memory Index
+
+## Strong Patterns
+- Always READ before WRITE for memory files (5x)
+- Use async-first patterns in all services (3x)
+
+## Decisions
+- Use FastAPI because async-first (2026-03-01)
+
+## Facts
+- Project uses PostgreSQL with pgvector
+
+## Recent
+- Added structured logging with structlog (2026-03-29)
+"""
+
+
+@pytest.mark.asyncio
+async def test_align_memu_extracts_items_and_calls_memorize() -> None:
+    mock_memorize = AsyncMock(return_value={"task_id": "123"})
+
+    with patch("app.services.deep_dream.memu_memorize", mock_memorize):
+        from app.services.deep_dream import align_memu_with_memory
+
+        result = await align_memu_with_memory(CONSOLIDATION_MEMORY_MD, date(2026, 3, 31))
+
+    assert result["items_synced"] == 4
+    assert result["errors"] == 0
+    assert mock_memorize.call_count == 4
+
+    # Verify message format
+    first_call = mock_memorize.call_args_list[0]
+    messages = first_call[0][0]
+    assert messages[0]["role"] == "user"
+    assert "[Strong Patterns]" in messages[0]["content"]
+    assert "deep_dream" in messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_align_memu_handles_partial_failure() -> None:
+    call_count = 0
+
+    async def mock_memorize(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            msg = "MemU timeout"
+            raise RuntimeError(msg)
+        return {"task_id": "123"}
+
+    with patch("app.services.deep_dream.memu_memorize", side_effect=mock_memorize):
+        from app.services.deep_dream import align_memu_with_memory
+
+        result = await align_memu_with_memory(CONSOLIDATION_MEMORY_MD, date(2026, 3, 31))
+
+    assert result["items_synced"] == 3
+    assert result["errors"] == 1
+
+
+@pytest.mark.asyncio
+async def test_align_memu_handles_completely_unreachable() -> None:
+    mock_memorize = AsyncMock(side_effect=ConnectionError("MemU down"))
+
+    with patch("app.services.deep_dream.memu_memorize", mock_memorize):
+        from app.services.deep_dream import align_memu_with_memory
+
+        result = await align_memu_with_memory(CONSOLIDATION_MEMORY_MD, date(2026, 3, 31))
+
+    assert result["items_synced"] == 0
+    assert result["errors"] == 4
+
+
+@pytest.mark.asyncio
+async def test_align_memu_empty_memory_md_returns_zero() -> None:
+    mock_memorize = AsyncMock()
+
+    with patch("app.services.deep_dream.memu_memorize", mock_memorize):
+        from app.services.deep_dream import align_memu_with_memory
+
+        result = await align_memu_with_memory("", date(2026, 3, 31))
+
+    assert result["items_synced"] == 0
+    assert result["errors"] == 0
+    mock_memorize.assert_not_called()
