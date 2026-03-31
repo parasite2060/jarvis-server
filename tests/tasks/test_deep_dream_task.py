@@ -26,7 +26,37 @@ SAMPLE_CONSOLIDATION: dict[str, Any] = {
         "patterns_promoted": 1,
         "stale_pruned": 0,
     },
+    "vault_updates": {
+        "decisions": [],
+        "projects": [],
+        "patterns": [],
+        "templates": [],
+    },
 }
+
+SAMPLE_CONSOLIDATION_WITH_VAULT: dict[str, Any] = {
+    **SAMPLE_CONSOLIDATION,
+    "vault_updates": {
+        "decisions": [
+            {
+                "filename": "arch.md",
+                "title": "Arch",
+                "summary": "Architecture decisions",
+                "content": "# Arch\n\nChose Clean Arch",
+                "tags": ["arch"],
+                "action": "create",
+            }
+        ],
+        "projects": [],
+        "patterns": [],
+        "templates": [],
+    },
+}
+
+SAMPLE_VAULT_FILES: list[dict[str, str]] = [
+    {"path": "decisions/arch.md", "action": "create"},
+    {"path": "decisions/_index.md", "action": "rewrite"},
+]
 
 SAMPLE_VALIDATED: dict[str, Any] = {
     **SAMPLE_CONSOLIDATION,
@@ -95,6 +125,8 @@ async def test_full_pipeline_success() -> None:
     mock_consolidate = AsyncMock(return_value=SAMPLE_CONSOLIDATION)
     mock_validate = AsyncMock(return_value=SAMPLE_VALIDATED)
     mock_write = AsyncMock(return_value=SAMPLE_FILES_MODIFIED)
+    mock_vault_update = AsyncMock(return_value=[])
+    mock_manifest = AsyncMock()
 
     with (
         patch("app.tasks.deep_dream_task.async_session_factory", factory),
@@ -102,6 +134,8 @@ async def test_full_pipeline_success() -> None:
         patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
         patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
         patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", mock_vault_update),
+        patch("app.tasks.deep_dream_task.update_file_manifest", mock_manifest),
     ):
         from app.tasks.deep_dream_task import deep_dream_task
 
@@ -233,15 +267,14 @@ async def test_manual_trigger_recorded() -> None:
         patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
         patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
         patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", AsyncMock(return_value=[])),
+        patch("app.tasks.deep_dream_task.update_file_manifest", AsyncMock()),
     ):
         from app.tasks.deep_dream_task import deep_dream_task
 
         await deep_dream_task({}, trigger="manual")
 
     assert dream.status == "completed"
-    # The dream was created with trigger from the factory default "auto"
-    # but the initial creation in the task uses the trigger parameter
-    # Verify the task completed successfully with manual trigger
     assert dream.completed_at is not None
 
 
@@ -260,6 +293,8 @@ async def test_duration_ms_recorded() -> None:
         patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
         patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
         patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", AsyncMock(return_value=[])),
+        patch("app.tasks.deep_dream_task.update_file_manifest", AsyncMock()),
     ):
         from app.tasks.deep_dream_task import deep_dream_task
 
@@ -290,3 +325,128 @@ async def test_gather_failure_marks_failed() -> None:
     assert dream.error_message is not None
     assert "MemU down" in dream.error_message
     mock_consolidate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_includes_vault_updates_in_files_modified() -> None:
+    dream = _make_dream()
+    factory = FakeSessionFactory(dream)
+    mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
+    mock_consolidate = AsyncMock(return_value=SAMPLE_CONSOLIDATION_WITH_VAULT)
+    validated_with_vault = {**SAMPLE_CONSOLIDATION_WITH_VAULT, "line_count": 5, "warnings": []}
+    mock_validate = AsyncMock(return_value=validated_with_vault)
+    mock_write = AsyncMock(return_value=list(SAMPLE_FILES_MODIFIED))
+    mock_vault_update = AsyncMock(return_value=SAMPLE_VAULT_FILES)
+    mock_manifest = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.async_session_factory", factory),
+        patch("app.tasks.deep_dream_task.gather_consolidation_inputs", mock_gather),
+        patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
+        patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
+        patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", mock_vault_update),
+        patch("app.tasks.deep_dream_task.update_file_manifest", mock_manifest),
+    ):
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+
+    assert dream.status == "completed"
+    mock_vault_update.assert_called_once()
+    mock_manifest.assert_called_once()
+    all_files = dream.files_modified
+    paths = [f["path"] for f in all_files]
+    assert "decisions/arch.md" in paths
+    assert "MEMORY.md" in paths
+
+
+@pytest.mark.asyncio
+async def test_empty_vault_updates_skips_vault_step() -> None:
+    dream = _make_dream()
+    factory = FakeSessionFactory(dream)
+    mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
+    mock_consolidate = AsyncMock(return_value=SAMPLE_CONSOLIDATION)
+    mock_validate = AsyncMock(return_value=SAMPLE_VALIDATED)
+    mock_write = AsyncMock(return_value=SAMPLE_FILES_MODIFIED)
+    mock_vault_update = AsyncMock()
+    mock_manifest = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.async_session_factory", factory),
+        patch("app.tasks.deep_dream_task.gather_consolidation_inputs", mock_gather),
+        patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
+        patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
+        patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", mock_vault_update),
+        patch("app.tasks.deep_dream_task.update_file_manifest", mock_manifest),
+    ):
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+
+    assert dream.status == "completed"
+    mock_vault_update.assert_not_called()
+    mock_manifest.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_vault_update_failure_does_not_fail_pipeline() -> None:
+    dream = _make_dream()
+    factory = FakeSessionFactory(dream)
+    mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
+    mock_consolidate = AsyncMock(return_value=SAMPLE_CONSOLIDATION_WITH_VAULT)
+    validated_with_vault = {**SAMPLE_CONSOLIDATION_WITH_VAULT, "line_count": 5, "warnings": []}
+    mock_validate = AsyncMock(return_value=validated_with_vault)
+    mock_write = AsyncMock(return_value=list(SAMPLE_FILES_MODIFIED))
+    mock_vault_update = AsyncMock(side_effect=RuntimeError("vault write error"))
+    mock_manifest = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.async_session_factory", factory),
+        patch("app.tasks.deep_dream_task.gather_consolidation_inputs", mock_gather),
+        patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
+        patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
+        patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", mock_vault_update),
+        patch("app.tasks.deep_dream_task.update_file_manifest", mock_manifest),
+    ):
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.files_modified is not None
+
+
+@pytest.mark.asyncio
+async def test_file_manifest_updated_for_all_modified_files() -> None:
+    dream = _make_dream()
+    factory = FakeSessionFactory(dream)
+    mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
+    mock_consolidate = AsyncMock(return_value=SAMPLE_CONSOLIDATION_WITH_VAULT)
+    validated_with_vault = {**SAMPLE_CONSOLIDATION_WITH_VAULT, "line_count": 5, "warnings": []}
+    mock_validate = AsyncMock(return_value=validated_with_vault)
+    mock_write = AsyncMock(return_value=list(SAMPLE_FILES_MODIFIED))
+    mock_vault_update = AsyncMock(return_value=SAMPLE_VAULT_FILES)
+    mock_manifest = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.async_session_factory", factory),
+        patch("app.tasks.deep_dream_task.gather_consolidation_inputs", mock_gather),
+        patch("app.tasks.deep_dream_task.consolidate_memories", mock_consolidate),
+        patch("app.tasks.deep_dream_task.validate_consolidated_output", mock_validate),
+        patch("app.tasks.deep_dream_task.write_consolidated_files", mock_write),
+        patch("app.tasks.deep_dream_task.update_vault_folders", mock_vault_update),
+        patch("app.tasks.deep_dream_task.update_file_manifest", mock_manifest),
+    ):
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+
+    mock_manifest.assert_called_once()
+    manifest_files = mock_manifest.call_args[0][0]
+    paths = [f["path"] for f in manifest_files]
+    assert "MEMORY.md" in paths
+    assert "decisions/arch.md" in paths
+    assert len(paths) == 5

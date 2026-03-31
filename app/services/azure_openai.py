@@ -186,6 +186,23 @@ async def consolidate_memories(
                 line_count=line_count,
             )
 
+    vault_defaults: dict[str, list[Any]] = {
+        "decisions": [],
+        "projects": [],
+        "patterns": [],
+        "templates": [],
+    }
+    if "vault_updates" not in parsed or parsed["vault_updates"] is None:
+        parsed["vault_updates"] = vault_defaults
+    else:
+        for key in vault_defaults:
+            if key not in parsed["vault_updates"]:
+                parsed["vault_updates"][key] = []
+
+    vault_counts = {
+        folder: len(parsed["vault_updates"].get(folder, [])) for folder in vault_defaults
+    }
+
     stats = parsed.get("stats", {})
     log.info(
         "azure_openai.consolidate.completed",
@@ -193,6 +210,7 @@ async def consolidate_memories(
         total_memories_processed=stats.get("total_memories_processed", 0),
         duplicates_removed=stats.get("duplicates_removed", 0),
     )
+    log.info("azure_openai.consolidate.vault_counts", **vault_counts)
 
     return parsed
 

@@ -14,6 +14,7 @@ from app.services.deep_dream import (
     validate_consolidated_output,
     write_consolidated_files,
 )
+from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
 
@@ -86,7 +87,27 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         await _mark_failed(dream_id, str(exc), start_ms)
         return
 
-    # Step 6: Update dream row
+    # Step 6b: Update vault folders
+    vault_updates: dict[str, list[dict[str, Any]]] | None = consolidation_result.get(
+        "vault_updates"
+    )
+    has_vault_content = vault_updates is not None and any(
+        vault_updates.get(f) for f in ("decisions", "projects", "patterns", "templates")
+    )
+    if has_vault_content and vault_updates is not None:
+        try:
+            vault_files = await update_vault_folders(vault_updates, source_date)
+            files_modified.extend(vault_files)
+        except Exception as exc:
+            log.error("deep_dream.vault.failed", dream_id=dream_id, error=str(exc))
+
+    # Step 6c: Update file_manifest for ALL modified files
+    try:
+        await update_file_manifest(files_modified)
+    except Exception as exc:
+        log.warning("deep_dream.manifest.failed", dream_id=dream_id, error=str(exc))
+
+    # Step 7: Update dream row
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
     stats = consolidation_result.get("stats", {})
     input_summary = (

@@ -22,6 +22,21 @@ Return valid JSON matching this exact schema:
     "contradictions_resolved": 0,
     "patterns_promoted": 0,
     "stale_pruned": 0
+  },
+  "vault_updates": {
+    "decisions": [
+      {
+        "filename": "kebab-case-slug.md",
+        "title": "Human Readable Title",
+        "summary": "One-line summary under 100 chars",
+        "content": "Full markdown body (without frontmatter)",
+        "tags": ["tag1", "tag2"],
+        "action": "create"
+      }
+    ],
+    "projects": [],
+    "patterns": [],
+    "templates": []
   }
 }
 ```
@@ -83,5 +98,32 @@ Count accurately:
 - `contradictions_resolved`: Number of CORRECTION entries created
 - `patterns_promoted`: Number of entries moved to Strong Patterns
 - `stale_pruned`: Number of entries removed due to age without reinforcement
+
+## Vault Updates Rules
+
+Route today's memories to vault folders based on content type. Each memory's `vault_target` field (from light dream extraction) guides routing:
+
+### Vault Folder Routing
+
+- **decisions/**: Any decision with reasoning ("chose X because Y"). File per topic area (e.g., `architecture-choices.md`, `tool-selections.md`). Group related decisions into existing files when they share a topic.
+- **projects/**: Active project context updates. One file per project (e.g., `jarvis.md`). Include current status, recent decisions, and tech stack.
+- **patterns/**: Reinforced patterns (3+ occurrences across sessions). File per category (e.g., `coding-patterns.md`, `architecture-patterns.md`). Include examples and reinforcement count.
+- **templates/**: Reusable templates, prompts, or frameworks discovered during sessions. One file per template.
+
+### Vault File Content Rules
+
+- Do NOT include YAML frontmatter in the `content` field -- frontmatter is added by the code.
+- Each file has a `# Title` heading followed by organized sections.
+- Decisions include reasoning: "Chose X because Y".
+- Patterns include reinforcement count: "(reinforced N times)".
+- Use imperative voice, absolute dates (YYYY-MM-DD).
+- For `action: "update"`, the `content` field contains the FULL updated file body (not a diff).
+- `action` is either `"create"` (new file) or `"update"` (replace existing file content).
+- `filename` must be kebab-case with `.md` extension.
+- `summary` must be under 100 characters.
+
+### When No Vault Content Exists
+
+If no vault-worthy content exists today, set all vault folder arrays to empty: `"decisions": [], "projects": [], "patterns": [], "templates": []`.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no preamble.

@@ -1,0 +1,417 @@
+from datetime import date
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.services.vault_updater import (
+    FOLDER_TYPE_MAP,
+    build_frontmatter,
+    extract_created_date,
+    regenerate_index,
+    update_file_manifest,
+    update_vault_folders,
+    write_vault_folder_file,
+)
+
+SOURCE_DATE = date(2026, 3, 31)
+
+
+class TestBuildFrontmatter:
+    def test_generates_correct_yaml_block(self) -> None:
+        result = build_frontmatter("decision", ["arch", "backend"], date(2026, 3, 29), SOURCE_DATE)
+        assert "type: decision" in result
+        assert "tags: [arch, backend]" in result
+        assert "created: 2026-03-29" in result
+        assert "updated: 2026-03-31" in result
+        assert "last_reviewed: 2026-03-31" in result
+        assert result.startswith("---\n")
+        assert result.endswith("---\n")
+
+    def test_all_folder_types(self) -> None:
+        for folder, file_type in FOLDER_TYPE_MAP.items():
+            result = build_frontmatter(file_type, [folder], SOURCE_DATE, SOURCE_DATE)
+            assert f"type: {file_type}" in result
+
+    def test_empty_tags(self) -> None:
+        result = build_frontmatter("decision", [], SOURCE_DATE, SOURCE_DATE)
+        assert "tags: []" in result
+
+    def test_last_reviewed_equals_updated(self) -> None:
+        result = build_frontmatter("pattern", ["coding"], date(2026, 1, 1), SOURCE_DATE)
+        assert "last_reviewed: 2026-03-31" in result
+        assert "updated: 2026-03-31" in result
+
+
+class TestExtractCreatedDate:
+    def test_extracts_date_from_frontmatter(self) -> None:
+        content = "---\ntype: decision\ncreated: 2026-03-29\nupdated: 2026-03-31\n---\n"
+        assert extract_created_date(content) == "2026-03-29"
+
+    def test_returns_none_when_no_date(self) -> None:
+        assert extract_created_date("# No frontmatter here") is None
+
+
+class TestWriteVaultFolderFile:
+    @pytest.mark.asyncio
+    async def test_creates_new_file_with_frontmatter(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "arch-choices.md",
+            "title": "Architecture Choices",
+            "summary": "Clean Arch decisions",
+            "content": (
+                "# Architecture Choices\n\n## Clean Architecture\n\nChose Clean Arch because..."
+            ),
+            "tags": ["architecture"],
+            "action": "create",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("decisions", entry, SOURCE_DATE)
+
+        assert result == {"path": "decisions/arch-choices.md", "action": "create"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "type: decision" in written_content
+        assert "created: 2026-03-31" in written_content
+        assert "# Architecture Choices" in written_content
+
+    @pytest.mark.asyncio
+    async def test_update_preserves_original_created_date(self) -> None:
+        existing = (
+            "---\ntype: decision\ntags: [arch]\ncreated: 2026-03-20\n"
+            "updated: 2026-03-25\nlast_reviewed: 2026-03-25\n---\n\n# Old Content"
+        )
+        entry: dict[str, Any] = {
+            "filename": "arch-choices.md",
+            "title": "Architecture Choices",
+            "summary": "Updated decisions",
+            "content": "# Architecture Choices\n\nUpdated content here",
+            "tags": ["architecture"],
+            "action": "update",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=existing)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("decisions", entry, SOURCE_DATE)
+
+        assert result == {"path": "decisions/arch-choices.md", "action": "update"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "created: 2026-03-20" in written_content
+        assert "updated: 2026-03-31" in written_content
+
+    @pytest.mark.asyncio
+    async def test_update_missing_file_falls_back_to_create(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "missing.md",
+            "title": "Missing File",
+            "summary": "Was supposed to exist",
+            "content": "# Missing File\n\nContent",
+            "tags": [],
+            "action": "update",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("patterns", entry, SOURCE_DATE)
+
+        assert result["action"] == "create"
+        written_content: str = mock_write.call_args[0][1]
+        assert "created: 2026-03-31" in written_content
+
+
+class TestRegenerateIndex:
+    @pytest.mark.asyncio
+    async def test_scans_folder_and_builds_index(self, tmp_path: Path) -> None:
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+        arch_content = (
+            "---\ntype: decision\ncreated: 2026-03-29\n---\n\n"
+            "# Architecture Choices\n\nSome content"
+        )
+        (decisions_dir / "arch-choices.md").write_text(arch_content, encoding="utf-8")
+        tool_content = (
+            "---\ntype: decision\ncreated: 2026-03-30\n---\n\n"
+            "# Tool Selections\n\nFastAPI and PostgreSQL"
+        )
+        (decisions_dir / "tool-selections.md").write_text(tool_content, encoding="utf-8")
+        (decisions_dir / "_index.md").write_text(
+            "---\ntype: index\ncreated: 2026-03-29\n---\n\n# Decisions Index\n",
+            encoding="utf-8",
+        )
+
+        mock_write = AsyncMock()
+
+        async def fake_read(path: str) -> str | None:
+            full = tmp_path / path
+            if full.exists():
+                return full.read_text(encoding="utf-8")
+            return None
+
+        with (
+            patch("app.services.vault_updater.settings") as mock_settings,
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", side_effect=fake_read),
+        ):
+            mock_settings.ai_memory_repo_path = str(tmp_path)
+            result = await regenerate_index("decisions", SOURCE_DATE)
+
+        assert result == {"path": "decisions/_index.md", "action": "rewrite"}
+        written: str = mock_write.call_args[0][1]
+        assert "# Decisions Index" in written
+        assert "[Architecture Choices](arch-choices.md)" in written
+        assert "[Tool Selections](tool-selections.md)" in written
+        assert "type: index" in written
+        assert "created: 2026-03-29" in written
+
+    @pytest.mark.asyncio
+    async def test_excludes_index_from_entries(self, tmp_path: Path) -> None:
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+        (decisions_dir / "_index.md").write_text("# Index", encoding="utf-8")
+        (decisions_dir / "one.md").write_text("# One Entry\n\nContent", encoding="utf-8")
+
+        mock_write = AsyncMock()
+
+        async def fake_read(path: str) -> str | None:
+            full = tmp_path / path
+            if full.exists():
+                return full.read_text(encoding="utf-8")
+            return None
+
+        with (
+            patch("app.services.vault_updater.settings") as mock_settings,
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", side_effect=fake_read),
+        ):
+            mock_settings.ai_memory_repo_path = str(tmp_path)
+            await regenerate_index("decisions", SOURCE_DATE)
+
+        written: str = mock_write.call_args[0][1]
+        assert "_index.md" not in written.split("# Decisions Index")[1]
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_folder(self, tmp_path: Path) -> None:
+        empty_dir = tmp_path / "templates"
+        empty_dir.mkdir()
+
+        mock_write = AsyncMock()
+
+        async def fake_read(path: str) -> str | None:
+            full = tmp_path / path
+            if full.exists():
+                return full.read_text(encoding="utf-8")
+            return None
+
+        with (
+            patch("app.services.vault_updater.settings") as mock_settings,
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", side_effect=fake_read),
+        ):
+            mock_settings.ai_memory_repo_path = str(tmp_path)
+            result = await regenerate_index("templates", SOURCE_DATE)
+
+        assert result == {"path": "templates/_index.md", "action": "rewrite"}
+        written: str = mock_write.call_args[0][1]
+        assert "# Templates Index" in written
+        assert "- [" not in written
+
+
+class TestUpdateVaultFolders:
+    @pytest.mark.asyncio
+    async def test_processes_all_four_folders(self) -> None:
+        vault_updates: dict[str, list[dict[str, Any]]] = {
+            "decisions": [
+                {
+                    "filename": "d.md",
+                    "title": "D",
+                    "summary": "Sum",
+                    "content": "# D\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "projects": [
+                {
+                    "filename": "p.md",
+                    "title": "P",
+                    "summary": "Sum",
+                    "content": "# P\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "patterns": [
+                {
+                    "filename": "pat.md",
+                    "title": "Pat",
+                    "summary": "Sum",
+                    "content": "# Pat\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "templates": [
+                {
+                    "filename": "t.md",
+                    "title": "T",
+                    "summary": "Sum",
+                    "content": "# T\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+        }
+
+        mock_write_file = AsyncMock(
+            side_effect=lambda f, e, d: {"path": f"{f}/{e['filename']}", "action": "create"}
+        )
+        mock_regen = AsyncMock(
+            side_effect=lambda f, d, summaries=None: {"path": f"{f}/_index.md", "action": "rewrite"}
+        )
+
+        with (
+            patch("app.services.vault_updater.write_vault_folder_file", mock_write_file),
+            patch("app.services.vault_updater.regenerate_index", mock_regen),
+        ):
+            results = await update_vault_folders(vault_updates, SOURCE_DATE)
+
+        assert len(results) == 8  # 4 files + 4 indexes
+        paths = [r["path"] for r in results]
+        assert "decisions/d.md" in paths
+        assert "projects/p.md" in paths
+        assert "patterns/pat.md" in paths
+        assert "templates/t.md" in paths
+        assert "decisions/_index.md" in paths
+
+    @pytest.mark.asyncio
+    async def test_handles_partial_failure(self) -> None:
+        vault_updates: dict[str, list[dict[str, Any]]] = {
+            "decisions": [
+                {
+                    "filename": "fail.md",
+                    "title": "Fail",
+                    "summary": "Will fail",
+                    "content": "# Fail",
+                    "tags": [],
+                    "action": "create",
+                },
+                {
+                    "filename": "ok.md",
+                    "title": "OK",
+                    "summary": "Will succeed",
+                    "content": "# OK",
+                    "tags": [],
+                    "action": "create",
+                },
+            ],
+            "projects": [],
+            "patterns": [],
+            "templates": [],
+        }
+
+        call_count = 0
+
+        async def mock_write(f: str, e: dict[str, Any], d: date) -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                msg = "disk error"
+                raise RuntimeError(msg)
+            return {"path": f"{f}/{e['filename']}", "action": "create"}
+
+        mock_regen = AsyncMock(return_value={"path": "decisions/_index.md", "action": "rewrite"})
+
+        with (
+            patch("app.services.vault_updater.write_vault_folder_file", mock_write),
+            patch("app.services.vault_updater.regenerate_index", mock_regen),
+        ):
+            results = await update_vault_folders(vault_updates, SOURCE_DATE)
+
+        assert len(results) == 2  # 1 succeeded file + 1 index
+        paths = [r["path"] for r in results]
+        assert "decisions/ok.md" in paths
+        assert "decisions/_index.md" in paths
+
+    @pytest.mark.asyncio
+    async def test_skips_empty_folders(self) -> None:
+        vault_updates: dict[str, list[dict[str, Any]]] = {
+            "decisions": [],
+            "projects": [],
+            "patterns": [],
+            "templates": [],
+        }
+
+        mock_write_file = AsyncMock()
+        mock_regen = AsyncMock()
+
+        with (
+            patch("app.services.vault_updater.write_vault_folder_file", mock_write_file),
+            patch("app.services.vault_updater.regenerate_index", mock_regen),
+        ):
+            results = await update_vault_folders(vault_updates, SOURCE_DATE)
+
+        assert results == []
+        mock_write_file.assert_not_called()
+        mock_regen.assert_not_called()
+
+
+class TestUpdateFileManifest:
+    @pytest.mark.asyncio
+    async def test_upserts_file_hashes(self) -> None:
+        files_modified = [
+            {"path": "decisions/arch.md", "action": "create"},
+            {"path": "decisions/_index.md", "action": "rewrite"},
+        ]
+
+        mock_read = AsyncMock(return_value="# Content here")
+        mock_scalar = MagicMock()
+        mock_scalar.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_scalar)
+        mock_session.commit = AsyncMock()
+        mock_session.add = MagicMock()
+
+        mock_factory = MagicMock()
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+            patch("app.services.vault_updater.async_session_factory", mock_factory),
+        ):
+            await update_file_manifest(files_modified)
+
+        assert mock_session.add.call_count == 2
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handles_db_errors_gracefully(self) -> None:
+        files_modified = [{"path": "decisions/arch.md", "action": "create"}]
+
+        mock_read = AsyncMock(return_value="# Content")
+        mock_factory = MagicMock()
+        mock_factory.return_value.__aenter__ = AsyncMock(
+            side_effect=RuntimeError("DB connection failed")
+        )
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+            patch("app.services.vault_updater.async_session_factory", mock_factory),
+        ):
+            await update_file_manifest(files_modified)

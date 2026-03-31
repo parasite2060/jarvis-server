@@ -155,6 +155,62 @@ async def test_consolidate_prompt_loaded_and_cached() -> None:
 
 
 @pytest.mark.asyncio
+async def test_consolidate_parses_vault_updates_from_response() -> None:
+    response_with_vault = {
+        **SAMPLE_CONSOLIDATION,
+        "vault_updates": {
+            "decisions": [
+                {
+                    "filename": "arch.md",
+                    "title": "Arch",
+                    "summary": "Arch decisions",
+                    "content": "# Arch",
+                    "tags": ["arch"],
+                    "action": "create",
+                }
+            ],
+            "projects": [],
+            "patterns": [],
+            "templates": [],
+        },
+    }
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion(json.dumps(response_with_vault))
+    )
+
+    with (
+        patch.object(azure_openai, "_get_client", return_value=mock_client),
+        patch.object(azure_openai, "_load_consolidate_prompt", return_value="prompt"),
+    ):
+        result = await consolidate_memories("mem", "log", "soul", SAMPLE_MEMORIES)
+
+    assert "vault_updates" in result
+    assert len(result["vault_updates"]["decisions"]) == 1
+    assert result["vault_updates"]["projects"] == []
+
+
+@pytest.mark.asyncio
+async def test_consolidate_defaults_empty_arrays_when_vault_updates_missing() -> None:
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion(json.dumps(SAMPLE_CONSOLIDATION))
+    )
+
+    with (
+        patch.object(azure_openai, "_get_client", return_value=mock_client),
+        patch.object(azure_openai, "_load_consolidate_prompt", return_value="prompt"),
+    ):
+        result = await consolidate_memories("mem", "log", "soul", SAMPLE_MEMORIES)
+
+    assert "vault_updates" in result
+    assert result["vault_updates"]["decisions"] == []
+    assert result["vault_updates"]["projects"] == []
+    assert result["vault_updates"]["patterns"] == []
+    assert result["vault_updates"]["templates"] == []
+
+
+@pytest.mark.asyncio
 async def test_consolidate_raises_dream_error_on_rate_limit() -> None:
     mock_response = MagicMock()
     mock_response.status_code = 429
