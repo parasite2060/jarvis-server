@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.routes.config import router as config_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.dream import router as dream_router
 from app.api.routes.files import router as files_router
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     application.include_router(files_router)
     application.include_router(conversations_router)
     application.include_router(dream_router)
+    application.include_router(config_router)
 
     @application.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
