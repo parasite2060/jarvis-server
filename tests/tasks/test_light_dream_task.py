@@ -438,3 +438,156 @@ async def test_file_update_failure_doesnt_fail_dream() -> None:
     assert dream.status == "completed"
     assert dream.memories_extracted == 3
     assert dream.files_modified is None
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_with_git_pr() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock(
+        return_value=[
+            {"path": "MEMORY.md", "action": "append", "line_count": 30, "memory_overflow": False},
+            {"path": "dailys/2026-03-31.md", "action": "create"},
+        ]
+    )
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_create_pr.assert_called_once()
+    mock_invalidate.assert_called_once()
+    mock_cleanup.assert_called_once()
+
+    assert dream.status == "completed"
+    assert dream.git_branch == "dream/light-2026-03-31-143000"
+    assert dream.git_pr_url == "https://github.com/owner/repo/pull/42"
+    assert dream.git_pr_status == "merged"
+
+
+@pytest.mark.asyncio
+async def test_git_failure_doesnt_fail_dream() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock(
+        return_value=[
+            {"path": "MEMORY.md", "action": "append"},
+            {"path": "dailys/2026-03-31.md", "action": "create"},
+        ]
+    )
+    mock_create_pr = AsyncMock(side_effect=RuntimeError("git push failed"))
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.memories_extracted == 3
+    assert dream.git_branch is None
+    assert dream.git_pr_url is None
+    # Cache NOT invalidated on git failure
+    mock_invalidate.assert_not_called()
+    # Cleanup still called
+    mock_cleanup.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_no_files_modified_skips_git_ops() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=NO_EXTRACT_RESULT)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_create_pr = AsyncMock()
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_create_pr.assert_not_called()
+    mock_invalidate.assert_not_called()
+    mock_cleanup.assert_not_called()
+    assert dream.git_branch is None
+
+
+@pytest.mark.asyncio
+async def test_context_cache_invalidated_after_pr() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
+    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_update_files = AsyncMock(
+        return_value=[
+            {"path": "MEMORY.md", "action": "append"},
+        ]
+    )
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-100000",
+            "git_pr_url": "https://github.com/owner/repo/pull/1",
+            "git_pr_status": "created",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
+        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_invalidate.assert_called_once()

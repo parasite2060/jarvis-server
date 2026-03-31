@@ -22,6 +22,11 @@ class DreamError(JarvisError):
         super().__init__(message, code="DREAM_FAILED")
 
 
+class GitOpsError(JarvisError):
+    def __init__(self, message: str = "Git operation failed") -> None:
+        super().__init__(message, code="GIT_OPS_FAILED")
+
+
 class MemuError(Exception):
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(detail)

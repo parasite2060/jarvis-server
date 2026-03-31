@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28",
     "structlog>=24.4",
     "openai>=1.60",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ dev = [
     "httpx",
     "ruff>=0.9",
     "mypy>=1.0",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]

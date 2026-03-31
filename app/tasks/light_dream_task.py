@@ -9,6 +9,8 @@ from app.core.logging import get_logger
 from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.azure_openai import extract_memories
+from app.services.context_cache import invalidate_context_cache
+from app.services.git_ops import cleanup_branch, create_dream_pr
 from app.services.memory_updater import MemoryItem, update_memory_files
 from app.services.memu_client import memu_memorize
 
@@ -85,6 +87,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
 
     # Step 5: Store extracted memories (skip if extraction failed or NO_EXTRACT)
     memories_count = 0
+    source_date_for_git = date.today()
     if extraction_result is not None and not extraction_result.get("no_extract", False):
         async with async_session_factory() as session:
             for category in MEMORY_CATEGORIES:
@@ -143,6 +146,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             except (ValueError, TypeError):
                 source_date_val = date.today()
 
+            source_date_for_git = source_date_val
             summary = extraction_result.get("summary", "")
             files_modified = await update_memory_files(
                 dream_id, memory_items, summary, source_date_val
@@ -178,6 +182,42 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             error=str(exc),
         )
 
+    # Step 6b: Git branch and PR
+    git_branch: str | None = None
+    git_pr_url: str | None = None
+    git_pr_status: str | None = None
+
+    if files_modified is not None and len(files_modified) > 0:
+        source_time = dream.started_at.strftime("%H%M%S") if dream.started_at else "000000"
+
+        try:
+            git_result = await create_dream_pr(
+                files_modified, dream_id, source_date_for_git, source_time
+            )
+            git_branch = git_result.get("git_branch")
+            git_pr_url = git_result.get("git_pr_url")
+            git_pr_status = git_result.get("git_pr_status")
+            log.info(
+                "light_dream.git_pr.created",
+                dream_id=dream_id,
+                git_branch=git_branch,
+                git_pr_url=git_pr_url,
+            )
+            # Invalidate context cache after successful PR
+            try:
+                await invalidate_context_cache()
+            except Exception:
+                log.warning("light_dream.cache_invalidation_failed", dream_id=dream_id)
+        except Exception as exc:
+            log.warning(
+                "light_dream.git_ops_failed",
+                dream_id=dream_id,
+                error=str(exc),
+            )
+        finally:
+            branch_to_clean = git_branch or f"dream/light-{date.today().isoformat()}-{source_time}"
+            await cleanup_branch(branch_to_clean)
+
     # Step 7: Update dream row
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
 
@@ -194,6 +234,12 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         d.completed_at = datetime.now(UTC)
         if files_modified is not None:
             d.files_modified = files_modified  # type: ignore[assignment]
+        if git_branch is not None:
+            d.git_branch = git_branch
+        if git_pr_url is not None:
+            d.git_pr_url = git_pr_url
+        if git_pr_status is not None:
+            d.git_pr_status = git_pr_status
         await session.commit()
 
     # Step 8: Update transcript status
