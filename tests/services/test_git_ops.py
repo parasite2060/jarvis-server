@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.core.exceptions import GitOpsError
+from app.services.git_ops import GitOpsService
 
 
 def _make_process(stdout: str = "", stderr: str = "", returncode: int = 0) -> AsyncMock:
@@ -11,6 +12,9 @@ def _make_process(stdout: str = "", stderr: str = "", returncode: int = 0) -> As
     proc.communicate.return_value = (stdout.encode(), stderr.encode())
     proc.returncode = returncode
     return proc
+
+
+# ── read_dream_config tests ──
 
 
 @pytest.mark.asyncio
@@ -24,9 +28,8 @@ async def test_read_dream_config_parses_yaml(tmp_path: object) -> None:
 
         with patch("app.services.git_ops.settings") as mock_settings:
             mock_settings.ai_memory_repo_path = tmpdir
-            from app.services.git_ops import read_dream_config
-
-            result = await read_dream_config()
+            service = GitOpsService()
+            result = await service.read_dream_config()
 
     assert result["auto_merge"] is False
     assert result["max_memory_lines"] == 150
@@ -36,12 +39,14 @@ async def test_read_dream_config_parses_yaml(tmp_path: object) -> None:
 async def test_read_dream_config_returns_defaults_when_missing() -> None:
     with patch("app.services.git_ops.settings") as mock_settings:
         mock_settings.ai_memory_repo_path = "/nonexistent/path"
-        from app.services.git_ops import read_dream_config
-
-        result = await read_dream_config()
+        service = GitOpsService()
+        result = await service.read_dream_config()
 
     assert result["auto_merge"] is True
     assert result["max_memory_lines"] == 200
+
+
+# ── run_git tests ──
 
 
 @pytest.mark.asyncio
@@ -55,9 +60,8 @@ async def test_run_git_executes_command_and_returns_output() -> None:
         patch("app.services.git_ops.settings") as mock_settings,
     ):
         mock_settings.ai_memory_repo_path = "/repo"
-        from app.services.git_ops import run_git
-
-        stdout, stderr, rc = await run_git(["status"])
+        service = GitOpsService()
+        stdout, stderr, rc = await service.run_git(["status"])
 
     assert stdout == "abc123"
     assert rc == 0
@@ -77,10 +81,12 @@ async def test_run_git_raises_on_nonzero_return_code() -> None:
         patch("app.services.git_ops.settings") as mock_settings,
     ):
         mock_settings.ai_memory_repo_path = "/repo"
-        from app.services.git_ops import run_git
-
+        service = GitOpsService()
         with pytest.raises(GitOpsError, match="failed"):
-            await run_git(["status"])
+            await service.run_git(["status"])
+
+
+# ── run_gh tests ──
 
 
 @pytest.mark.asyncio
@@ -94,9 +100,8 @@ async def test_run_gh_executes_gh_command() -> None:
         patch("app.services.git_ops.settings") as mock_settings,
     ):
         mock_settings.ai_memory_repo_path = "/repo"
-        from app.services.git_ops import run_gh
-
-        stdout, stderr, rc = await run_gh(["pr", "create", "--title", "test"])
+        service = GitOpsService()
+        stdout, stderr, rc = await service.run_gh(["pr", "create", "--title", "test"])
 
     assert stdout == "https://github.com/owner/repo/pull/1"
     assert rc == 0
@@ -114,14 +119,19 @@ async def test_run_gh_raises_on_failure() -> None:
         patch("app.services.git_ops.settings") as mock_settings,
     ):
         mock_settings.ai_memory_repo_path = "/repo"
-        from app.services.git_ops import run_gh
-
+        service = GitOpsService()
         with pytest.raises(GitOpsError, match="failed"):
-            await run_gh(["pr", "create"])
+            await service.run_gh(["pr", "create"])
+
+
+# ── create_light_dream_pr tests ──
 
 
 @pytest.mark.asyncio
-async def test_create_dream_pr_full_sequence() -> None:
+async def test_create_light_dream_pr_full_sequence() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)  # skip pull
+
     call_count = 0
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -145,13 +155,11 @@ async def test_create_dream_pr_full_sequence() -> None:
     ]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(service, "read_dream_config", side_effect=mock_read_config),
     ):
-        from app.services.git_ops import create_dream_pr
-
-        result = await create_dream_pr(
+        result = await service.create_light_dream_pr(
             files, dream_id=1, source_date=date(2026, 3, 31), source_time="143000"
         )
 
@@ -161,7 +169,10 @@ async def test_create_dream_pr_full_sequence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_dream_pr_auto_merge_false() -> None:
+async def test_create_light_dream_pr_auto_merge_false() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     gh_calls: list[list[str]] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -181,26 +192,25 @@ async def test_create_dream_pr_auto_merge_false() -> None:
     files = [{"path": "MEMORY.md", "action": "append"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(service, "read_dream_config", side_effect=mock_read_config),
     ):
-        from app.services.git_ops import create_dream_pr
-
-        result = await create_dream_pr(
+        result = await service.create_light_dream_pr(
             files, dream_id=1, source_date=date(2026, 3, 31), source_time="143000"
         )
 
     assert result["git_pr_status"] == "created"
-    # Should NOT have called gh pr merge
     merge_calls = [c for c in gh_calls if c[0] == "pr" and c[1] == "merge"]
     assert len(merge_calls) == 0
 
 
 @pytest.mark.asyncio
-async def test_create_dream_pr_no_staged_changes() -> None:
+async def test_create_light_dream_pr_no_staged_changes() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
-        # diff --cached --quiet returns 0 = no changes
         return ("", "", 0)
 
     async def mock_read_config() -> dict[str, object]:
@@ -215,13 +225,11 @@ async def test_create_dream_pr_no_staged_changes() -> None:
     files = [{"path": "MEMORY.md", "action": "append"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(service, "read_dream_config", side_effect=mock_read_config),
     ):
-        from app.services.git_ops import create_dream_pr
-
-        result = await create_dream_pr(
+        result = await service.create_light_dream_pr(
             files, dream_id=1, source_date=date(2026, 3, 31), source_time="120000"
         )
 
@@ -231,36 +239,10 @@ async def test_create_dream_pr_no_staged_changes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cleanup_branch_switches_to_main() -> None:
-    with (
-        patch("app.services.git_ops.run_git", new_callable=AsyncMock) as mock_git,
-        patch("app.services.git_ops.settings") as mock_settings,
-    ):
-        mock_settings.ai_memory_repo_path = "/repo"
-        mock_git.return_value = ("", "", 0)
-        from app.services.git_ops import cleanup_branch
+async def test_create_light_dream_pr_filters_error_entries() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
 
-        await cleanup_branch("dream/light-2026-03-31-143000")
-
-    mock_git.assert_called_once_with(["checkout", "main"])
-
-
-@pytest.mark.asyncio
-async def test_cleanup_branch_logs_error_without_raising() -> None:
-    with (
-        patch("app.services.git_ops.run_git", new_callable=AsyncMock) as mock_git,
-        patch("app.services.git_ops.settings") as mock_settings,
-    ):
-        mock_settings.ai_memory_repo_path = "/repo"
-        mock_git.side_effect = GitOpsError("checkout failed")
-        from app.services.git_ops import cleanup_branch
-
-        # Should not raise
-        await cleanup_branch("dream/light-2026-03-31-143000")
-
-
-@pytest.mark.asyncio
-async def test_create_dream_pr_filters_error_entries() -> None:
     git_add_args: list[str] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -284,18 +266,38 @@ async def test_create_dream_pr_filters_error_entries() -> None:
     ]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(service, "read_dream_config", side_effect=mock_read_config),
     ):
-        from app.services.git_ops import create_dream_pr
-
-        await create_dream_pr(
+        await service.create_light_dream_pr(
             files, dream_id=1, source_date=date(2026, 3, 31), source_time="143000"
         )
 
-    # Only MEMORY.md should be staged (dailys entry has error)
     assert git_add_args == ["MEMORY.md"]
+
+
+# ── cleanup_branch tests ──
+
+
+@pytest.mark.asyncio
+async def test_cleanup_branch_switches_to_main() -> None:
+    service = GitOpsService()
+    mock_run_git = AsyncMock(return_value=("", "", 0))
+
+    with patch.object(service, "run_git", mock_run_git):
+        await service.cleanup_branch("dream/light-2026-03-31-143000")
+
+    mock_run_git.assert_called_once_with(["checkout", "main"])
+
+
+@pytest.mark.asyncio
+async def test_cleanup_branch_logs_error_without_raising() -> None:
+    service = GitOpsService()
+    mock_run_git = AsyncMock(side_effect=GitOpsError("checkout failed"))
+
+    with patch.object(service, "run_git", mock_run_git):
+        await service.cleanup_branch("dream/light-2026-03-31-143000")
 
 
 # ── create_deep_dream_pr tests ──
@@ -303,6 +305,9 @@ async def test_create_dream_pr_filters_error_entries() -> None:
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_correct_branch_name() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
         if args[:2] == ["diff", "--cached"]:
             raise GitOpsError("changes exist")
@@ -319,13 +324,13 @@ async def test_create_deep_dream_pr_correct_branch_name() -> None:
     files = [{"path": "MEMORY.md", "action": "rewrite"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch("app.services.git_ops.read_dream_config", side_effect=mock_read_config),
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(service, "read_dream_config", side_effect=mock_read_config),
     ):
-        from app.services.git_ops import create_deep_dream_pr
-
-        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+        result = await service.create_deep_dream_pr(
+            files, dream_id=5, source_date=date(2026, 3, 31)
+        )
 
     assert result["git_branch"] == "dream/deep-2026-03-31"
     assert result["git_pr_url"] == "https://github.com/owner/repo/pull/10"
@@ -334,6 +339,9 @@ async def test_create_deep_dream_pr_correct_branch_name() -> None:
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_commit_message_format() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     commit_messages: list[str] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -351,22 +359,24 @@ async def test_create_deep_dream_pr_commit_message_format() -> None:
     files = [{"path": "MEMORY.md", "action": "rewrite"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch(
-            "app.services.git_ops.read_dream_config",
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
             AsyncMock(return_value={"auto_merge": False}),
         ),
     ):
-        from app.services.git_ops import create_deep_dream_pr
-
-        await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+        await service.create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
 
     assert commit_messages == ["dream(deep): consolidate 2026-03-31"]
 
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_includes_stats_in_pr_body() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     pr_bodies: list[str] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -390,16 +400,17 @@ async def test_create_deep_dream_pr_includes_stats_in_pr_body() -> None:
     }
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch(
-            "app.services.git_ops.read_dream_config",
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
             AsyncMock(return_value={"auto_merge": False}),
         ),
     ):
-        from app.services.git_ops import create_deep_dream_pr
-
-        await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31), stats=stats)
+        await service.create_deep_dream_pr(
+            files, dream_id=5, source_date=date(2026, 3, 31), stats=stats
+        )
 
     assert len(pr_bodies) == 1
     body = pr_bodies[0]
@@ -410,6 +421,9 @@ async def test_create_deep_dream_pr_includes_stats_in_pr_body() -> None:
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_branch_already_exists_appends_suffix() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     branch_attempts: list[str] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -430,16 +444,17 @@ async def test_create_deep_dream_pr_branch_already_exists_appends_suffix() -> No
     files = [{"path": "MEMORY.md", "action": "rewrite"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch(
-            "app.services.git_ops.read_dream_config",
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
             AsyncMock(return_value={"auto_merge": False}),
         ),
     ):
-        from app.services.git_ops import create_deep_dream_pr
-
-        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+        result = await service.create_deep_dream_pr(
+            files, dream_id=5, source_date=date(2026, 3, 31)
+        )
 
     assert result["git_branch"] == "dream/deep-2026-03-31-2"
     assert branch_attempts[0] == "dream/deep-2026-03-31"
@@ -448,6 +463,9 @@ async def test_create_deep_dream_pr_branch_already_exists_appends_suffix() -> No
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_respects_auto_merge() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
     gh_calls: list[list[str]] = []
 
     async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
@@ -464,16 +482,17 @@ async def test_create_deep_dream_pr_respects_auto_merge() -> None:
     files = [{"path": "MEMORY.md", "action": "rewrite"}]
 
     with (
-        patch("app.services.git_ops.run_git", side_effect=mock_run_git),
-        patch("app.services.git_ops.run_gh", side_effect=mock_run_gh),
-        patch(
-            "app.services.git_ops.read_dream_config",
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
             AsyncMock(return_value={"auto_merge": True}),
         ),
     ):
-        from app.services.git_ops import create_deep_dream_pr
-
-        result = await create_deep_dream_pr(files, dream_id=5, source_date=date(2026, 3, 31))
+        result = await service.create_deep_dream_pr(
+            files, dream_id=5, source_date=date(2026, 3, 31)
+        )
 
     assert result["git_pr_status"] == "auto_merge_enabled"
     merge_calls = [c for c in gh_calls if c[0] == "pr" and c[1] == "merge"]
@@ -482,10 +501,243 @@ async def test_create_deep_dream_pr_respects_auto_merge() -> None:
 
 @pytest.mark.asyncio
 async def test_create_deep_dream_pr_empty_files_skips_git_ops() -> None:
-    from app.services.git_ops import create_deep_dream_pr
-
-    result = await create_deep_dream_pr([], dream_id=5, source_date=date(2026, 3, 31))
+    service = GitOpsService()
+    result = await service.create_deep_dream_pr([], dream_id=5, source_date=date(2026, 3, 31))
 
     assert result["git_branch"] == ""
     assert result["git_pr_url"] == ""
     assert result["git_pr_status"] == "no_files"
+
+
+# ── pull_latest_main tests ──
+
+
+@pytest.mark.asyncio
+async def test_pull_latest_main_success() -> None:
+    service = GitOpsService()
+    git_calls: list[list[str]] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        git_calls.append(args)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        await service.pull_latest_main()
+
+    assert git_calls == [["checkout", "main"], ["pull", "origin", "main"]]
+    assert service._last_pull_at is not None
+
+
+@pytest.mark.asyncio
+async def test_pull_latest_main_failure_logs_warning() -> None:
+    service = GitOpsService()
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        raise GitOpsError("network error")
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        await service.pull_latest_main()
+
+    assert service._last_pull_at is None
+
+
+@pytest.mark.asyncio
+async def test_pull_latest_main_already_fresh_skips() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
+    mock_pull = AsyncMock()
+
+    with patch.object(service, "pull_latest_main", mock_pull):
+        await service.ensure_main_fresh(max_age_seconds=1800)
+
+    mock_pull.assert_not_called()
+
+
+# ── ensure_main_fresh tests ──
+
+
+@pytest.mark.asyncio
+async def test_ensure_main_fresh_stale_triggers_pull() -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime(2020, 1, 1, tzinfo=UTC)
+
+    git_calls: list[list[str]] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        git_calls.append(args)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        await service.ensure_main_fresh(max_age_seconds=1800)
+
+    assert ["checkout", "main"] in git_calls
+    assert ["pull", "origin", "main"] in git_calls
+
+
+@pytest.mark.asyncio
+async def test_ensure_main_fresh_none_triggers_pull() -> None:
+    service = GitOpsService()
+    assert service._last_pull_at is None
+
+    git_calls: list[list[str]] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        git_calls.append(args)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        await service.ensure_main_fresh()
+
+    assert ["checkout", "main"] in git_calls
+
+
+# ── cleanup_merged_branches tests ──
+
+
+@pytest.mark.asyncio
+async def test_cleanup_merged_branches_deletes_merged() -> None:
+    service = GitOpsService()
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args == ["checkout", "main"]:
+            return ("", "", 0)
+        if args == ["branch", "--list", "dream/*"]:
+            return ("  dream/light-2026-03-01\n  dream/deep-2026-03-02\n", "", 0)
+        if args == ["branch", "--merged", "main"]:
+            return ("  main\n  dream/light-2026-03-01\n", "", 0)
+        if args[0] == "branch" and args[1] == "-d":
+            return ("", "", 0)
+        if args == ["remote", "prune", "origin"]:
+            return ("", "", 0)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        result = await service.cleanup_merged_branches()
+
+    assert result["deleted_local"] == 1
+    assert result["pruned_remote"] is True
+
+
+@pytest.mark.asyncio
+async def test_cleanup_merged_branches_skips_unmerged() -> None:
+    service = GitOpsService()
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args == ["checkout", "main"]:
+            return ("", "", 0)
+        if args == ["branch", "--list", "dream/*"]:
+            return ("  dream/light-2026-03-01\n", "", 0)
+        if args == ["branch", "--merged", "main"]:
+            return ("  main\n", "", 0)
+        if args == ["remote", "prune", "origin"]:
+            return ("", "", 0)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        result = await service.cleanup_merged_branches()
+
+    assert result["deleted_local"] == 0
+    assert result["pruned_remote"] is True
+
+
+@pytest.mark.asyncio
+async def test_cleanup_merged_branches_handles_delete_error() -> None:
+    service = GitOpsService()
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args == ["checkout", "main"]:
+            return ("", "", 0)
+        if args == ["branch", "--list", "dream/*"]:
+            return ("  dream/light-2026-03-01\n", "", 0)
+        if args == ["branch", "--merged", "main"]:
+            return ("  dream/light-2026-03-01\n", "", 0)
+        if args[0] == "branch" and args[1] == "-d":
+            raise GitOpsError("delete failed")
+        if args == ["remote", "prune", "origin"]:
+            return ("", "", 0)
+        return ("", "", 0)
+
+    with patch.object(service, "run_git", side_effect=mock_run_git):
+        result = await service.cleanup_merged_branches()
+
+    assert result["deleted_local"] == 0
+    assert result["pruned_remote"] is True
+
+
+# ── get_pr_status tests ──
+
+
+@pytest.mark.asyncio
+async def test_get_pr_status_open() -> None:
+    service = GitOpsService()
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        return ('{"state":"OPEN","mergedAt":null,"closedAt":null,"title":"test PR"}', "", 0)
+
+    with patch.object(service, "run_gh", side_effect=mock_run_gh):
+        result = await service.get_pr_status("https://github.com/owner/repo/pull/1")
+
+    assert result["state"] == "OPEN"
+    assert result["merged_at"] is None
+    assert result["title"] == "test PR"
+
+
+@pytest.mark.asyncio
+async def test_get_pr_status_merged() -> None:
+    service = GitOpsService()
+
+    merged_json = (
+        '{"state":"MERGED","mergedAt":"2026-03-31T10:00:00Z",'
+        '"closedAt":"2026-03-31T10:00:00Z","title":"test PR"}'
+    )
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        return (merged_json, "", 0)
+
+    with patch.object(service, "run_gh", side_effect=mock_run_gh):
+        result = await service.get_pr_status("https://github.com/owner/repo/pull/1")
+
+    assert result["state"] == "MERGED"
+    assert result["merged_at"] == "2026-03-31T10:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_get_pr_status_closed() -> None:
+    service = GitOpsService()
+
+    closed_json = (
+        '{"state":"CLOSED","mergedAt":null,"closedAt":"2026-03-31T10:00:00Z","title":"test PR"}'
+    )
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        return (closed_json, "", 0)
+
+    with patch.object(service, "run_gh", side_effect=mock_run_gh):
+        result = await service.get_pr_status("https://github.com/owner/repo/pull/1")
+
+    assert result["state"] == "CLOSED"
+    assert result["closed_at"] == "2026-03-31T10:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_get_pr_status_empty_url() -> None:
+    service = GitOpsService()
+    result = await service.get_pr_status("")
+
+    assert result["state"] == "unknown"
+    assert result["error"] == "empty_url"
+
+
+@pytest.mark.asyncio
+async def test_get_pr_status_gh_failure() -> None:
+    service = GitOpsService()
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        raise GitOpsError("gh failed")
+
+    with patch.object(service, "run_gh", side_effect=mock_run_gh):
+        result = await service.get_pr_status("https://github.com/owner/repo/pull/999")
+
+    assert result["state"] == "unknown"
+    assert "error" in result

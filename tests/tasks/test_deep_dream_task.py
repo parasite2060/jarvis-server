@@ -158,7 +158,7 @@ def _pipeline_patches(
             return_value=vault_files if vault_files is not None else []
         ),
         "app.tasks.deep_dream_task.update_file_manifest": AsyncMock(),
-        "app.tasks.deep_dream_task.create_deep_dream_pr": AsyncMock(
+        "app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr": AsyncMock(
             return_value=git_result or SAMPLE_GIT_RESULT,
             side_effect=git_error,
         ),
@@ -166,7 +166,7 @@ def _pipeline_patches(
             return_value=memu_sync or SAMPLE_MEMU_SYNC,
             side_effect=memu_error,
         ),
-        "app.tasks.deep_dream_task.cleanup_branch": AsyncMock(),
+        "app.tasks.deep_dream_task.git_ops_service.cleanup_branch": AsyncMock(),
         "app.tasks.deep_dream_task.invalidate_context_cache": AsyncMock(),
     }
     return patches
@@ -426,7 +426,7 @@ async def test_pipeline_includes_git_pr_step() -> None:
 
     await _run_with_patches(patches, trigger="auto")
 
-    git_mock = patches["app.tasks.deep_dream_task.create_deep_dream_pr"]
+    git_mock = patches["app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr"]
     git_mock.assert_called_once()
     call_args = git_mock.call_args
     assert len(call_args[0][0]) > 0  # files_modified not empty
@@ -518,7 +518,7 @@ async def test_cleanup_branch_called_after_git_success() -> None:
 
     await _run_with_patches(patches, trigger="auto")
 
-    cleanup_mock = patches["app.tasks.deep_dream_task.cleanup_branch"]
+    cleanup_mock = patches["app.tasks.deep_dream_task.git_ops_service.cleanup_branch"]
     cleanup_mock.assert_called_once_with("dream/deep-2026-03-31")
 
 
@@ -532,5 +532,5 @@ async def test_cleanup_branch_called_after_git_failure() -> None:
 
     # branch_name is "" because create_deep_dream_pr raised before returning
     # so cleanup_branch is NOT called (no branch to clean up)
-    cleanup_mock = patches["app.tasks.deep_dream_task.cleanup_branch"]
+    cleanup_mock = patches["app.tasks.deep_dream_task.git_ops_service.cleanup_branch"]
     cleanup_mock.assert_not_called()

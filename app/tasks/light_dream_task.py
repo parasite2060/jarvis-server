@@ -10,7 +10,7 @@ from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.azure_openai import extract_memories
 from app.services.context_cache import invalidate_context_cache
-from app.services.git_ops import cleanup_branch, create_dream_pr
+from app.services.git_ops import git_ops_service
 from app.services.memory_updater import MemoryItem, update_memory_files
 from app.services.memu_client import memu_memorize
 
@@ -191,7 +191,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         source_time = dream.started_at.strftime("%H%M%S") if dream.started_at else "000000"
 
         try:
-            git_result = await create_dream_pr(
+            git_result = await git_ops_service.create_light_dream_pr(
                 files_modified, dream_id, source_date_for_git, source_time
             )
             git_branch = git_result.get("git_branch")
@@ -216,7 +216,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             )
         finally:
             branch_to_clean = git_branch or f"dream/light-{date.today().isoformat()}-{source_time}"
-            await cleanup_branch(branch_to_clean)
+            await git_ops_service.cleanup_branch(branch_to_clean)
 
     # Step 7: Update dream row
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms

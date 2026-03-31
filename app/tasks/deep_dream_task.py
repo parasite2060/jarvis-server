@@ -16,7 +16,7 @@ from app.services.deep_dream import (
     validate_consolidated_output,
     write_consolidated_files,
 )
-from app.services.git_ops import cleanup_branch, create_deep_dream_pr
+from app.services.git_ops import git_ops_service
 from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
@@ -115,8 +115,11 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     git_result: dict[str, str] = {"git_branch": "", "git_pr_url": "", "git_pr_status": ""}
     branch_name: str = ""
     try:
-        git_result = await create_deep_dream_pr(
-            files_modified, dream_id, source_date, stats  # type: ignore[arg-type]
+        git_result = await git_ops_service.create_deep_dream_pr(
+            files_modified,  # type: ignore[arg-type]
+            dream_id,
+            source_date,
+            stats,
         )
         branch_name = git_result.get("git_branch", "")
         if git_result.get("git_pr_url"):
@@ -128,7 +131,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         log.error("deep_dream.git.failed", dream_id=dream_id, error=str(exc))
     finally:
         if branch_name:
-            await cleanup_branch(branch_name)
+            await git_ops_service.cleanup_branch(branch_name)
 
     # Step 8: MemU alignment
     memu_sync: dict[str, int] = {"items_synced": 0, "errors": 0}

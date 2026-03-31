@@ -468,8 +468,8 @@ async def test_full_pipeline_with_git_pr() -> None:
         patch("app.tasks.light_dream_task.extract_memories", mock_extract),
         patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
         patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
-        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
     ):
         from app.tasks.light_dream_task import light_dream_task
@@ -508,8 +508,8 @@ async def test_git_failure_doesnt_fail_dream() -> None:
         patch("app.tasks.light_dream_task.extract_memories", mock_extract),
         patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
         patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
-        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
     ):
         from app.tasks.light_dream_task import light_dream_task
@@ -541,8 +541,8 @@ async def test_no_files_modified_skips_git_ops() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.extract_memories", mock_extract),
         patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
-        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
     ):
         from app.tasks.light_dream_task import light_dream_task
@@ -582,8 +582,8 @@ async def test_context_cache_invalidated_after_pr() -> None:
         patch("app.tasks.light_dream_task.extract_memories", mock_extract),
         patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
         patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-        patch("app.tasks.light_dream_task.create_dream_pr", mock_create_pr),
-        patch("app.tasks.light_dream_task.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
     ):
         from app.tasks.light_dream_task import light_dream_task
