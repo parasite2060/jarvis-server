@@ -15,16 +15,9 @@ git clone https://github.com/parasite2060/jarvis-claude-plugin.git
 cd jarvis-claude-plugin
 ```
 
-## 2. Build the MCP Server
+## 2. Load the Plugin in Claude Code
 
-```bash
-cd mcp-server
-npm install
-npm run build
-cd ..
-```
-
-## 3. Load the Plugin in Claude Code
+> **Note:** The MCP server (`@parasite2060/jarvis-mcp-server`) is published to GitHub Packages and auto-installed via `npx` when the plugin starts — no manual build required.
 
 ```bash
 claude code --plugin-dir /path/to/jarvis-claude-plugin
@@ -88,5 +81,5 @@ Once configured, the plugin works invisibly:
 |-------|-------|
 | No context injected | Is the server running? `curl http://<HOST>:8000/health` |
 | Authentication failed | Does `apiKey` in plugin match `JARVIS_API_KEY` in `.env`? |
-| MCP tools not available | Is the MCP server built? Check `mcp-server/dist/index.js` exists |
+| MCP tools not available | Is `npx @parasite2060/jarvis-mcp-server` accessible? Check npm/GitHub Packages auth |
 | Worker not starting | Check `workerPort` isn't in use: `lsof -i :37777` |
