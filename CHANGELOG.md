@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/parasite2060/jarvis-server/compare/v0.2.3...v0.3.0) (2026-04-05)
+
+
+### Features
+
+* add ARQ worker service for dream processing ([9923ebe](https://github.com/parasite2060/jarvis-server/commit/9923ebe723a01f5a294abb1fae308b2b6a4cab2e))
+
 ## [0.2.3](https://github.com/parasite2060/jarvis-server/compare/v0.2.2...v0.2.3) (2026-04-05)
 
 
