@@ -145,7 +145,9 @@ def parse_transcript(raw_jsonl: str) -> str:
         else:
             role = "Tool"
 
-        turns.append(f"{role}: {text}")
+        timestamp = entry.get("timestamp", "")
+        prefix = f"[{timestamp}] {role}" if timestamp else role
+        turns.append(f"{prefix}: {text}")
 
     header = "\n".join(header_parts)
     body = "\n\n".join(turns)
