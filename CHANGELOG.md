@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/parasite2060/jarvis-server/compare/v0.2.2...v0.2.3) (2026-04-05)
+
+
+### Bug Fixes
+
+* handle 'user' type entries (not 'human') and extract tool_result from user messages ([7b29ef7](https://github.com/parasite2060/jarvis-server/commit/7b29ef74968928d2d941cc00ca027b0ef3a50dde))
+* rewrite transcript parser for actual Claude Code JSONL format ([f7edd08](https://github.com/parasite2060/jarvis-server/commit/f7edd089286c097668742b80d1712d8193f7ab4c))
+
 ## [0.2.2](https://github.com/parasite2060/jarvis-server/compare/v0.2.1...v0.2.2) (2026-04-05)
 
 
