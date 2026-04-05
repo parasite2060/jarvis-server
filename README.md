@@ -104,8 +104,9 @@ Before deploying Jarvis, you need the following ready:
 | 2 | **PostgreSQL 17 + pgvector** — Two databases: `jarvis` (server state) and `memu` (semantic search). `vector` extension enabled on `memu` database | — | — |
 | 3 | **Redis 7+** — For async task queue (ARQ). Password authentication recommended | — | — |
 | 4 | **OpenAI-compatible API** — Any provider with an OpenAI-compatible endpoint: Azure OpenAI, OpenAI, local models via Ollama/vLLM, etc. Needs a chat model and an embedding model | [Guide](docs/deployment/02-openai-compatible-llm.md) | — |
-| 5 | **Docker host** — Linux machine with Docker Engine + Compose plugin + git installed | — | [Deployment files](docs/deployment/templates-deployment/) |
-| 6 | **Claude Code plugin** — Connects Claude Code sessions to Jarvis for context injection, transcript capture, and memory tools | [Guide](docs/deployment/04-claude-code-plugin.md) | — |
+| 5 | **MemU server** — Semantic memory engine (included in Docker Compose). Needs the `memu` database with pgvector | [Guide](docs/deployment/03-memu-server.md) | — |
+| 6 | **Docker host** — Linux machine with Docker Engine + Compose plugin + git installed | — | [Deployment files](docs/deployment/templates-deployment/) |
+| 7 | **Claude Code plugin** — Connects Claude Code sessions to Jarvis for context injection, transcript capture, and memory tools | [Guide](docs/deployment/04-claude-code-plugin.md) | — |
 
 ## Deployment
 
