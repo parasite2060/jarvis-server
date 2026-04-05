@@ -19,6 +19,20 @@ services:
       timeout: 5s
       retries: 3
 
+  jarvis-worker:
+    build: .
+    command: ["arq", "app.tasks.worker.WorkerSettings"]
+    env_file: .env
+    depends_on:
+      jarvis-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - jarvis-network
+    volumes:
+      - ai-memory:/app/ai-memory
+
   memu-server:
     build:
       context: ../memu-server

@@ -5,19 +5,19 @@ Deploy the full Jarvis stack using pre-built Docker images from GitHub Container
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│            Docker Host (your server)             │
-│                                                  │
-│  ┌──────────────┐  ┌──────────────┐              │
-│  │ jarvis-server│  │  memu-server │              │
-│  │   :8000      │  │  (internal)  │              │
-│  └──────┬───────┘  └──────┬───────┘              │
-│         │                 │                      │
-│  ┌──────┴───────┐  ┌──────┴───────┐              │
-│  │   temporal   │  │   memu-ui    │              │
-│  │  (internal)  │  │    :8011     │              │
-│  └──────────────┘  └──────────────┘              │
-└──────────┬────────────────┬──────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                Docker Host (your server)                   │
+│                                                           │
+│  ┌──────────────┐  ┌───────────────┐                      │
+│  │ jarvis-server│  │ jarvis-worker │                      │
+│  │   :8000      │  │  (ARQ tasks)  │                      │
+│  └──────┬───────┘  └───────┬───────┘                      │
+│         │                  │                              │
+│  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────────────┐    │
+│  │  memu-server │──│   temporal   │  │   memu-ui    │    │
+│  │  (internal)  │  │  (internal)  │  │    :8011     │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘    │
+└──────────┬────────────────┬──────────────────────────────┘
            │                │
     ┌──────┴──────┐  ┌──────┴──────┐  ┌───────────┐
     │ PostgreSQL  │  │    Redis    │  │  GitHub   │
@@ -25,6 +25,10 @@ Deploy the full Jarvis stack using pre-built Docker images from GitHub Container
     └─────────────┘  └─────────────┘  └───────────┘
          external         external       git repo
 ```
+
+> **jarvis-server** handles HTTP API requests (context assembly, transcript ingestion, memory proxy).
+> **jarvis-worker** runs the ARQ task worker that processes dream jobs (light dream after each session, deep dream on schedule). Both use the same Docker image with different entrypoints.
+> **temporal** is used by memu-server for its memorize workflows — not by jarvis-server directly.
 
 ## Prerequisites
 
@@ -35,7 +39,7 @@ Complete these in order before deploying:
 | 1 | **ai-memory repository** | [Setup Guide](./01-ai-memory-repo.md) | GitHub repo with vault structure + PAT for server access |
 | 2 | **PostgreSQL 17 + pgvector** | (Your own setup) | Database with `jarvis` and `memu` schemas, vector extension enabled |
 | 3 | **Redis** | (Your own setup) | Redis instance accessible from the Docker host |
-| 4 | **Azure OpenAI** | [Setup Guide](./02-azure-openai.md) | API key, endpoint, chat + embedding model deployments |
+| 4 | **OpenAI-compatible LLM** | [Setup Guide](./02-openai-compatible-llm.md) | API key, endpoint, chat + embedding model deployments |
 | 5 | **Docker host** | [Setup Guide](./03-docker-host.md) | Linux machine with Docker Engine + Compose + git |
 | 6 | **Claude Code plugin** | [Setup Guide](./04-claude-code-plugin.md) | Plugin installed in Claude Code, connected to the server |
 
@@ -107,13 +111,17 @@ See `.env.example` for the full list with optional variables and defaults.
 
 ## Services
 
-| Service | Port | Description |
-|---------|------|-------------|
-| jarvis-server | 8000 | Core API — context injection, transcript ingestion, dreaming |
-| memu-server | internal | Semantic memory search engine (pgvector) |
-| memu-ui | 8011 | MemU web interface |
-| temporal | internal | Workflow orchestration for dream pipelines |
-| temporal-ui | 8088* | Temporal admin dashboard (*opt-in, see below) |
+| Service | Port | Image | Description |
+|---------|------|-------|-------------|
+| jarvis-server | 8000 | jarvis-server | Core API — context injection, transcript ingestion, memory proxy |
+| jarvis-worker | — | jarvis-server | ARQ task worker — processes light and deep dream jobs from Redis |
+| memu-server | internal | memu-server | Semantic memory search engine (pgvector) |
+| memu-ui | 8011 | memu-ui | MemU web interface |
+| temporal | internal | temporalio | Workflow orchestration for memu-server memorize pipelines |
+| temporal-ui | 8088* | temporalio | Temporal admin dashboard (*opt-in, see below) |
+
+> `jarvis-server` and `jarvis-worker` use the **same Docker image** (`ghcr.io/parasite2060/jarvis-server`). The server runs `uvicorn`, the worker runs `arq`. Without the worker, transcripts are ingested but dreams never process.
+> `temporal` is a dependency of `memu-server`, not jarvis-server. It orchestrates MemU's embedding and storage workflows.
 
 ## Operations
 
@@ -146,12 +154,21 @@ docker compose -f docker-compose.prod.yml ps
 curl http://localhost:8000/health
 ```
 
+### Worker Logs
+
+```bash
+# Check if the ARQ worker is processing dream jobs
+docker compose -f docker-compose.prod.yml logs -f jarvis-worker
+```
+
 ## Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
 | jarvis-server unhealthy | `docker logs jarvis-jarvis-server-1` — check DB connection |
+| Dreams table empty | Check `jarvis-worker` is running: `docker compose -f docker-compose.prod.yml ps jarvis-worker` |
+| Dreams stuck in queue | `docker logs jarvis-jarvis-worker-1` — check Redis connection and LLM API key |
 | memu-server crash loop | Check `sitecustomize.py` patch is mounted, check PG connection |
-| temporal won't start | Verify PostgreSQL is accessible and credentials are correct |
+| temporal won't start | Verify PostgreSQL is accessible and credentials are correct (temporal is a memu-server dependency) |
 | Dreams not creating PRs | Check `JARVIS_GITHUB_PAT` has `contents:write` + `pull_requests:write` |
 | Context not injected | Check plugin's `serverUrl` matches the server address + port |

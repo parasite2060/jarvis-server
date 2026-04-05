@@ -33,6 +33,22 @@ services:
       retries: 5
       start_period: 10s
 
+  jarvis-worker:
+    image: ghcr.io/parasite2060/jarvis-server:latest
+    restart: unless-stopped
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c", "git config --global --add safe.directory /app/ai-memory && git config --global user.name 'Jarvis Dreamer' && git config --global user.email 'jarvis@yourdomain.dev' && exec arq app.tasks.worker.WorkerSettings"]
+    networks:
+      - jarvis-network
+    volumes:
+      - /opt/ai-memory:/app/ai-memory
+    environment:
+      - GH_TOKEN=${JARVIS_GITHUB_PAT}
+      - GITHUB_TOKEN=${JARVIS_GITHUB_PAT}
+    depends_on:
+      jarvis-server:
+        condition: service_healthy
+
   memu-server:
     image: ghcr.io/parasite2060/memu-server:latest
     restart: unless-stopped

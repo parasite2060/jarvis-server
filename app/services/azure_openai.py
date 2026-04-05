@@ -27,19 +27,20 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
+_PROMPTS_DIR = Path("/app/prompts") if Path("/app/prompts").is_dir() else Path(__file__).parent.parent.parent / "prompts"
+
+
 def _load_prompt() -> str:
     global _prompt_cache  # noqa: PLW0603
     if _prompt_cache is None:
-        prompt_path = Path(__file__).parent.parent.parent / "prompts" / "light_dream_extract.md"
-        _prompt_cache = prompt_path.read_text(encoding="utf-8")
+        _prompt_cache = (_PROMPTS_DIR / "light_dream_extract.md").read_text(encoding="utf-8")
     return _prompt_cache
 
 
 def _load_consolidate_prompt() -> str:
     global _consolidate_prompt_cache  # noqa: PLW0603
     if _consolidate_prompt_cache is None:
-        prompt_path = Path(__file__).parent.parent.parent / "prompts" / "deep_dream_consolidate.md"
-        _consolidate_prompt_cache = prompt_path.read_text(encoding="utf-8")
+        _consolidate_prompt_cache = (_PROMPTS_DIR / "deep_dream_consolidate.md").read_text(encoding="utf-8")
     return _consolidate_prompt_cache
 
 

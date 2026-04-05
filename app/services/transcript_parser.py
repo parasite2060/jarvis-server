@@ -83,7 +83,7 @@ def _summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
 
 def _extract_tool_result(content: str | list[dict[str, Any]]) -> str:
     if isinstance(content, str):
-        return content[:500] if content.strip() else ""
+        return content if content.strip() else ""
 
     if isinstance(content, list):
         parts: list[str] = []
@@ -91,7 +91,7 @@ def _extract_tool_result(content: str | list[dict[str, Any]]) -> str:
             if isinstance(block, dict) and block.get("type") == "text":
                 text = block.get("text", "")
                 if text:
-                    parts.append(text[:500])
+                    parts.append(text)
         return " ".join(parts) if parts else ""
 
     return ""
