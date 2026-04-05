@@ -15,13 +15,75 @@ def _extract_text_content(content: str | list[dict[str, Any]]) -> str | None:
     if isinstance(content, list):
         parts: list[str] = []
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+
+            if block_type == "text":
                 text = block.get("text", "")
                 if text:
                     parts.append(text)
-        return " ".join(parts) if parts else None
+
+            elif block_type == "tool_use":
+                tool_name = block.get("name", "unknown")
+                tool_input = block.get("input", {})
+                summary = _summarize_tool_input(tool_name, tool_input)
+                parts.append(f"[Tool: {tool_name}] {summary}")
+
+            elif block_type == "tool_result":
+                content_inner = block.get("content", "")
+                result_text = _extract_tool_result(content_inner)
+                if result_text:
+                    parts.append(f"[Tool Result] {result_text}")
+
+        return "\n".join(parts) if parts else None
 
     return None
+
+
+def _summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
+    if tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+        desc = tool_input.get("description", "")
+        return desc if desc else (cmd[:200] if cmd else "")
+
+    if tool_name in ("Edit", "Write"):
+        path = tool_input.get("file_path", "")
+        return path
+
+    if tool_name == "Read":
+        return tool_input.get("file_path", "")
+
+    if tool_name in ("Glob", "Grep"):
+        pattern = tool_input.get("pattern", "")
+        return pattern
+
+    if tool_name == "WebSearch":
+        return tool_input.get("query", "")
+
+    if tool_name == "WebFetch":
+        return tool_input.get("url", "")
+
+    if tool_name.startswith("mcp__"):
+        return json.dumps(tool_input, ensure_ascii=False)[:200]
+
+    return json.dumps(tool_input, ensure_ascii=False)[:150]
+
+
+def _extract_tool_result(content: str | list[dict[str, Any]]) -> str:
+    if isinstance(content, str):
+        return content[:500] if content.strip() else ""
+
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if text:
+                    parts.append(text[:500])
+        return " ".join(parts) if parts else ""
+
+    return ""
 
 
 def parse_transcript(raw_jsonl: str) -> str:
@@ -40,7 +102,7 @@ def parse_transcript(raw_jsonl: str) -> str:
             continue
 
         entry_type = entry.get("type")
-        if entry_type not in ("human", "assistant"):
+        if entry_type not in ("human", "assistant", "tool_result"):
             continue
 
         message = entry.get("message")
@@ -55,7 +117,13 @@ def parse_transcript(raw_jsonl: str) -> str:
         if not text:
             continue
 
-        role = "User" if entry_type == "human" else "Assistant"
+        if entry_type == "human":
+            role = "User"
+        elif entry_type == "assistant":
+            role = "Assistant"
+        else:
+            role = "Tool"
+
         turns.append(f"{role}: {text}")
 
     return "\n\n".join(turns)
