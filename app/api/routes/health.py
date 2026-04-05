@@ -1,8 +1,15 @@
+from importlib.metadata import version as pkg_version
+
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 router = APIRouter()
+
+try:
+    _VERSION = pkg_version("jarvis-server")
+except Exception:
+    _VERSION = "0.0.0-dev"
 
 
 class HealthData(BaseModel):
@@ -26,4 +33,4 @@ class HealthResponse(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    return HealthResponse(status="ok", data=HealthData(version="0.1.0"))
+    return HealthResponse(status="ok", data=HealthData(version=_VERSION))

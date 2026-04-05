@@ -83,10 +83,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("jarvis.shutdown.complete")
 
 
+def _get_version() -> str:
+    from importlib.metadata import version
+
+    try:
+        return version("jarvis-server")
+    except Exception:
+        return "0.0.0-dev"
+
+
 def create_app() -> FastAPI:
     application = FastAPI(
         title="Jarvis Server",
-        version="0.1.0",
+        version=_get_version(),
         lifespan=lifespan,
     )
 
