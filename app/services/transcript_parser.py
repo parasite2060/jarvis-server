@@ -123,7 +123,7 @@ def parse_transcript(raw_jsonl: str) -> str:
                 continue
 
         entry_type = entry.get("type")
-        if entry_type not in ("human", "assistant", "tool_result"):
+        if entry_type not in ("human", "user", "assistant"):
             continue
 
         message = entry.get("message")
@@ -134,16 +134,17 @@ def parse_transcript(raw_jsonl: str) -> str:
         if content is None:
             continue
 
-        text = _extract_text_content(content)
-        if not text:
-            continue
-
-        if entry_type == "human":
+        role_msg = message.get("role", "")
+        if entry_type in ("human", "user") and role_msg == "user":
             role = "User"
         elif entry_type == "assistant":
             role = "Assistant"
         else:
-            role = "Tool"
+            role = "User"
+
+        text = _extract_text_content(content)
+        if not text:
+            continue
 
         timestamp = entry.get("timestamp", "")
         prefix = f"[{timestamp}] {role}" if timestamp else role
