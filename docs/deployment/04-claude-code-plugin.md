@@ -7,27 +7,10 @@ The Jarvis Claude Code plugin connects your Claude Code sessions to the Jarvis s
 - [Claude Code](https://claude.ai/claude-code) installed (CLI, desktop app, or IDE extension)
 - Jarvis server running and accessible from your machine
 - Node.js 20+
-- GitHub PAT with `read:packages` scope (for installing the MCP server from GitHub Packages)
 
-## 1. Configure GitHub Packages Auth
+The MCP server (`@parasite2060/jarvis-mcp-server`) is a public package on GitHub Packages — no authentication needed to install. The plugin auto-installs it via `npx` on first start.
 
-The MCP server is published to GitHub Packages. Add this to your `~/.npmrc`:
-
-```bash
-echo "@parasite2060:registry=https://npm.pkg.github.com" >> ~/.npmrc
-echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_PAT" >> ~/.npmrc
-```
-
-The PAT needs `read:packages` scope. You can reuse the same PAT from the ai-memory setup if you add `read:packages` to it, or create a separate one.
-
-**Verify it works:**
-
-```bash
-npx @parasite2060/jarvis-mcp-server --help
-# Should download and attempt to run (will exit with missing env vars — that's OK)
-```
-
-## 2. Clone the Plugin
+## 1. Clone the Plugin
 
 ```bash
 git clone https://github.com/parasite2060/jarvis-claude-plugin.git
@@ -100,6 +83,5 @@ Once configured, the plugin works invisibly:
 |-------|-------|
 | No context injected | Is the server running? `curl http://<HOST>:8000/health` |
 | Authentication failed | Does `apiKey` in plugin match `JARVIS_API_KEY` in `.env`? |
-| MCP tools not available | Run `npx @parasite2060/jarvis-mcp-server` manually — check `.npmrc` auth |
-| `npm ERR! 401` on npx | Your `~/.npmrc` is missing or PAT lacks `read:packages` scope |
+| MCP tools not available | Run `npx --registry=https://npm.pkg.github.com @parasite2060/jarvis-mcp-server` manually to test |
 | Worker not starting | Check `workerPort` isn't in use: `lsof -i :37777` |
