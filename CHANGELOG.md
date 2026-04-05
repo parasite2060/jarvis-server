@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.2](https://github.com/parasite2060/jarvis-server/compare/v0.2.1...v0.2.2) (2026-04-05)
+
+
+### Bug Fixes
+
+* add timestamp to each message in parsed transcript ([d6b5d40](https://github.com/parasite2060/jarvis-server/commit/d6b5d40d6431dce107b4066e6b5f6d641c0fd230))
+* extract session metadata (session_id, cwd, model, timestamp) into parsed transcript header ([d4b9bef](https://github.com/parasite2060/jarvis-server/commit/d4b9bef60272bbe9f0728b6975efe40b6e19858e))
+* include tool calls and results in parsed transcript ([f11e947](https://github.com/parasite2060/jarvis-server/commit/f11e947a713ca3bf203889b7ca93c9392b48ea6e))
+* remove JARVIS_CACHE_DIR from server context — now injected by plugin hook ([aad3c19](https://github.com/parasite2060/jarvis-server/commit/aad3c190f3d064bb569219c525958d4402e78d73))
+
+
+### Documentation
+
+* add Cloudflare Tunnel + Zero Trust setup guide ([d8bb1aa](https://github.com/parasite2060/jarvis-server/commit/d8bb1aa5a6f3c209b3ad307b80031f8770640f01))
+* replace plugin guide with link to plugin README ([d145dd6](https://github.com/parasite2060/jarvis-server/commit/d145dd6c011626e98ee74c3d113c3a7edc4ea4bd))
+* update plugin install command to jarvis-plugin@jarvis ([ddd4e82](https://github.com/parasite2060/jarvis-server/commit/ddd4e8252d939998245c25edc7c386fdc833ff5d))
+
 ## [0.2.1](https://github.com/parasite2060/jarvis-server/compare/v0.2.0...v0.2.1) (2026-04-05)
 
 
