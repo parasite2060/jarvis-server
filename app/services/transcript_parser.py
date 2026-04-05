@@ -32,9 +32,11 @@ def _extract_text_content(content: str | list[dict[str, Any]]) -> str | None:
 
             elif block_type == "tool_result":
                 content_inner = block.get("content", "")
+                is_error = block.get("is_error", False)
                 result_text = _extract_tool_result(content_inner)
                 if result_text:
-                    parts.append(f"[Tool Result] {result_text}")
+                    prefix = "[Tool Error]" if is_error else "[Tool Result]"
+                    parts.append(f"{prefix} {result_text}")
 
         return "\n".join(parts) if parts else None
 
@@ -52,11 +54,20 @@ def _summarize_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
         return path
 
     if tool_name == "Read":
-        return tool_input.get("file_path", "")
+        path = tool_input.get("file_path", "")
+        limit = tool_input.get("limit", "")
+        offset = tool_input.get("offset", "")
+        suffix = ""
+        if offset:
+            suffix += f" offset={offset}"
+        if limit:
+            suffix += f" limit={limit}"
+        return f"{path}{suffix}"
 
     if tool_name in ("Glob", "Grep"):
         pattern = tool_input.get("pattern", "")
-        return pattern
+        path = tool_input.get("path", "")
+        return f"{pattern} in {path}" if path else pattern
 
     if tool_name == "WebSearch":
         return tool_input.get("query", "")
@@ -103,27 +114,29 @@ def parse_transcript(raw_jsonl: str) -> str:
             log.warning("transcript_parser.malformed_line", line_number=line_num)
             continue
 
-        # Extract session metadata from the first system/summary entry
-        if not metadata_extracted:
-            entry_type = entry.get("type", "")
-            if entry_type in ("system", "summary"):
-                session_id = entry.get("session_id", "")
-                cwd = entry.get("cwd", "")
-                model = entry.get("model", "")
-                timestamp = entry.get("timestamp", "")
-                if session_id:
-                    header_parts.append(f"Session: {session_id}")
-                if cwd:
-                    header_parts.append(f"Working Directory: {cwd}")
-                if model:
-                    header_parts.append(f"Model: {model}")
-                if timestamp:
-                    header_parts.append(f"Started: {timestamp}")
-                metadata_extracted = True
-                continue
+        entry_type = entry.get("type", "")
 
-        entry_type = entry.get("type")
-        if entry_type not in ("human", "user", "assistant"):
+        # Extract session metadata from the first user entry that has sessionId
+        if not metadata_extracted and entry_type == "user":
+            session_id = entry.get("sessionId", "")
+            cwd = entry.get("cwd", "")
+            version = entry.get("version", "")
+            git_branch = entry.get("gitBranch", "")
+            timestamp = entry.get("timestamp", "")
+            if session_id:
+                header_parts.append(f"Session: {session_id}")
+            if cwd:
+                header_parts.append(f"Working Directory: {cwd}")
+            if git_branch:
+                header_parts.append(f"Branch: {git_branch}")
+            if version:
+                header_parts.append(f"Claude Code: {version}")
+            if timestamp:
+                header_parts.append(f"Started: {timestamp}")
+            metadata_extracted = True
+
+        # Skip non-conversation entries
+        if entry_type not in ("user", "assistant"):
             continue
 
         message = entry.get("message")
@@ -134,13 +147,7 @@ def parse_transcript(raw_jsonl: str) -> str:
         if content is None:
             continue
 
-        role_msg = message.get("role", "")
-        if entry_type in ("human", "user") and role_msg == "user":
-            role = "User"
-        elif entry_type == "assistant":
-            role = "Assistant"
-        else:
-            role = "User"
+        role = "Assistant" if entry_type == "assistant" else "User"
 
         text = _extract_text_content(content)
         if not text:
