@@ -107,6 +107,7 @@ Before deploying Jarvis, you need the following ready:
 | 5 | **MemU server** — Semantic memory engine (included in Docker Compose). Needs the `memu` database with pgvector | [Guide](docs/deployment/03-memu-server.md) | — |
 | 6 | **Docker host** — Linux machine with Docker Engine + Compose plugin + git installed | — | [Deployment files](docs/deployment/templates-deployment/) |
 | 7 | **Claude Code plugin** — Connects Claude Code sessions to Jarvis for context injection, transcript capture, and memory tools | [Guide](docs/deployment/04-claude-code-plugin.md) | — |
+| 8 | **Cloudflare Tunnel** *(optional)* — Expose the server securely over the internet with Zero Trust Service Token authentication | [Guide](docs/deployment/05-cloudflare-tunnel.md) | — |
 
 ## Deployment
 
