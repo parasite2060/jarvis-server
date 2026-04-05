@@ -88,7 +88,9 @@ def _extract_tool_result(content: str | list[dict[str, Any]]) -> str:
 
 def parse_transcript(raw_jsonl: str) -> str:
     lines = raw_jsonl.split("\n")
+    header_parts: list[str] = []
     turns: list[str] = []
+    metadata_extracted = False
 
     for line_num, line in enumerate(lines, start=1):
         stripped = line.strip()
@@ -100,6 +102,25 @@ def parse_transcript(raw_jsonl: str) -> str:
         except json.JSONDecodeError:
             log.warning("transcript_parser.malformed_line", line_number=line_num)
             continue
+
+        # Extract session metadata from the first system/summary entry
+        if not metadata_extracted:
+            entry_type = entry.get("type", "")
+            if entry_type in ("system", "summary"):
+                session_id = entry.get("session_id", "")
+                cwd = entry.get("cwd", "")
+                model = entry.get("model", "")
+                timestamp = entry.get("timestamp", "")
+                if session_id:
+                    header_parts.append(f"Session: {session_id}")
+                if cwd:
+                    header_parts.append(f"Working Directory: {cwd}")
+                if model:
+                    header_parts.append(f"Model: {model}")
+                if timestamp:
+                    header_parts.append(f"Started: {timestamp}")
+                metadata_extracted = True
+                continue
 
         entry_type = entry.get("type")
         if entry_type not in ("human", "assistant", "tool_result"):
@@ -126,7 +147,9 @@ def parse_transcript(raw_jsonl: str) -> str:
 
         turns.append(f"{role}: {text}")
 
-    return "\n\n".join(turns)
+    header = "\n".join(header_parts)
+    body = "\n\n".join(turns)
+    return f"{header}\n\n---\n\n{body}" if header else body
 
 
 def count_tokens_approximate(text: str) -> int:
