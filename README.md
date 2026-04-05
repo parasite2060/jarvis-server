@@ -11,7 +11,7 @@ Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
                            │
                            ├──► MemU Server (semantic search via pgvector)
                            ├──► Redis + ARQ (async dream pipeline)
-                           ├──► Azure OpenAI (GPT extraction)
+                           ├──► OpenAI-compatible LLM (GPT extraction)
                            ├──► Temporal (workflow orchestration)
                            └──► ai-memory repo (git-tracked vault)
 ```
@@ -22,7 +22,7 @@ Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
 
 - **Context Assembly** — Assembles SOUL.md + IDENTITY.md + MEMORY.md + daily logs into a single payload for Claude Code session injection, cached with 30-minute TTL
 - **Transcript Ingestion** — Receives JSONL transcripts from Claude Code hooks, parses user/assistant messages, stores in PostgreSQL
-- **Light Dreaming** — After each session, extracts decisions (with reasoning), preferences, patterns, corrections, and facts via Azure OpenAI. Appends to MEMORY.md and daily logs, creates git PR
+- **Light Dreaming** — After each session, extracts decisions (with reasoning), preferences, patterns, corrections, and facts via LLM. Appends to MEMORY.md and daily logs, creates git PR
 - **Deep Dreaming** — Nightly consolidation: deduplicates, resolves contradictions, strengthens patterns (3+ occurrences), rewrites MEMORY.md under 200 lines, creates git PR
 - **MemU Proxy** — Single gateway for semantic memory search and storage. Plugin calls Jarvis, Jarvis proxies to MemU
 - **File Manifest** — Serves vault file hashes and content for the plugin's local file sync worker
@@ -50,7 +50,7 @@ Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
 | Database | PostgreSQL + SQLAlchemy (async) + Alembic |
 | Task Queue | ARQ + Redis |
 | Workflows | Temporal |
-| AI | Azure OpenAI (GPT-5.2+) |
+| AI | Any OpenAI-compatible API (Azure OpenAI, OpenAI, etc.) |
 | Semantic Store | MemU (pgvector) |
 | HTTP Client | httpx (async) |
 | Logging | structlog (JSON) |
@@ -94,9 +94,26 @@ alembic/
 tests/                          # pytest-asyncio test suite
 ```
 
-## Quick Start
+## Prerequisites
 
-### With Docker Compose (recommended)
+Before deploying Jarvis, you need the following ready:
+
+| # | Prerequisite | Setup Guide | Template |
+|---|-------------|-------------|----------|
+| 1 | **ai-memory repository** — Private GitHub repo with vault structure (SOUL.md, IDENTITY.md, MEMORY.md, etc.) and a fine-grained PAT for server access | [Guide](docs/deployment/01-ai-memory-repo.md) | [Template files](docs/deployment/templates-ai-memory/) |
+| 2 | **PostgreSQL 17 + pgvector** — Two databases: `jarvis` (server state) and `memu` (semantic search). `vector` extension enabled on `memu` database | — | — |
+| 3 | **Redis 7+** — For async task queue (ARQ). Password authentication recommended | — | — |
+| 4 | **OpenAI-compatible API** — Any provider with an OpenAI-compatible endpoint: Azure OpenAI, OpenAI, local models via Ollama/vLLM, etc. Needs a chat model and an embedding model | [Guide](docs/deployment/02-openai-compatible-llm.md) | — |
+| 5 | **Docker host** — Linux machine with Docker Engine + Compose plugin + git installed | — | [Deployment files](docs/deployment/templates-deployment/) |
+| 6 | **Claude Code plugin** — Connects Claude Code sessions to Jarvis for context injection, transcript capture, and memory tools | [Guide](docs/deployment/04-claude-code-plugin.md) | — |
+
+## Deployment
+
+For production deployment with pre-built GHCR images, see the **[Deployment Guide](docs/deployment/README.md)** — includes quick start, environment variables, operations, and troubleshooting.
+
+## Quick Start (Development)
+
+### With Docker Compose
 
 ```bash
 cp .env.example .env  # fill in required values
@@ -124,19 +141,28 @@ Environment variables (via `.env`):
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `POSTGRES_PASSWORD` | Yes | — | PostgreSQL password |
-| `JARVIS_API_KEY` | Yes | — | API key for authentication |
-| `AZURE_OPENAI_API_KEY` | Yes | — | Azure OpenAI key |
-| `AZURE_OPENAI_ENDPOINT` | Yes | — | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_DEPLOYMENT` | Yes | — | Azure deployment name |
-| `POSTGRES_HOST` | No | `postgres` | PostgreSQL host |
-| `POSTGRES_PORT` | No | `5432` | PostgreSQL port |
-| `POSTGRES_USER` | No | `jarvis` | PostgreSQL user |
-| `POSTGRES_DB` | No | `jarvis` | PostgreSQL database |
+| **Database** | | | |
+| `DB_HOST` | No | `postgres` | PostgreSQL host |
+| `DB_PORT` | No | `5432` | PostgreSQL port |
+| `DB_USER` | No | `jarvis` | PostgreSQL user |
+| `DB_PASSWORD` | Yes | — | PostgreSQL password |
+| `DB_NAME` | No | `jarvis` | PostgreSQL database |
+| **Redis** | | | |
 | `REDIS_URL` | No | `redis://redis:6379/0` | Redis connection URL |
-| `MEMU_BASE_URL` | No | `http://memu-server:8000` | MemU server URL |
-| `AI_MEMORY_REPO_PATH` | No | `/app/ai-memory` | Path to ai-memory git repo |
+| **LLM** | | | |
+| `LLM_API_KEY` | Yes | — | API key for OpenAI-compatible provider |
+| `LLM_ENDPOINT` | Yes | — | Provider endpoint URL |
+| `LLM_MODEL` | Yes | — | Chat model name (e.g., `gpt-4o`) |
+| `LLM_BASE_URL` | Yes | — | OpenAI-compatible base URL (`/v1/`) |
+| `LLM_EMBEDDING_BASE_URL` | Yes | — | Embedding endpoint base URL |
+| `LLM_EMBEDDING_MODEL` | No | `text-embedding-3-large` | Embedding model name |
+| **Jarvis** | | | |
+| `JARVIS_API_KEY` | Yes | — | API key for plugin authentication |
 | `JARVIS_LOG_LEVEL` | No | `INFO` | Log level |
+| `JARVIS_MEMORY_PATH` | No | `/app/ai-memory` | Path to ai-memory git repo |
+| `JARVIS_GITHUB_PAT` | Yes | — | GitHub PAT for ai-memory repo |
+| **MemU** | | | |
+| `MEMU_BASE_URL` | No | `http://memu-server:8000` | MemU server URL |
 
 ## Database Schema
 

@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import verify_api_key
 from app.config import settings
@@ -66,7 +66,7 @@ async def get_config() -> ConfigResponse:
 
 
 @router.patch("/config", response_model=ConfigResponse)
-async def update_config(body: ConfigUpdateRequest) -> ConfigResponse:
+async def update_config(body: ConfigUpdateRequest, request: Request) -> ConfigResponse:
     updates = body.model_dump(exclude_none=True, by_alias=False)
 
     if not updates:
@@ -119,5 +119,8 @@ async def update_config(body: ConfigUpdateRequest) -> ConfigResponse:
 
     changed_fields = list(updates.keys())
     log.info("config.update.completed", changed_fields=changed_fields)
+
+    if "deep_dream_cron" in updates and hasattr(request.app.state, "dream_scheduler"):
+        request.app.state.dream_scheduler.notify_config_changed()
 
     return ConfigResponse(status="ok", data=_to_config_data(merged))

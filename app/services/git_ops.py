@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -8,11 +9,13 @@ import yaml
 from app.config import settings
 from app.core.exceptions import GitOpsError
 from app.core.logging import get_logger
+from app.models.config_schemas import DEFAULT_DEEP_DREAM_CRON
 
 log = get_logger("jarvis.services.git_ops")
 
 DEFAULT_DREAM_CONFIG: dict[str, object] = {
     "auto_merge": True,
+    "deep_dream_cron": DEFAULT_DEEP_DREAM_CRON,
     "max_memory_lines": 200,
 }
 
@@ -20,6 +23,10 @@ DEFAULT_DREAM_CONFIG: dict[str, object] = {
 class GitOpsService:
     def __init__(self) -> None:
         self._last_pull_at: datetime | None = None
+        self._on_config_change: Callable[[], None] | None = None
+
+    def set_config_change_callback(self, callback: Callable[[], None]) -> None:
+        self._on_config_change = callback
 
     async def read_dream_config(self) -> dict[str, object]:
         config_path = Path(settings.ai_memory_repo_path) / "config.yml"
@@ -28,6 +35,7 @@ class GitOpsService:
             parsed: dict[str, object] = yaml.safe_load(content) or {}
             return {
                 "auto_merge": parsed.get("auto_merge", True),
+                "deep_dream_cron": parsed.get("deep_dream_cron", DEFAULT_DEEP_DREAM_CRON),
                 "max_memory_lines": parsed.get("max_memory_lines", 200),
             }
         except Exception:
@@ -76,6 +84,8 @@ class GitOpsService:
             await self.run_git(["pull", "origin", "main"])
             self._last_pull_at = datetime.now(UTC)
             log.info("git_ops.pull.completed")
+            if self._on_config_change:
+                self._on_config_change()
         except GitOpsError as exc:
             log.warning("git_ops.pull.failed", error=str(exc))
 

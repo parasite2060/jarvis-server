@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-os.environ.setdefault("POSTGRES_PASSWORD", "test-password")
+os.environ.setdefault("DB_PASSWORD", "test-password")
 os.environ.setdefault("JARVIS_API_KEY", "test-api-key")
 
 

@@ -40,17 +40,36 @@ async def _start_arq_pool(app: FastAPI) -> None:
     log.info("arq.worker.connected", redis_url=str(settings.redis_url).split("@")[-1])
 
 
+async def _start_dream_scheduler(app: FastAPI) -> None:
+    from app.services.dream_scheduler import DreamScheduler
+    from app.services.git_ops import git_ops_service
+
+    scheduler = DreamScheduler(app.state.redis_pool)
+    app.state.dream_scheduler = scheduler
+    app.state.scheduler_task = asyncio.create_task(scheduler.run())
+    git_ops_service.set_config_change_callback(scheduler.notify_config_changed)
+    log.info("dream_scheduler.started")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("jarvis.startup.begin")
 
     await _run_migrations()
     await _start_arq_pool(app)
+    await _start_dream_scheduler(app)
 
     log.info("jarvis.startup.complete")
     yield
 
     log.info("jarvis.shutdown.begin")
+
+    if hasattr(app.state, "scheduler_task"):
+        app.state.scheduler_task.cancel()
+        try:
+            await app.state.scheduler_task
+        except asyncio.CancelledError:
+            pass
 
     from app.services.azure_openai import close_client as close_openai_client
     from app.services.memu_client import close_client

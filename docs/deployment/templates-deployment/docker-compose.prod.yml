@@ -1,0 +1,108 @@
+# Jarvis — Production Docker Compose
+# ====================================
+# Uses pre-built GHCR images with external PostgreSQL and Redis.
+#
+# Usage:
+#   cp .env.example .env   # fill in required values
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# With Temporal UI (admin):
+#   docker compose -f docker-compose.prod.yml --profile admin up -d
+
+services:
+  # ── Application Services ──────────────────────────────────
+
+  jarvis-server:
+    image: ghcr.io/parasite2060/jarvis-server:latest
+    restart: unless-stopped
+    ports:
+      - "${JARVIS_PORT:-8000}:8000"
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c", "git config --global --add safe.directory /app/ai-memory && git config --global user.name 'Jarvis Dreamer' && git config --global user.email 'jarvis@yourdomain.dev' && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    networks:
+      - jarvis-network
+    volumes:
+      - /opt/ai-memory:/app/ai-memory
+    environment:
+      - GH_TOKEN=${JARVIS_GITHUB_PAT}
+      - GITHUB_TOKEN=${JARVIS_GITHUB_PAT}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  memu-server:
+    image: ghcr.io/parasite2060/memu-server:latest
+    restart: unless-stopped
+    volumes:
+      - ./patches/sitecustomize.py:/app/.venv/lib/python3.13/site-packages/sitecustomize.py:ro
+    environment:
+      - OPENAI_API_KEY=${LLM_API_KEY}
+      - OPENAI_BASE_URL=${LLM_BASE_URL}
+      - EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL}
+      - EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL:-text-embedding-3-large}
+      - DEFAULT_LLM_MODEL=${LLM_MODEL}
+      - POSTGRES_USER=${DB_USER:-jarvis}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_HOST=${DB_HOST}
+      - POSTGRES_PORT=${DB_PORT:-5432}
+      - POSTGRES_DB=memu
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+    depends_on:
+      temporal:
+        condition: service_started
+    networks:
+      - jarvis-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 10s
+      start_period: 30s
+      timeout: 5s
+      retries: 10
+
+  memu-ui:
+    image: ghcr.io/parasite2060/memu-ui:latest
+    restart: unless-stopped
+    ports:
+      - "${MEMU_UI_PORT:-8011}:80"
+    depends_on:
+      memu-server:
+        condition: service_healthy
+    networks:
+      - jarvis-network
+
+  # ── Infrastructure ────────────────────────────────────────
+
+  temporal:
+    image: temporalio/auto-setup:1.25.1
+    restart: unless-stopped
+    environment:
+      - DB=postgres12_pgx
+      - DB_PORT=${DB_PORT:-5432}
+      - POSTGRES_USER=${DB_USER:-jarvis}
+      - POSTGRES_PWD=${DB_PASSWORD}
+      - POSTGRES_SEEDS=${DB_HOST}
+    networks:
+      - jarvis-network
+
+  # ── Admin Tools (opt-in via --profile admin) ──────────────
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    restart: unless-stopped
+    profiles: [admin]
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    ports:
+      - "${TEMPORAL_UI_PORT:-8088}:8080"
+    networks:
+      - jarvis-network
+
+networks:
+  jarvis-network:
+    driver: bridge

@@ -1,0 +1,4 @@
+# Jarvis Dream Configuration
+auto_merge: true
+deep_dream_cron: "0 20 * * *"  # 3AM GMT+7 = 8PM UTC — adjust to your timezone
+max_memory_lines: 200

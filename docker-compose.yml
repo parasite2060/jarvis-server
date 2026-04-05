@@ -26,9 +26,9 @@ services:
     ports:
       - "8010:8000"
     environment:
-      - OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-changeme}
-      - OPENAI_BASE_URL=${AZURE_OPENAI_BASE_URL:-https://api.openai.com/v1}
-      - EMBEDDING_BASE_URL=${AZURE_OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_API_KEY=${LLM_API_KEY:-changeme}
+      - OPENAI_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
       - EMBEDDING_MODEL=text-embedding-3-large
       - DEFAULT_LLM_MODEL=gpt-5.2
       - POSTGRES_USER=jarvis
