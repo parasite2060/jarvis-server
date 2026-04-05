@@ -6,7 +6,7 @@ from typing import Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -104,14 +104,25 @@ def _get_agent() -> Agent[DreamDeps, DreamExtraction]:
 USAGE_LIMITS = UsageLimits(total_tokens_limit=150_000, tool_calls_limit=30)
 
 
-async def run_dream_extraction(deps: DreamDeps) -> DreamExtraction:
+def _count_tool_calls(messages: list[Any]) -> int:
+    count = 0
+    for msg in messages:
+        for part in getattr(msg, "parts", []):
+            if hasattr(part, "tool_name"):
+                count += 1
+    return count
+
+
+async def run_dream_extraction(deps: DreamDeps) -> tuple[DreamExtraction, RunUsage, int]:
     agent = _get_agent()
     result = await agent.run(
         "Extract memories from the transcript using the available tools.",
         deps=deps,
         usage_limits=USAGE_LIMITS,
     )
-    return result.output
+    usage = result.usage()
+    tool_call_count = _count_tool_calls(result.all_messages())
+    return result.output, usage, tool_call_count
 
 
 def extraction_to_dict(extraction: DreamExtraction) -> dict[str, Any]:
@@ -199,7 +210,7 @@ DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_lim
 
 async def run_deep_dream_consolidation(
     deps: DeepDreamDeps,
-) -> ConsolidationOutput:
+) -> tuple[ConsolidationOutput, RunUsage, int]:
     agent = _get_deep_dream_agent()
     result = await agent.run(
         "Consolidate memories using the available tools. "
@@ -207,7 +218,9 @@ async def run_deep_dream_consolidation(
         deps=deps,
         usage_limits=DEEP_DREAM_USAGE_LIMITS,
     )
-    return result.output
+    usage = result.usage()
+    tool_call_count = _count_tool_calls(result.all_messages())
+    return result.output, usage, tool_call_count
 
 
 def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:

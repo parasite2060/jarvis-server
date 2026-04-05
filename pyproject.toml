@@ -40,6 +40,9 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require a real LLM (skip by default)",
+]
 
 [tool.mypy]
 python_version = "3.12"

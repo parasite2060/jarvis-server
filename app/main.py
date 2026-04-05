@@ -71,10 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except asyncio.CancelledError:
             pass
 
-    from app.services.azure_openai import close_client as close_openai_client
     from app.services.memu_client import close_client
 
-    await close_openai_client()
     await close_client()
 
     if hasattr(app.state, "redis_pool"):
