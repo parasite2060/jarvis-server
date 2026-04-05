@@ -9,10 +9,10 @@ Jarvis Server is a Python FastAPI service that ingests conversation transcripts,
 ```
 Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
                            │
+                           ├──► Jarvis Worker (ARQ — processes dream jobs)
                            ├──► MemU Server (semantic search via pgvector)
-                           ├──► Redis + ARQ (async dream pipeline)
+                           ├──► Redis (task queue broker)
                            ├──► OpenAI-compatible LLM (GPT extraction)
-                           ├──► Temporal (workflow orchestration)
                            └──► ai-memory repo (git-tracked vault)
 ```
 
@@ -22,8 +22,8 @@ Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
 
 - **Context Assembly** — Assembles SOUL.md + IDENTITY.md + MEMORY.md + daily logs into a single payload for Claude Code session injection, cached with 30-minute TTL
 - **Transcript Ingestion** — Receives JSONL transcripts from Claude Code hooks, parses user/assistant messages, stores in PostgreSQL
-- **Light Dreaming** — After each session, extracts decisions (with reasoning), preferences, patterns, corrections, and facts via LLM. Appends to MEMORY.md and daily logs, creates git PR
-- **Deep Dreaming** — Nightly consolidation: deduplicates, resolves contradictions, strengthens patterns (3+ occurrences), rewrites MEMORY.md under 200 lines, creates git PR
+- **Light Dreaming** — After each session, a background ARQ worker extracts decisions (with reasoning), preferences, patterns, corrections, and facts via LLM. Appends to MEMORY.md and daily logs, creates git PR
+- **Deep Dreaming** — Scheduled consolidation via ARQ: deduplicates, resolves contradictions, strengthens patterns (3+ occurrences), rewrites MEMORY.md under 200 lines, creates git PR
 - **MemU Proxy** — Single gateway for semantic memory search and storage. Plugin calls Jarvis, Jarvis proxies to MemU
 - **File Manifest** — Serves vault file hashes and content for the plugin's local file sync worker
 - **Git Operations** — Manages ai-memory repo: branching, committing, pushing, PR creation via `gh` CLI
@@ -47,9 +47,9 @@ Claude Code Plugin ──► Jarvis Server ──► PostgreSQL (jarvis schema)
 |-----------|-----------|
 | Framework | FastAPI (async) |
 | Runtime | Python 3.12+ / Uvicorn |
+| Task Worker | ARQ (separate process, same Docker image) |
 | Database | PostgreSQL + SQLAlchemy (async) + Alembic |
-| Task Queue | ARQ + Redis |
-| Workflows | Temporal |
+| Task Queue | Redis (broker for ARQ) |
 | AI | Any OpenAI-compatible API (Azure OpenAI, OpenAI, etc.) |
 | Semantic Store | MemU (pgvector) |
 | HTTP Client | httpx (async) |
@@ -86,7 +86,9 @@ app/
 │   ├── git_ops.py              # Git branch/commit/push/PR operations
 │   └── file_manifest.py        # Manifest building and DB sync
 ├── tasks/
-│   └── worker.py               # ARQ worker (light_dream_task, deep_dream_task)
+│   ├── worker.py               # ARQ WorkerSettings (entrypoint for `arq` CLI)
+│   ├── light_dream_task.py     # Per-session memory extraction
+│   └── deep_dream_task.py      # Scheduled memory consolidation
 ├── config.py                   # Pydantic Settings
 └── main.py                     # App factory with lifespan
 alembic/
@@ -122,7 +124,7 @@ cp .env.example .env  # fill in required values
 docker compose up -d
 ```
 
-This starts all 6 services: jarvis-server, memu-server, memu-ui, postgres, temporal, redis.
+This starts all services: jarvis-server, jarvis-worker, memu-server, memu-ui, postgres, temporal, redis.
 
 ### Local Development
 
@@ -133,9 +135,14 @@ pip install -e ".[dev]"
 # Run migrations
 alembic upgrade head
 
-# Start server
+# Start server (terminal 1)
 uvicorn app.main:app --reload --port 8000
+
+# Start ARQ worker (terminal 2) — required for dream processing
+arq app.tasks.worker.WorkerSettings
 ```
+
+> **Important:** The ARQ worker is a separate process. Without it, conversation transcripts are ingested but dreams are never processed. The worker picks up `light_dream_task` and `deep_dream_task` jobs from Redis.
 
 ## Configuration
 
