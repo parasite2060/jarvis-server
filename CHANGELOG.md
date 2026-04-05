@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/parasite2060/jarvis-server/compare/v0.2.0...v0.2.1) (2026-04-05)
+
+
+### Bug Fixes
+
+* read version from package metadata + opt-in Node.js 24 for Actions ([d61fa66](https://github.com/parasite2060/jarvis-server/commit/d61fa6660a1e2075f2c5ab9f14148472a9b02f1e))
+
 ## [0.2.0](https://github.com/parasite2060/jarvis-server/compare/v0.1.0...v0.2.0) (2026-04-05)
 
 
