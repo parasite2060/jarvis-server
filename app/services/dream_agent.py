@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +10,7 @@ from pydantic_ai.usage import UsageLimits
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.services.dream_models import DreamExtraction
+from app.services.dream_models import ConsolidationOutput, DreamExtraction
 
 log = get_logger("jarvis.services.dream_agent")
 
@@ -123,3 +123,100 @@ def extraction_to_dict(extraction: DreamExtraction) -> dict[str, Any]:
         items = getattr(extraction, category)
         data[category] = [item.model_dump() for item in items]
     return data
+
+
+# ---------------------------------------------------------------------------
+# Deep Dream Agent (memory consolidation)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DeepDreamDeps:
+    source_date: date
+    memu_memories: list[dict[str, Any]]
+    memory_md: str
+    daily_log: str
+    soul_md: str
+
+
+def _load_deep_dream_prompt() -> str:
+    return (_PROMPTS_DIR / "deep_dream_consolidate.md").read_text(encoding="utf-8")
+
+
+_deep_dream_agent: Agent[DeepDreamDeps, ConsolidationOutput] | None = None
+
+
+def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
+    global _deep_dream_agent
+    if _deep_dream_agent is not None:
+        return _deep_dream_agent
+
+    agent: Agent[DeepDreamDeps, ConsolidationOutput] = Agent(
+        _build_model(),
+        deps_type=DeepDreamDeps,
+        output_type=ConsolidationOutput,
+        instructions=_load_deep_dream_prompt(),
+        retries=2,
+        output_retries=3,
+    )
+
+    @agent.tool
+    async def read_memory_file(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return current MEMORY.md content."""
+        return ctx.deps.memory_md
+
+    @agent.tool
+    async def read_daily_log(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return today's daily log content."""
+        return ctx.deps.daily_log
+
+    @agent.tool
+    async def query_memu_memories(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return formatted MemU memories for today."""
+        memories = ctx.deps.memu_memories
+        if not memories:
+            return "No MemU memories for today."
+        lines: list[str] = []
+        for i, mem in enumerate(memories, 1):
+            content = mem.get("content", "")
+            category = mem.get("category", "unknown")
+            vault = mem.get("vault_target", "memory")
+            source_date = mem.get("source_date", "unknown")
+            lines.append(f"[{i}] ({category}/{vault}) {source_date}: {content}")
+        return "\n".join(lines)
+
+    @agent.tool
+    async def read_soul_file(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return SOUL.md alignment reference."""
+        return ctx.deps.soul_md
+
+    _deep_dream_agent = agent
+    return _deep_dream_agent
+
+
+DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
+
+
+async def run_deep_dream_consolidation(
+    deps: DeepDreamDeps,
+) -> ConsolidationOutput:
+    agent = _get_deep_dream_agent()
+    result = await agent.run(
+        "Consolidate memories using the available tools. "
+        "Read all inputs via tools before producing output.",
+        deps=deps,
+        usage_limits=DEEP_DREAM_USAGE_LIMITS,
+    )
+    return result.output
+
+
+def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
+    return {
+        "memory_md": output.memory_md,
+        "daily_summary": output.daily_summary,
+        "stats": output.stats.model_dump(),
+        "vault_updates": {
+            folder: [entry.model_dump() for entry in getattr(output.vault_updates, folder)]
+            for folder in ("decisions", "projects", "patterns", "templates")
+        },
+    }
