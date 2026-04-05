@@ -14,12 +14,9 @@ The MCP server (`@parasite2060/jarvis-mcp-server`) is a public package on GitHub
 
 ```bash
 git clone https://github.com/parasite2060/jarvis-claude-plugin.git
-cd jarvis-claude-plugin
 ```
 
-## 3. Load the Plugin in Claude Code
-
-The MCP server (`@parasite2060/jarvis-mcp-server`) is auto-installed via `npx` when the plugin starts — no manual build required.
+## 2. Load the Plugin in Claude Code
 
 ```bash
 claude code --plugin-dir /path/to/jarvis-claude-plugin
@@ -27,7 +24,7 @@ claude code --plugin-dir /path/to/jarvis-claude-plugin
 
 On first load, Claude Code will prompt you to configure the plugin.
 
-## 4. Configure Plugin Settings
+## 3. Configure Plugin Settings
 
 Claude Code will ask for these `userConfig` values:
 
@@ -40,7 +37,7 @@ Claude Code will ask for these `userConfig` values:
 
 The `apiKey` must match the `JARVIS_API_KEY` in your server's `.env` file.
 
-## 5. Verify the Connection
+## 4. Verify the Connection
 
 Start a new Claude Code session. You should see:
 
@@ -57,7 +54,7 @@ Test it:
 # Claude should reference content from SOUL.md, IDENTITY.md, and MEMORY.md
 ```
 
-## 6. Test MCP Tools
+## 5. Test MCP Tools
 
 ```
 # Search memories
