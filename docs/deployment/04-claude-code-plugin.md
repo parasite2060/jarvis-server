@@ -12,7 +12,7 @@
 
 ```
 /plugin marketplace add parasite2060/jarvis-claude-plugin
-/plugin install jarvis-claude-plugin@jarvis-plugins
+/plugin install jarvis-plugin@jarvis
 ```
 
 ### Manual
