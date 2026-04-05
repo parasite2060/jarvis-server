@@ -22,3 +22,34 @@ class DreamExtraction(BaseModel):
     patterns: list[MemoryItem] = Field(default_factory=list)
     corrections: list[MemoryItem] = Field(default_factory=list)
     facts: list[MemoryItem] = Field(default_factory=list)
+
+
+class ConsolidationStats(BaseModel):
+    total_memories_processed: int = 0
+    duplicates_removed: int = 0
+    contradictions_resolved: int = 0
+    patterns_promoted: int = 0
+    stale_pruned: int = 0
+
+
+class VaultFileEntry(BaseModel):
+    filename: str
+    title: str
+    summary: str = Field(max_length=100)
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    action: Literal["create", "update"]
+
+
+class VaultUpdates(BaseModel):
+    decisions: list[VaultFileEntry] = Field(default_factory=list)
+    projects: list[VaultFileEntry] = Field(default_factory=list)
+    patterns: list[VaultFileEntry] = Field(default_factory=list)
+    templates: list[VaultFileEntry] = Field(default_factory=list)
+
+
+class ConsolidationOutput(BaseModel):
+    memory_md: str
+    daily_summary: str
+    stats: ConsolidationStats = Field(default_factory=ConsolidationStats)
+    vault_updates: VaultUpdates = Field(default_factory=VaultUpdates)
