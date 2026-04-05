@@ -69,6 +69,10 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
     extraction_failed = False
     is_partial = False
     error_message: str | None = None
+    usage_input_tokens: int | None = None
+    usage_output_tokens: int | None = None
+    usage_total_tokens: int | None = None
+    usage_tool_calls: int | None = None
 
     parsed_text = transcript.parsed_text or ""
     deps = DreamDeps(
@@ -81,12 +85,19 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
     )
 
     try:
-        extraction = await run_dream_extraction(deps)
+        extraction, usage, tool_call_count = await run_dream_extraction(deps)
         extraction_result = extraction_to_dict(extraction)
+        usage_input_tokens = usage.request_tokens
+        usage_output_tokens = usage.response_tokens
+        usage_total_tokens = usage.total_tokens
+        usage_tool_calls = tool_call_count
         log.info(
-            "light_dream.extraction.completed",
-            transcript_id=transcript_id,
+            "light_dream.usage",
             dream_id=dream_id,
+            input_tokens=usage_input_tokens,
+            output_tokens=usage_output_tokens,
+            total_tokens=usage_total_tokens,
+            tool_calls=usage_tool_calls,
         )
     except UsageLimitExceeded as exc:
         is_partial = True
@@ -255,6 +266,10 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         else:
             d.status = "completed"
         d.memories_extracted = memories_count
+        d.input_tokens = usage_input_tokens
+        d.output_tokens = usage_output_tokens
+        d.total_tokens = usage_total_tokens
+        d.tool_calls = usage_tool_calls
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         if files_modified is not None:

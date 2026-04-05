@@ -69,6 +69,10 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     # Step 3: PydanticAI consolidation agent
     consolidation_result: dict[str, Any] | None = None
     is_partial = False
+    usage_input_tokens: int | None = None
+    usage_output_tokens: int | None = None
+    usage_total_tokens: int | None = None
+    usage_tool_calls: int | None = None
     try:
         deps = DeepDreamDeps(
             source_date=source_date,
@@ -77,8 +81,20 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             daily_log=daily_log,
             soul_md=soul_md,
         )
-        output = await run_deep_dream_consolidation(deps)
+        output, usage, tool_call_count = await run_deep_dream_consolidation(deps)
         consolidation_result = consolidation_to_dict(output)
+        usage_input_tokens = usage.request_tokens
+        usage_output_tokens = usage.response_tokens
+        usage_total_tokens = usage.total_tokens
+        usage_tool_calls = tool_call_count
+        log.info(
+            "deep_dream.usage",
+            dream_id=dream_id,
+            input_tokens=usage_input_tokens,
+            output_tokens=usage_output_tokens,
+            total_tokens=usage_total_tokens,
+            tool_calls=usage_tool_calls,
+        )
     except UsageLimitExceeded as exc:
         is_partial = True
         log.warning(
@@ -182,6 +198,10 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         d: Dream = result.scalar_one()
         d.status = "partial" if is_partial else "completed"
         d.memories_extracted = stats.get("total_memories_processed", 0)
+        d.input_tokens = usage_input_tokens
+        d.output_tokens = usage_output_tokens
+        d.total_tokens = usage_total_tokens
+        d.tool_calls = usage_tool_calls
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         d.files_modified = files_modified  # type: ignore[assignment]
