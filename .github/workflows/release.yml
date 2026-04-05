@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Pre-release identifier (e.g., alpha.1, beta.2, rc.1). Leave empty for dry run."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +21,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # === PR: build-only validation ===
+  docker-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+
+  # === Automatic release (push to main) ===
   release-please:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -26,30 +48,58 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
 
-  docker-build:
-    if: github.event_name == 'pull_request'
+  # === Manual pre-release (workflow_dispatch) ===
+  manual-release:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease != ''
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
+      - name: Compute pre-release version
+        id: version
+        run: |
+          BASE_VERSION=$(grep 'version' pyproject.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          PRERELEASE="${{ github.event.inputs.prerelease }}"
+          VERSION="${BASE_VERSION}-${PRERELEASE}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Create pre-release tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "v${VERSION}" --notes "Pre-release v${VERSION}" --prerelease
 
+  # === Docker publish (runs after either release type) ===
   docker-publish:
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, manual-release]
+    if: |
+      always() && (
+        needs.release-please.outputs.release_created == 'true' ||
+        (needs.manual-release.result == 'success' && needs.manual-release.outputs.version != '')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          VERSION="${{ needs.release-please.outputs.version || needs.manual-release.outputs.version }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: docker/setup-buildx-action@v4
 
@@ -64,9 +114,9 @@ jobs:
         with:
           images: ghcr.io/parasite2060/jarvis-server
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
-            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.resolve.outputs.is_prerelease == 'false' }}
 
       - uses: docker/build-push-action@v7
         with:
