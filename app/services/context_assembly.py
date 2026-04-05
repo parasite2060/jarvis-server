@@ -12,9 +12,7 @@ MEMORY_TOOLS_TEXT = (
     "- `memory_search`: Search past memories semantically. "
     "Use when you need context beyond what's in this injected memory.\n"
     "- `memory_add`: Store a new memory (decision, preference, pattern, "
-    "correction, fact). Use when you observe important context worth remembering.\n"
-    "- Local vault files are available at the JARVIS_CACHE_DIR path "
-    "for direct file reading via Read/Grep tools."
+    "correction, fact). Use when you observe important context worth remembering."
 )
 
 
