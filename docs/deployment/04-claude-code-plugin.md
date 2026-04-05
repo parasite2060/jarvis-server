@@ -8,17 +8,21 @@ The Jarvis Claude Code plugin connects your Claude Code sessions to the Jarvis s
 - Jarvis server running and accessible from your machine
 - Node.js 20+
 
-The MCP server (`@parasite2060/jarvis-mcp-server`) is a public package on GitHub Packages — no authentication needed to install. The plugin auto-installs it via `npx` on first start.
+## 1. Install the Plugin
 
-## 1. Clone the Plugin
+### From Marketplace (recommended)
+
+In Claude Code, run:
+
+```
+/plugin marketplace add parasite2060/jarvis-claude-plugin
+/plugin install jarvis-claude-plugin@jarvis-plugins
+```
+
+### Manual
 
 ```bash
 git clone https://github.com/parasite2060/jarvis-claude-plugin.git
-```
-
-## 2. Load the Plugin in Claude Code
-
-```bash
 claude code --plugin-dir /path/to/jarvis-claude-plugin
 ```
 
