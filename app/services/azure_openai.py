@@ -21,8 +21,8 @@ def _get_client() -> AsyncOpenAI:
     global _client  # noqa: PLW0603
     if _client is None:
         _client = AsyncOpenAI(
-            base_url=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
+            base_url=settings.llm_base_url or settings.llm_endpoint,
+            api_key=settings.llm_api_key,
         )
     return _client
 
@@ -57,7 +57,7 @@ async def extract_memories(parsed_text: str) -> dict[str, Any]:
 
     try:
         response = await client.chat.completions.create(
-            model=settings.azure_openai_deployment,
+            model=settings.llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": parsed_text},
@@ -142,7 +142,7 @@ async def consolidate_memories(
 
     try:
         response = await client.chat.completions.create(
-            model=settings.azure_openai_deployment,
+            model=settings.llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},

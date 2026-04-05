@@ -2,14 +2,15 @@ import time
 from datetime import UTC, date, datetime
 from typing import Any
 
+from pydantic_ai.exceptions import UsageLimitExceeded
 from sqlalchemy import select
 
 from app.core.exceptions import DreamError
 from app.core.logging import get_logger
 from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
-from app.services.azure_openai import extract_memories
 from app.services.context_cache import invalidate_context_cache
+from app.services.dream_agent import DreamDeps, extraction_to_dict, run_dream_extraction
 from app.services.git_ops import git_ops_service
 from app.services.memory_updater import MemoryItem, update_memory_files
 from app.services.memu_client import memu_memorize
@@ -63,19 +64,40 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         t.status = "processing"
         await session.commit()
 
-    # Step 4: Call GPT-5.2 extraction
+    # Step 4: PydanticAI agent extraction
     extraction_result: dict[str, Any] | None = None
     extraction_failed = False
+    is_partial = False
     error_message: str | None = None
 
+    parsed_text = transcript.parsed_text or ""
+    deps = DreamDeps(
+        transcript_id=transcript_id,
+        parsed_lines=parsed_text.splitlines(),
+        session_id=str(transcript.session_id) if hasattr(transcript, "session_id") else "",
+        project=getattr(transcript, "project", None),
+        token_count=getattr(transcript, "token_count", None),
+        created_at=getattr(transcript, "created_at", None),
+    )
+
     try:
-        extraction_result = await extract_memories(transcript.parsed_text or "")
+        extraction = await run_dream_extraction(deps)
+        extraction_result = extraction_to_dict(extraction)
         log.info(
             "light_dream.extraction.completed",
             transcript_id=transcript_id,
             dream_id=dream_id,
         )
-    except DreamError as exc:
+    except UsageLimitExceeded as exc:
+        is_partial = True
+        error_message = str(exc)
+        log.warning(
+            "light_dream.extraction.partial",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            error=error_message,
+        )
+    except (DreamError, Exception) as exc:
         extraction_failed = True
         error_message = str(exc)
         log.error(
@@ -227,6 +249,9 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         if extraction_failed:
             d.status = "failed"
             d.error_message = error_message
+        elif is_partial:
+            d.status = "partial"
+            d.error_message = error_message
         else:
             d.status = "completed"
         d.memories_extracted = memories_count
@@ -254,6 +279,14 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             "light_dream.failed",
             transcript_id=transcript_id,
             dream_id=dream_id,
+            duration_ms=duration_ms,
+        )
+    elif is_partial:
+        log.warning(
+            "light_dream.partial",
+            transcript_id=transcript_id,
+            dream_id=dream_id,
+            memories_count=memories_count,
             duration_ms=duration_ms,
         )
     else:
