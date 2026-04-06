@@ -14,6 +14,22 @@ class MemoryItem(BaseModel):
     source_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
+class ExtractionSummary(BaseModel):
+    summary: str = ""
+    no_extract: bool = False
+
+
+class FileAction(BaseModel):
+    path: str
+    action: Literal["create", "append", "update", "skip"]
+
+
+class MergeResult(BaseModel):
+    files: list[FileAction] = Field(default_factory=list)
+    summary: str = ""
+
+
+# Kept for backward compat (deep dream ConsolidationOutput still uses it)
 class DreamExtraction(BaseModel):
     no_extract: bool = False
     summary: str = ""

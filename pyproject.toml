@@ -15,7 +15,7 @@ dependencies = [
     "httpx>=0.28",
     "structlog>=24.4",
     "openai>=1.60",
-    "pydantic-ai-slim[openai]>=0.2",
+    "pydantic-ai-slim[openai]>=0.8",
     "pyyaml>=6.0",
     "croniter>=1.3",
 ]
