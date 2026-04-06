@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/parasite2060/jarvis-server/compare/v0.5.0...v0.5.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* increase agent limits (1.5M tokens, 300 tool calls) ([a80908f](https://github.com/parasite2060/jarvis-server/commit/a80908fe6b8c3ef677172294464c142f99cf71ce))
+
 ## [0.5.0](https://github.com/parasite2060/jarvis-server/compare/v0.4.0...v0.5.0) (2026-04-06)
 
 
