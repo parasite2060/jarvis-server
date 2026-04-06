@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/parasite2060/jarvis-server/compare/v0.4.0...v0.5.0) (2026-04-06)
+
+
+### Features
+
+* file-based transcript + store_memory + merge agent + history compaction ([6211cd5](https://github.com/parasite2060/jarvis-server/commit/6211cd5015bcc4627413135780ed5aa2c8196d8b))
+
 ## [0.4.0](https://github.com/parasite2060/jarvis-server/compare/v0.3.0...v0.4.0) (2026-04-05)
 
 
