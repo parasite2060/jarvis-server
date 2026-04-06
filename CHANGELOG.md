@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/parasite2060/jarvis-server/compare/v0.3.0...v0.4.0) (2026-04-05)
+
+
+### Features
+
+* **epic-8:** implement story 8-1 — PydanticAI dream extraction agent ([7c75e9f](https://github.com/parasite2060/jarvis-server/commit/7c75e9f5b38d49d72ea9c0f6933227d88eb37883))
+* **epic-8:** implement story 8-2 — PydanticAI deep dream consolidation agent ([64b420d](https://github.com/parasite2060/jarvis-server/commit/64b420d79f8b5c41c0daf639ca3a1fb24fd26e39))
+* **epic-8:** implement story 8-3 — agent observability and testing ([9f9d5fb](https://github.com/parasite2060/jarvis-server/commit/9f9d5fb1db3833af1d3da8b3d63a9bdf273f1eeb))
+
 ## [0.3.0](https://github.com/parasite2060/jarvis-server/compare/v0.2.3...v0.3.0) (2026-04-05)
 
 
