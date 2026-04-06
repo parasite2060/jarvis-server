@@ -280,7 +280,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
     return _extraction_agent
 
 
-EXTRACTION_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=80)
+EXTRACTION_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
 
 async def run_dream_extraction(
@@ -379,7 +379,7 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
     return _merge_agent
 
 
-MERGE_LIMITS = UsageLimits(total_tokens_limit=150_000, tool_calls_limit=50)
+MERGE_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
 
 async def run_merge(deps: MergeDeps) -> tuple[MergeResult, RunUsage, int]:
