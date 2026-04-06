@@ -173,9 +173,14 @@ class GitOpsService:
         pr_status = "created"
 
         if auto_merge:
-            await self.run_gh(["pr", "merge", "--auto", "--squash", "--delete-branch", pr_url])
-            pr_status = "auto_merge_enabled"
-            log.info("git_ops.pr.auto_merge_enabled", pr_url=pr_url)
+            try:
+                await self.run_gh(
+                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
+                )
+                pr_status = "merged"
+                log.info("git_ops.pr.merged", pr_url=pr_url)
+            except GitOpsError as exc:
+                log.warning("git_ops.pr.merge_failed", pr_url=pr_url, error=str(exc))
 
         return {
             "git_branch": branch_name,
@@ -278,9 +283,14 @@ class GitOpsService:
         pr_status = "created"
 
         if auto_merge:
-            await self.run_gh(["pr", "merge", "--auto", "--squash", "--delete-branch", pr_url])
-            pr_status = "auto_merge_enabled"
-            log.info("git_ops.deep_pr.auto_merge_enabled", pr_url=pr_url)
+            try:
+                await self.run_gh(
+                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
+                )
+                pr_status = "merged"
+                log.info("git_ops.deep_pr.merged", pr_url=pr_url)
+            except GitOpsError as exc:
+                log.warning("git_ops.deep_pr.merge_failed", pr_url=pr_url, error=str(exc))
 
         return {
             "git_branch": branch_name,
