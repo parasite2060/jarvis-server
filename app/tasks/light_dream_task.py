@@ -13,7 +13,7 @@ from app.core.logging import get_logger
 from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.context_cache import invalidate_context_cache
-from app.services.dream_agent import DreamDeps, MergeDeps, run_dream_extraction, run_merge
+from app.services.dream_agent import DreamDeps, RecordDeps, run_dream_extraction, run_record
 from app.services.dream_models import SessionLogEntry
 from app.services.git_ops import git_ops_service
 
@@ -166,7 +166,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 memories_count=memories_count,
             )
 
-        # Step 7: Run merge agent (replaces memory_updater + memu_memorize)
+        # Step 7: Run record agent (writes daily log, tracks reinforcement)
         no_extract = extraction_failed or (
             hasattr(summary, "no_extract") and summary.no_extract
         )
@@ -174,7 +174,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             try:
                 from app.config import settings as app_settings
 
-                merge_deps = MergeDeps(
+                record_deps = RecordDeps(
                     workspace=Path(app_settings.jarvis_memory_path),
                     extracted_memories=memories,
                     source_date=source_date_for_git,
@@ -182,18 +182,18 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     summary=summary.summary if hasattr(summary, "summary") else "",
                     session_log=getattr(summary, "session_log", SessionLogEntry()),
                 )
-                merge_result, merge_usage, merge_tool_calls = await run_merge(merge_deps)
-                files_modified = [{"path": f.path, "action": f.action} for f in merge_result.files]
+                record_result, record_usage, record_tool_calls = await run_record(record_deps)
+                files_modified = [{"path": f.path, "action": f.action} for f in record_result.files]
                 log.info(
-                    "light_dream.merge.completed",
+                    "light_dream.record.completed",
                     transcript_id=transcript_id,
                     dream_id=dream_id,
                     files_count=len(files_modified),
-                    merge_summary=merge_result.summary,
+                    record_summary=record_result.summary,
                 )
             except Exception as exc:
                 log.warning(
-                    "light_dream.merge.failed",
+                    "light_dream.record.failed",
                     transcript_id=transcript_id,
                     dream_id=dream_id,
                     error=str(exc),

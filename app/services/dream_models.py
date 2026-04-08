@@ -57,7 +57,7 @@ class FileAction(BaseModel):
     action: Literal["create", "append", "update", "skip"]
 
 
-class MergeResult(BaseModel):
+class RecordResult(BaseModel):
     files: list[FileAction] = Field(default_factory=list)
     summary: str = ""
 
