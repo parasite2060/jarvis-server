@@ -17,6 +17,7 @@ from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
     ExtractionSummary,
+    LightSleepOutput,
     RecordResult,
     SessionLogEntry,
     VaultFileEntry,
@@ -225,6 +226,53 @@ class TestDeepDreamAgent:
         assert isinstance(result.output, ConsolidationOutput)
         assert usage is not None
         assert isinstance(tool_call_count, int)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Light Sleep Agent Tests
+# ---------------------------------------------------------------------------
+
+
+class TestPhase1LightSleepAgent:
+    def test_agent_has_correct_output_type(self) -> None:
+        agent: Agent[DeepDreamDeps, LightSleepOutput] = Agent(
+            TestModel(),
+            deps_type=DeepDreamDeps,
+            output_type=LightSleepOutput,
+            retries=2,
+            output_retries=3,
+        )
+        assert agent.output_type is LightSleepOutput
+
+    async def test_run_phase1_returns_tuple(
+        self, deep_dream_deps: DeepDreamDeps
+    ) -> None:
+        test_model = TestModel()
+        agent: Agent[DeepDreamDeps, LightSleepOutput] = Agent(
+            test_model,
+            deps_type=DeepDreamDeps,
+            output_type=LightSleepOutput,
+            retries=2,
+            output_retries=3,
+        )
+
+        result = await agent.run(
+            "Inventory and deduplicate memories.", deps=deep_dream_deps
+        )
+        usage = result.usage()
+        tool_call_count = _count_tool_calls(result.all_messages())
+
+        assert isinstance(result.output, LightSleepOutput)
+        assert usage is not None
+        assert isinstance(tool_call_count, int)
+
+    def test_phase1_deps_reuses_deep_dream_deps(
+        self, deep_dream_deps: DeepDreamDeps
+    ) -> None:
+        assert deep_dream_deps.memory_md != ""
+        assert deep_dream_deps.daily_log != ""
+        assert len(deep_dream_deps.memu_memories) > 0
+        assert deep_dream_deps.soul_md != ""
 
 
 class TestConsolidationToDict:

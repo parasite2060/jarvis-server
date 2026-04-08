@@ -105,3 +105,17 @@ class ConsolidationOutput(BaseModel):
     daily_summary: str
     stats: ConsolidationStats = Field(default_factory=ConsolidationStats)
     vault_updates: VaultUpdates = Field(default_factory=VaultUpdates)
+
+
+class ScoredCandidate(BaseModel):
+    content: str
+    category: str
+    reinforcement_count: int = 0
+    contradiction_flag: bool = False
+    source_sessions: list[str] = Field(default_factory=list)
+
+
+class LightSleepOutput(BaseModel):
+    candidates: list[ScoredCandidate] = Field(default_factory=list)
+    duplicates_removed: int = 0
+    contradictions_found: int = 0

@@ -1,5 +1,7 @@
 from app.services.dream_models import (
     ALLOWED_VAULT_TARGETS,
+    LightSleepOutput,
+    ScoredCandidate,
     SessionLogEntry,
     VaultFileEntry,
     VaultUpdates,
@@ -46,6 +48,59 @@ class TestSessionLogEntry:
         assert len(entry.key_exchanges) == 1
         assert entry.concepts[0]["name"] == "DDD"
         assert entry.connections[0]["concept_a"] == "DDD"
+
+
+class TestScoredCandidate:
+    def test_default_values(self) -> None:
+        candidate = ScoredCandidate(content="Use Python 3.12", category="facts")
+        assert candidate.content == "Use Python 3.12"
+        assert candidate.category == "facts"
+        assert candidate.reinforcement_count == 0
+        assert candidate.contradiction_flag is False
+        assert candidate.source_sessions == []
+
+    def test_with_all_fields(self) -> None:
+        candidate = ScoredCandidate(
+            content="Prefer async patterns",
+            category="patterns",
+            reinforcement_count=3,
+            contradiction_flag=True,
+            source_sessions=["session-1", "session-2"],
+        )
+        assert candidate.reinforcement_count == 3
+        assert candidate.contradiction_flag is True
+        assert len(candidate.source_sessions) == 2
+
+
+class TestLightSleepOutput:
+    def test_default_values(self) -> None:
+        output = LightSleepOutput()
+        assert output.candidates == []
+        assert output.duplicates_removed == 0
+        assert output.contradictions_found == 0
+
+    def test_with_candidates(self) -> None:
+        candidates = [
+            ScoredCandidate(content="Use Python", category="decisions"),
+            ScoredCandidate(
+                content="Prefer dark mode",
+                category="preferences",
+                contradiction_flag=True,
+            ),
+        ]
+        output = LightSleepOutput(
+            candidates=candidates,
+            duplicates_removed=3,
+            contradictions_found=1,
+        )
+        assert len(output.candidates) == 2
+        assert output.duplicates_removed == 3
+        assert output.contradictions_found == 1
+        assert output.candidates[1].contradiction_flag is True
+
+    def test_empty_candidates_indicates_skip(self) -> None:
+        output = LightSleepOutput()
+        assert len(output.candidates) == 0
 
 
 class TestVaultUpdates:

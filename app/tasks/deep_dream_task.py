@@ -20,11 +20,26 @@ from app.services.dream_agent import (
     DeepDreamDeps,
     consolidation_to_dict,
     run_deep_dream_consolidation,
+    run_phase1_light_sleep,
 )
 from app.services.git_ops import git_ops_service
+from app.services.memory_files import read_vault_file, write_vault_file
 from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
+
+
+async def _backup_files(source_date: date) -> None:
+    memory_md = await read_vault_file("MEMORY.md")
+    if memory_md:
+        await write_vault_file(
+            f".backups/MEMORY.md.{source_date.isoformat()}.bak", memory_md
+        )
+    daily_log = await read_vault_file(f"dailys/{source_date.isoformat()}.md")
+    if daily_log:
+        await write_vault_file(
+            f".backups/dailys-{source_date.isoformat()}.bak", daily_log
+        )
 
 
 async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
@@ -65,6 +80,43 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     memory_md: str = inputs["memory_md"]
     daily_log: str = inputs["daily_log"]
     soul_md: str = inputs["soul_md"]
+
+    # Step 2b: Backup MEMORY.md and daily log
+    try:
+        await _backup_files(source_date)
+    except Exception as exc:
+        log.warning("deep_dream.backup.failed", dream_id=dream_id, error=str(exc))
+
+    # Step 2c: Phase 1 — Light Sleep (inventory & dedup)
+    phase1_deps = DeepDreamDeps(
+        source_date=source_date,
+        memu_memories=memu_memories,
+        memory_md=memory_md,
+        daily_log=daily_log,
+        soul_md=soul_md,
+    )
+    try:
+        phase1_output, phase1_usage, phase1_tool_calls = await run_phase1_light_sleep(
+            phase1_deps
+        )
+        log.info(
+            "deep_dream.phase1.completed",
+            dream_id=dream_id,
+            candidates=len(phase1_output.candidates),
+            duplicates_removed=phase1_output.duplicates_removed,
+            contradictions_found=phase1_output.contradictions_found,
+            total_tokens=phase1_usage.total_tokens,
+            tool_calls=phase1_tool_calls,
+        )
+    except Exception as exc:
+        log.error("deep_dream.phase1.failed", dream_id=dream_id, error=str(exc))
+        await _mark_failed(dream_id, f"Phase 1 failed: {exc}", start_ms)
+        return
+
+    if not phase1_output.candidates:
+        log.info("deep_dream.phase1.skipped", dream_id=dream_id, reason="no_candidates")
+        await _mark_skipped(dream_id, start_ms)
+        return
 
     # Step 3: PydanticAI consolidation agent
     consolidation_result: dict[str, Any] | None = None

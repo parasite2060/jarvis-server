@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.services.dream_models import (
     ALLOWED_VAULT_TARGETS,
     ExtractionSummary,
+    LightSleepOutput,
     MemoryItem,
     RecordResult,
     SessionLogEntry,
@@ -771,6 +772,78 @@ def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
             )
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Light Sleep Agent
+# ---------------------------------------------------------------------------
+
+
+def _load_phase1_prompt() -> str:
+    return (_PROMPTS_DIR / "deep_dream_phase1_light_sleep.md").read_text(encoding="utf-8")
+
+
+_phase1_agent: Agent[DeepDreamDeps, LightSleepOutput] | None = None
+
+
+def _get_phase1_agent() -> Agent[DeepDreamDeps, LightSleepOutput]:
+    global _phase1_agent
+    if _phase1_agent is not None:
+        return _phase1_agent
+
+    agent: Agent[DeepDreamDeps, LightSleepOutput] = Agent(
+        _build_model(),
+        deps_type=DeepDreamDeps,
+        output_type=LightSleepOutput,
+        instructions=_load_phase1_prompt(),
+        retries=2,
+        output_retries=3,
+        history_processors=[compact_history],
+    )
+
+    @agent.tool
+    async def read_memory_file(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return current MEMORY.md content."""
+        return ctx.deps.memory_md
+
+    @agent.tool
+    async def read_daily_log(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return today's daily log content."""
+        return ctx.deps.daily_log
+
+    @agent.tool
+    async def query_memu_memories(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return formatted MemU memories for today."""
+        memories = ctx.deps.memu_memories
+        if not memories:
+            return "No MemU memories for today."
+        lines: list[str] = []
+        for i, mem in enumerate(memories, 1):
+            content = mem.get("content", "")
+            category = mem.get("category", "unknown")
+            vault = mem.get("vault_target", "memory")
+            source_date = mem.get("source_date", "unknown")
+            lines.append(f"[{i}] ({category}/{vault}) {source_date}: {content}")
+        return "\n".join(lines)
+
+    _phase1_agent = agent
+    return _phase1_agent
+
+
+PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=50_000, tool_calls_limit=10)
+
+
+async def run_phase1_light_sleep(
+    deps: DeepDreamDeps,
+) -> tuple[LightSleepOutput, RunUsage, int]:
+    agent = _get_phase1_agent()
+    result = await agent.run(
+        "Inventory, deduplicate, and score all memories using the available tools. "
+        "Read all inputs via tools before producing output.",
+        deps=deps,
+        usage_limits=PHASE1_USAGE_LIMITS,
+    )
+    return result.output, result.usage(), _count_tool_calls(result.all_messages())
 
 
 # Ensure temp dir parent exists

@@ -7,7 +7,13 @@ from pydantic_ai.usage import RunUsage
 
 from app.core.exceptions import DreamError
 from app.models.tables import Dream
-from app.services.dream_models import ConsolidationOutput, ConsolidationStats, VaultUpdates
+from app.services.dream_models import (
+    ConsolidationOutput,
+    ConsolidationStats,
+    LightSleepOutput,
+    ScoredCandidate,
+    VaultUpdates,
+)
 
 SAMPLE_INPUTS: dict[str, Any] = {
     "memu_memories": [
@@ -103,6 +109,23 @@ SAMPLE_MEMU_SYNC: dict[str, int] = {
     "errors": 0,
 }
 
+SAMPLE_PHASE1_OUTPUT = LightSleepOutput(
+    candidates=[
+        ScoredCandidate(content="Use FastAPI", category="decisions"),
+        ScoredCandidate(content="Prefer httpx", category="preferences"),
+    ],
+    duplicates_removed=1,
+    contradictions_found=0,
+)
+
+SAMPLE_PHASE1_EMPTY = LightSleepOutput(
+    candidates=[],
+    duplicates_removed=0,
+    contradictions_found=0,
+)
+
+SAMPLE_PHASE1_USAGE = RunUsage(input_tokens=50, output_tokens=30, requests=1)
+
 SAMPLE_USAGE = RunUsage(input_tokens=200, output_tokens=100, requests=1)
 
 
@@ -162,12 +185,23 @@ def _pipeline_patches(
     vault_files: list[dict[str, str]] | None = None,
     git_error: Exception | None = None,
     memu_error: Exception | None = None,
+    phase1_output: LightSleepOutput | None = None,
+    phase1_error: Exception | None = None,
 ) -> dict[str, Any]:
     cons_dict = consolidation_dict or SAMPLE_CONSOLIDATION_DICT
     patches: dict[str, Any] = {
         "app.tasks.deep_dream_task.async_session_factory": FakeSessionFactory(dream),
         "app.tasks.deep_dream_task.gather_consolidation_inputs": AsyncMock(
             return_value=SAMPLE_INPUTS
+        ),
+        "app.tasks.deep_dream_task._backup_files": AsyncMock(),
+        "app.tasks.deep_dream_task.run_phase1_light_sleep": AsyncMock(
+            return_value=(
+                phase1_output or SAMPLE_PHASE1_OUTPUT,
+                SAMPLE_PHASE1_USAGE,
+                3,
+            ),
+            side_effect=phase1_error,
         ),
         "app.tasks.deep_dream_task.run_deep_dream_consolidation": AsyncMock(
             return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5)
@@ -569,3 +603,111 @@ async def test_cleanup_branch_called_after_git_failure() -> None:
     # so cleanup_branch is NOT called (no branch to clean up)
     cleanup_mock = patches["app.tasks.deep_dream_task.git_ops_service.cleanup_branch"]
     cleanup_mock.assert_not_called()
+
+
+# ── Phase 1: Light Sleep tests ──
+
+
+@pytest.mark.asyncio
+async def test_phase1_runs_before_consolidation() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase1_mock = patches["app.tasks.deep_dream_task.run_phase1_light_sleep"]
+    phase1_mock.assert_called_once()
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_phase1_empty_candidates_skips_dream() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase1_output=SAMPLE_PHASE1_EMPTY)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "skipped"
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_phase1_failure_marks_failed() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase1_error=RuntimeError("LLM timeout"))
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "failed"
+    assert dream.error_message is not None
+    assert "Phase 1 failed" in dream.error_message
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_backup_called_before_phase1() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    backup_mock = patches["app.tasks.deep_dream_task._backup_files"]
+    backup_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_backup_failure_does_not_block_pipeline() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+    patches["app.tasks.deep_dream_task._backup_files"] = AsyncMock(
+        side_effect=RuntimeError("disk full")
+    )
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+
+
+# ── Backup function unit tests ──
+
+
+@pytest.mark.asyncio
+async def test_backup_files_writes_both_files() -> None:
+    from datetime import date
+
+    mock_read = AsyncMock(side_effect=lambda p: f"content-of-{p}")
+    mock_write = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.read_vault_file", mock_read),
+        patch("app.tasks.deep_dream_task.write_vault_file", mock_write),
+    ):
+        from app.tasks.deep_dream_task import _backup_files
+
+        await _backup_files(date(2026, 4, 5))
+
+    assert mock_write.call_count == 2
+    write_calls = {call.args[0]: call.args[1] for call in mock_write.call_args_list}
+    assert ".backups/MEMORY.md.2026-04-05.bak" in write_calls
+    assert ".backups/dailys-2026-04-05.bak" in write_calls
+
+
+@pytest.mark.asyncio
+async def test_backup_files_skips_missing_files() -> None:
+    from datetime import date
+
+    mock_read = AsyncMock(return_value=None)
+    mock_write = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.read_vault_file", mock_read),
+        patch("app.tasks.deep_dream_task.write_vault_file", mock_write),
+    ):
+        from app.tasks.deep_dream_task import _backup_files
+
+        await _backup_files(date(2026, 4, 5))
+
+    mock_write.assert_not_called()
