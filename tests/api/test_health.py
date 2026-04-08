@@ -22,4 +22,4 @@ async def test_health_returns_version(client: AsyncClient) -> None:
     response = await client.get("/health")
     body = response.json()
 
-    assert body["data"]["version"] == "0.5.1"
+    assert body["data"]["version"] == "0.5.2"
