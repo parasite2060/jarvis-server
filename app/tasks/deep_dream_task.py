@@ -1,5 +1,5 @@
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -18,9 +18,11 @@ from app.services.deep_dream import (
 )
 from app.services.dream_agent import (
     DeepDreamDeps,
+    Phase2Deps,
     consolidation_to_dict,
     run_deep_dream_consolidation,
     run_phase1_light_sleep,
+    run_phase2_rem_sleep,
 )
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import read_vault_file, write_vault_file
@@ -117,6 +119,46 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         log.info("deep_dream.phase1.skipped", dream_id=dream_id, reason="no_candidates")
         await _mark_skipped(dream_id, start_ms)
         return
+
+    # Step 2d: Phase 2 — REM Sleep (cross-session pattern detection)
+    try:
+        daily_logs: dict[str, str] = {}
+        for i in range(7):
+            d = source_date - timedelta(days=i)
+            content = await read_vault_file(f"dailys/{d.isoformat()}.md")
+            if content:
+                daily_logs[d.isoformat()] = content
+
+        vault_index_folders = (
+            "decisions", "patterns", "concepts", "connections", "lessons", "projects",
+        )
+        vault_indexes: dict[str, str] = {}
+        for folder in vault_index_folders:
+            content = await read_vault_file(f"{folder}/_index.md")
+            if content:
+                vault_indexes[folder] = content
+
+        phase2_deps = Phase2Deps(
+            source_date=source_date,
+            daily_logs=daily_logs,
+            vault_indexes=vault_indexes,
+            phase1_candidates=phase1_output.candidates,
+        )
+        phase2_output, phase2_usage, phase2_tool_calls = await run_phase2_rem_sleep(
+            phase2_deps
+        )
+        log.info(
+            "deep_dream.phase2.completed",
+            dream_id=dream_id,
+            themes=len(phase2_output.themes),
+            new_connections=len(phase2_output.new_connections),
+            promotion_candidates=len(phase2_output.promotion_candidates),
+            gaps=len(phase2_output.gaps),
+            total_tokens=phase2_usage.total_tokens,
+            tool_calls=phase2_tool_calls,
+        )
+    except Exception as exc:
+        log.warning("deep_dream.phase2.failed", dream_id=dream_id, error=str(exc))
 
     # Step 3: PydanticAI consolidation agent
     consolidation_result: dict[str, Any] | None = None
