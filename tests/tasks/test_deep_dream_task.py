@@ -10,6 +10,7 @@ from app.models.tables import Dream
 from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
+    HealthReport,
     LightSleepOutput,
     REMSleepOutput,
     ScoredCandidate,
@@ -188,6 +189,17 @@ class FakeSession:
             item.id = self._factory.dream.id
 
 
+SAMPLE_HEALTH_REPORT = HealthReport(
+    orphan_notes=["concepts/orphan.md"],
+    stale_notes=[],
+    missing_frontmatter=[],
+    unresolved_contradictions=[],
+    memory_overflow=False,
+    knowledge_gaps=[],
+    total_issues=1,
+)
+
+
 def _pipeline_patches(
     dream: Dream,
     *,
@@ -202,6 +214,8 @@ def _pipeline_patches(
     phase1_error: Exception | None = None,
     phase2_output: REMSleepOutput | None = None,
     phase2_error: Exception | None = None,
+    health_report: HealthReport | None = None,
+    health_check_error: Exception | None = None,
 ) -> dict[str, Any]:
     cons_dict = consolidation_dict or SAMPLE_CONSOLIDATION_DICT
     patches: dict[str, Any] = {
@@ -253,6 +267,11 @@ def _pipeline_patches(
         ),
         "app.tasks.deep_dream_task.git_ops_service.cleanup_branch": AsyncMock(),
         "app.tasks.deep_dream_task.invalidate_context_cache": AsyncMock(),
+        "app.tasks.deep_dream_task.run_health_checks": AsyncMock(
+            return_value=health_report or SAMPLE_HEALTH_REPORT,
+            side_effect=health_check_error,
+        ),
+        "app.tasks.deep_dream_task.calculate_candidate_score": MagicMock(return_value=0.75),
     }
     return patches
 
@@ -811,3 +830,88 @@ async def test_phase2_gathers_vault_indexes() -> None:
     call_args_list = [call.args[0] for call in read_vault_mock.call_args_list]
     index_calls = [a for a in call_args_list if a.endswith("/_index.md")]
     assert len(index_calls) == 6
+
+
+# ── Phase 3: Deep Sleep (scoring, health checks) tests ──
+
+
+@pytest.mark.asyncio
+async def test_health_checks_run_after_consolidation() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    health_mock = patches["app.tasks.deep_dream_task.run_health_checks"]
+    health_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_health_check_failure_does_not_fail_pipeline() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(
+        dream, health_check_error=RuntimeError("scan failed")
+    )
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_health_report_stored_in_output_raw() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.output_raw is not None
+    assert "health_report=" in dream.output_raw
+
+
+@pytest.mark.asyncio
+async def test_scoring_called_for_each_candidate() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    score_mock = patches["app.tasks.deep_dream_task.calculate_candidate_score"]
+    assert score_mock.call_count == len(SAMPLE_PHASE1_OUTPUT.candidates)
+
+
+@pytest.mark.asyncio
+async def test_phase1_summary_passed_to_consolidation_deps() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_called_once()
+    deps = consolidation_mock.call_args[0][0]
+    assert "Phase 1: Light Sleep Candidates" in deps.phase1_summary
+
+
+@pytest.mark.asyncio
+async def test_phase2_summary_passed_to_consolidation_deps() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    deps = consolidation_mock.call_args[0][0]
+    assert "Phase 2: REM Sleep Analysis" in deps.phase2_summary
+
+
+@pytest.mark.asyncio
+async def test_phase2_failure_gives_empty_phase2_summary() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase2_error=RuntimeError("LLM timeout"))
+
+    await _run_with_patches(patches, trigger="auto")
+
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    deps = consolidation_mock.call_args[0][0]
+    assert deps.phase2_summary == ""

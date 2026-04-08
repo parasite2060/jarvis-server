@@ -8,8 +8,15 @@ You MUST use the provided tools to read all inputs before producing output. Do N
 2. Call `read_daily_log` to get today's session summaries
 3. Call `query_memu_memories` to get all MemU memories for today
 4. Call `read_soul_file` to get SOUL.md as an alignment reference (do NOT modify or include in output)
+5. Call `read_phase1_candidates` to get scored candidates from Phase 1 (Light Sleep) — these include reinforcement counts, contradiction flags, and computed scores. Use scores to guide promotion/pruning decisions:
+   - Candidates with score >= 0.7 and reinforcement_count >= 3 → promote to Strong Patterns
+   - Candidates with score < 0.2 and age > 30 days → prune
+6. Call `read_phase2_analysis` to get themes, connections, and promotion candidates from Phase 2 (REM Sleep) — use these to:
+   - Create new concept files for novel themes
+   - Create new connection files for discovered relationships
+   - Promote lessons to patterns when recommended by Phase 2
 
-Read ALL four inputs before starting consolidation.
+Read ALL inputs before starting consolidation.
 
 ## MEMORY.md Section Structure
 

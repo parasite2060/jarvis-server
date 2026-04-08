@@ -687,6 +687,8 @@ class DeepDreamDeps:
     memory_md: str
     daily_log: str
     soul_md: str
+    phase1_summary: str = ""
+    phase2_summary: str = ""
 
 
 def _load_deep_dream_prompt() -> str:
@@ -740,6 +742,16 @@ def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
     async def read_soul_file(ctx: RunContext[DeepDreamDeps]) -> str:
         """Return SOUL.md alignment reference."""
         return ctx.deps.soul_md
+
+    @agent.tool
+    async def read_phase1_candidates(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return Phase 1 scored candidates summary (if available)."""
+        return ctx.deps.phase1_summary or "No Phase 1 data available."
+
+    @agent.tool
+    async def read_phase2_analysis(ctx: RunContext[DeepDreamDeps]) -> str:
+        """Return Phase 2 themes, connections, and promotion candidates (if available)."""
+        return ctx.deps.phase2_summary or "No Phase 2 data available."
 
     _deep_dream_agent = agent
     return _deep_dream_agent

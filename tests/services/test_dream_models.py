@@ -1,6 +1,7 @@
 from app.services.dream_models import (
     ALLOWED_VAULT_TARGETS,
     ConnectionCandidate,
+    HealthReport,
     KnowledgeGap,
     LightSleepOutput,
     PromotionCandidate,
@@ -232,3 +233,40 @@ class TestREMSleepOutput:
         output = REMSleepOutput()
         assert len(output.themes) == 0
         assert len(output.new_connections) == 0
+
+
+class TestHealthReport:
+    def test_default_values(self) -> None:
+        report = HealthReport()
+        assert report.orphan_notes == []
+        assert report.stale_notes == []
+        assert report.missing_frontmatter == []
+        assert report.unresolved_contradictions == []
+        assert report.memory_overflow is False
+        assert report.knowledge_gaps == []
+        assert report.total_issues == 0
+
+    def test_with_all_fields(self) -> None:
+        report = HealthReport(
+            orphan_notes=["concepts/orphan.md"],
+            stale_notes=["patterns/old.md"],
+            missing_frontmatter=["decisions/no-fm.md"],
+            unresolved_contradictions=["decisions/conflict.md"],
+            memory_overflow=True,
+            knowledge_gaps=["event sourcing"],
+            total_issues=5,
+        )
+        assert len(report.orphan_notes) == 1
+        assert len(report.stale_notes) == 1
+        assert report.memory_overflow is True
+        assert report.total_issues == 5
+
+    def test_model_dump_serializes(self) -> None:
+        report = HealthReport(
+            orphan_notes=["a.md"],
+            total_issues=1,
+        )
+        data = report.model_dump()
+        assert data["orphan_notes"] == ["a.md"]
+        assert data["total_issues"] == 1
+        assert data["memory_overflow"] is False
