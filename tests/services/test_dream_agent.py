@@ -9,6 +9,7 @@ from pydantic_ai.models.test import TestModel
 from app.services.dream_agent import (
     DeepDreamDeps,
     DreamDeps,
+    RecordDeps,
     _count_tool_calls,
     consolidation_to_dict,
 )
@@ -16,6 +17,7 @@ from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
     ExtractionSummary,
+    RecordResult,
     SessionLogEntry,
     VaultFileEntry,
     VaultUpdates,
@@ -296,6 +298,209 @@ class TestConsolidationToDict:
 # ---------------------------------------------------------------------------
 # Utility Tests
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Record Agent Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def record_deps(tmp_path: Path) -> RecordDeps:
+    (tmp_path / "dailys").mkdir()
+    (tmp_path / "decisions").mkdir()
+    vault_file = tmp_path / "decisions" / "use-python.md"
+    vault_file.write_text(
+        "---\ntitle: Use Python\nreinforcement_count: 2\n"
+        "last_reinforced: 2026-04-01\n---\n"
+        "# Use Python\nWe decided to use Python.\n",
+        encoding="utf-8",
+    )
+    return RecordDeps(
+        workspace=tmp_path,
+        source_date=date(2026, 4, 5),
+        session_id="test-record-session",
+        summary="Test session summary",
+        session_log=SessionLogEntry(context="Test context"),
+    )
+
+
+class TestRecordAgent:
+    def test_record_deps_has_workspace(self, record_deps: RecordDeps) -> None:
+        assert record_deps.workspace.is_dir()
+        assert (record_deps.workspace / "dailys").is_dir()
+
+    def test_record_result_model(self) -> None:
+        result = RecordResult(summary="Recorded session")
+        assert result.summary == "Recorded session"
+        assert result.files == []
+
+
+class TestWriteRestriction:
+    @pytest.mark.asyncio
+    async def test_write_to_memory_md_rejected(self, record_deps: RecordDeps) -> None:
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        # Find the write_file tool and call it directly
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="MEMORY.md", content="# Memory\ntest")
+        assert "Error: Record agent can only write to dailys/" in result
+
+    @pytest.mark.asyncio
+    async def test_write_to_decisions_rejected(self, record_deps: RecordDeps) -> None:
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="decisions/new.md", content="test")
+        assert "Error: Record agent can only write to dailys/" in result
+
+    @pytest.mark.asyncio
+    async def test_write_to_dailys_allowed(self, record_deps: RecordDeps) -> None:
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="dailys/2026-04-05.md", content="# Daily Log")
+        assert "Written" in result
+        assert (record_deps.workspace / "dailys" / "2026-04-05.md").read_text() == "# Daily Log"
+
+
+class TestReinforcementTracking:
+    @pytest.mark.asyncio
+    async def test_update_reinforcement_increments_count(self, record_deps: RecordDeps) -> None:
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "update_reinforcement":
+                tool = t
+                break
+        assert tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await tool.function(ctx, file_path="decisions/use-python.md")
+        assert "Reinforcement updated" in result
+
+        updated = (record_deps.workspace / "decisions" / "use-python.md").read_text()
+        assert "reinforcement_count: 3" in updated
+        assert f"last_reinforced: {date.today().isoformat()}" in updated
+
+    @pytest.mark.asyncio
+    async def test_update_reinforcement_no_frontmatter(self, record_deps: RecordDeps) -> None:
+        no_fm = record_deps.workspace / "decisions" / "no-frontmatter.md"
+        no_fm.write_text("# No Frontmatter\nJust content.\n", encoding="utf-8")
+
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "update_reinforcement":
+                tool = t
+                break
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await tool.function(ctx, file_path="decisions/no-frontmatter.md")
+        assert "no YAML frontmatter" in result
+
+    @pytest.mark.asyncio
+    async def test_flag_contradiction(self, record_deps: RecordDeps) -> None:
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "flag_contradiction":
+                tool = t
+                break
+        assert tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await tool.function(
+            ctx, file_path="decisions/use-python.md", reason="New evidence suggests Go"
+        )
+        assert "Contradiction flagged" in result
+
+        updated = (record_deps.workspace / "decisions" / "use-python.md").read_text()
+        assert "has_contradiction: true" in updated
+        assert "contradiction_reason: New evidence suggests Go" in updated
+
+    @pytest.mark.asyncio
+    async def test_update_reinforcement_adds_fields_when_missing(
+        self, record_deps: RecordDeps
+    ) -> None:
+        vault_file = record_deps.workspace / "decisions" / "bare.md"
+        vault_file.write_text(
+            "---\ntitle: Bare File\n---\n# Bare\nContent.\n",
+            encoding="utf-8",
+        )
+
+        from app.services.dream_agent import _get_record_agent
+
+        agent = _get_record_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "update_reinforcement":
+                tool = t
+                break
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await tool.function(ctx, file_path="decisions/bare.md")
+        assert "Reinforcement updated" in result
+
+        updated = vault_file.read_text()
+        assert "reinforcement_count: 1" in updated
+        assert f"last_reinforced: {date.today().isoformat()}" in updated
 
 
 class TestCountToolCalls:

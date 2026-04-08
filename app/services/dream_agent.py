@@ -19,7 +19,7 @@ from app.services.dream_models import (
     ALLOWED_VAULT_TARGETS,
     ExtractionSummary,
     MemoryItem,
-    MergeResult,
+    RecordResult,
     SessionLogEntry,
 )
 
@@ -452,12 +452,12 @@ async def run_dream_extraction(
 
 
 # ---------------------------------------------------------------------------
-# Merge Agent
+# Record Agent
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class MergeDeps:
+class RecordDeps:
     workspace: Path
     extracted_memories: list[MemoryItem] = field(default_factory=list)
     source_date: date = field(default_factory=date.today)
@@ -466,36 +466,50 @@ class MergeDeps:
     session_log: SessionLogEntry = field(default_factory=SessionLogEntry)
 
 
-def _load_merge_prompt() -> str:
-    return (_PROMPTS_DIR / "merge_agent.md").read_text(encoding="utf-8")
+def _load_record_prompt() -> str:
+    return (_PROMPTS_DIR / "record_agent.md").read_text(encoding="utf-8")
 
 
-_merge_agent: Agent[MergeDeps, MergeResult] | None = None
+_record_agent: Agent[RecordDeps, RecordResult] | None = None
 
 
-def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
-    global _merge_agent
-    if _merge_agent is not None:
-        return _merge_agent
+def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
+    global _record_agent
+    if _record_agent is not None:
+        return _record_agent
 
-    agent: Agent[MergeDeps, MergeResult] = Agent(
+    agent: Agent[RecordDeps, RecordResult] = Agent(
         _build_model(),
-        deps_type=MergeDeps,
-        output_type=MergeResult,
-        instructions=_load_merge_prompt(),
+        deps_type=RecordDeps,
+        output_type=RecordResult,
+        instructions=_load_record_prompt(),
         retries=2,
         output_retries=3,
         history_processors=[compact_history],
     )
 
-    _register_file_tools(agent, allow_write=True)
+    _register_file_tools(agent, allow_write=False)
 
     @agent.tool
-    async def get_extracted_memories(ctx: RunContext[MergeDeps]) -> str:
+    async def write_file(ctx: RunContext[RecordDeps], path: str, content: str) -> str:
+        """Write content to a file. Only dailys/ paths are allowed."""
+        if not path.startswith("dailys/"):
+            return (
+                "Error: Record agent can only write to dailys/. "
+                "Knowledge writes are handled by deep dream."
+            )
+        workspace: Path = ctx.deps.workspace
+        resolved = _safe_resolve(workspace, path)
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content, encoding="utf-8")
+        return f"Written {len(content)} chars to {path}"
+
+    @agent.tool
+    async def get_extracted_memories(ctx: RunContext[RecordDeps]) -> str:
         """Return all extracted memories from the extraction agent as formatted text."""
         memories = ctx.deps.extracted_memories
         if not memories:
-            return "No memories to merge."
+            return "No memories to record."
         lines: list[str] = []
         for i, m in enumerate(memories, 1):
             reason = f" (reason: {m.reasoning})" if m.reasoning else ""
@@ -503,8 +517,8 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
         return "\n".join(lines)
 
     @agent.tool
-    async def get_session_log(ctx: RunContext[MergeDeps]) -> str:
-        """Return the structured session log for daily log and knowledge base."""
+    async def get_session_log(ctx: RunContext[RecordDeps]) -> str:
+        """Return the structured session log for daily log recording."""
         parts: list[str] = []
         parts.append(f"Summary: {ctx.deps.summary}")
         sl = ctx.deps.session_log
@@ -540,7 +554,77 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
         return "\n".join(parts) if parts else "No session log available."
 
     @agent.tool
-    async def memu_search(ctx: RunContext[MergeDeps], query: str, limit: int = 10) -> str:
+    async def update_reinforcement(ctx: RunContext[RecordDeps], file_path: str) -> str:
+        """Increment reinforcement_count and update last_reinforced in frontmatter."""
+        workspace: Path = ctx.deps.workspace
+        resolved = _safe_resolve(workspace, file_path)
+        if not resolved.is_file():
+            return f"Error: {file_path} is not a file"
+        text = resolved.read_text(encoding="utf-8")
+        fm_match = re.match(r"^---\n(.*?\n)---\n", text, re.DOTALL)
+        if not fm_match:
+            return f"Error: {file_path} has no YAML frontmatter"
+        frontmatter = fm_match.group(1)
+        body = text[fm_match.end():]
+
+        count_match = re.search(r"^reinforcement_count:\s*(\d+)", frontmatter, re.MULTILINE)
+        if count_match:
+            old_count = int(count_match.group(1))
+            frontmatter = frontmatter.replace(
+                count_match.group(0), f"reinforcement_count: {old_count + 1}"
+            )
+        else:
+            frontmatter += "reinforcement_count: 1\n"
+
+        today_str = date.today().isoformat()
+        reinforced_match = re.search(r"^last_reinforced:\s*.*$", frontmatter, re.MULTILINE)
+        if reinforced_match:
+            frontmatter = frontmatter.replace(
+                reinforced_match.group(0), f"last_reinforced: {today_str}"
+            )
+        else:
+            frontmatter += f"last_reinforced: {today_str}\n"
+
+        resolved.write_text(f"---\n{frontmatter}---\n{body}", encoding="utf-8")
+        return f"Reinforcement updated for {file_path}"
+
+    @agent.tool
+    async def flag_contradiction(
+        ctx: RunContext[RecordDeps], file_path: str, reason: str
+    ) -> str:
+        """Flag a contradiction in a vault file's YAML frontmatter for deep dream review."""
+        workspace: Path = ctx.deps.workspace
+        resolved = _safe_resolve(workspace, file_path)
+        if not resolved.is_file():
+            return f"Error: {file_path} is not a file"
+        text = resolved.read_text(encoding="utf-8")
+        fm_match = re.match(r"^---\n(.*?\n)---\n", text, re.DOTALL)
+        if not fm_match:
+            return f"Error: {file_path} has no YAML frontmatter"
+        frontmatter = fm_match.group(1)
+        body = text[fm_match.end():]
+
+        contradiction_match = re.search(r"^has_contradiction:\s*.*$", frontmatter, re.MULTILINE)
+        if contradiction_match:
+            frontmatter = frontmatter.replace(
+                contradiction_match.group(0), "has_contradiction: true"
+            )
+        else:
+            frontmatter += "has_contradiction: true\n"
+
+        reason_match = re.search(r"^contradiction_reason:\s*.*$", frontmatter, re.MULTILINE)
+        if reason_match:
+            frontmatter = frontmatter.replace(
+                reason_match.group(0), f"contradiction_reason: {reason}"
+            )
+        else:
+            frontmatter += f"contradiction_reason: {reason}\n"
+
+        resolved.write_text(f"---\n{frontmatter}---\n{body}", encoding="utf-8")
+        return f"Contradiction flagged for {file_path}: {reason}"
+
+    @agent.tool
+    async def memu_search(ctx: RunContext[RecordDeps], query: str, limit: int = 10) -> str:
         """Search MemU for semantically similar memories. Use to check for duplicates."""
         from app.services.memu_client import memu_retrieve
 
@@ -558,7 +642,7 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
             return f"MemU search unavailable: {exc}"
 
     @agent.tool
-    async def memu_add(ctx: RunContext[MergeDeps], content: str, category: str) -> str:
+    async def memu_add(ctx: RunContext[RecordDeps], content: str, category: str) -> str:
         """Store a memory to MemU for semantic indexing."""
         from app.services.memu_client import memu_memorize
 
@@ -568,20 +652,20 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
         except Exception as exc:
             return f"MemU add failed: {exc}"
 
-    _merge_agent = agent
-    return _merge_agent
+    _record_agent = agent
+    return _record_agent
 
 
-MERGE_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
+RECORD_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
 
-async def run_merge(deps: MergeDeps) -> tuple[MergeResult, RunUsage, int]:
-    agent = _get_merge_agent()
+async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int]:
+    agent = _get_record_agent()
     result = await agent.run(
-        "Write the session to the daily log and distill insights into the knowledge base. "
-        "Call get_session_log() and get_extracted_memories() first to see what needs to be merged.",
+        "Record the session to the daily log and track reinforcement signals. "
+        "Call get_session_log() first.",
         deps=deps,
-        usage_limits=MERGE_LIMITS,
+        usage_limits=RECORD_LIMITS,
     )
     return result.output, result.usage(), _count_tool_calls(result.all_messages())
 

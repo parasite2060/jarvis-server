@@ -11,7 +11,7 @@ from app.services.dream_models import (
     ExtractionSummary,
     FileAction,
     MemoryItem,
-    MergeResult,
+    RecordResult,
     SessionLogEntry,
 )
 
@@ -48,7 +48,7 @@ NO_EXTRACT_SUMMARY = ExtractionSummary(
     session_log=SessionLogEntry(),
 )
 
-SAMPLE_MERGE_RESULT = MergeResult(
+SAMPLE_RECORD_RESULT = RecordResult(
     files=[
         FileAction(path="MEMORY.md", action="append"),
         FileAction(path="dailys/2026-03-31.md", action="create"),
@@ -171,7 +171,7 @@ async def test_full_pipeline_success() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -185,7 +185,7 @@ async def test_full_pipeline_success() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -228,7 +228,7 @@ async def test_no_extract_pipeline() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -253,7 +253,7 @@ async def test_extraction_failure_marks_dream_failed() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -278,7 +278,7 @@ async def test_merge_failure_doesnt_fail_dream() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.config.settings") as mock_settings,
     ):
         mock_settings.jarvis_memory_path = "/tmp/test-memory"
@@ -301,7 +301,7 @@ async def test_transcript_not_found_returns_early() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -317,7 +317,7 @@ async def test_duration_ms_is_recorded() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -331,7 +331,7 @@ async def test_duration_ms_is_recorded() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -382,7 +382,7 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock(memories=all_memories)
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -396,7 +396,7 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -437,7 +437,7 @@ async def test_full_pipeline_with_merge_and_files() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -451,7 +451,7 @@ async def test_full_pipeline_with_merge_and_files() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -479,7 +479,7 @@ async def test_no_extract_skips_merge() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -495,7 +495,7 @@ async def test_full_pipeline_with_git_pr() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -509,7 +509,7 @@ async def test_full_pipeline_with_git_pr() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -536,7 +536,7 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(side_effect=RuntimeError("git push failed"))
     mock_cleanup = AsyncMock()
     mock_invalidate = AsyncMock()
@@ -544,7 +544,7 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -577,7 +577,7 @@ async def test_no_files_modified_skips_git_ops() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -598,7 +598,7 @@ async def test_context_cache_invalidated_after_pr() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-100000",
@@ -612,7 +612,7 @@ async def test_context_cache_invalidated_after_pr() -> None:
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
-        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
