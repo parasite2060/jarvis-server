@@ -5,6 +5,7 @@ import pytest
 
 from app.services.memory_updater import (
     MemoryItem,
+    SessionContext,
     append_to_daily_log,
     append_to_memory_md,
     update_memory_files,
@@ -14,8 +15,8 @@ from app.services.memory_updater import (
 @pytest.fixture()
 def mock_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
-        "app.services.memory_files.settings.ai_memory_repo_path",
-        str(tmp_path),
+        "app.services.memory_files.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
     )
     (tmp_path / "dailys").mkdir()
     return tmp_path
@@ -120,7 +121,14 @@ async def test_append_to_memory_md_no_overflow_flag(mock_vault: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_append_to_daily_log_creates_new_file(mock_vault: Path) -> None:
-    result = await append_to_daily_log(SAMPLE_MEMORIES, "First session", date(2026, 3, 31))
+    ctx = SessionContext(
+        context="Worked on server setup and tooling choices.",
+        decisions_made=["Chose FastAPI — async-first and Pydantic"],
+        lessons_learned=["Pydantic v2 properties need underlying field patching"],
+    )
+    result = await append_to_daily_log(
+        SAMPLE_MEMORIES, "First session", date(2026, 3, 31), session_ctx=ctx
+    )
 
     assert result["path"] == "dailys/2026-03-31.md"
     assert result["action"] == "create"
@@ -129,9 +137,13 @@ async def test_append_to_daily_log_creates_new_file(mock_vault: Path) -> None:
     assert "type: daily" in content
     assert "tags: [daily, sessions]" in content
     assert "created: 2026-03-31" in content
-    assert "## Session 1" in content
-    assert "**Summary:** First session" in content
-    assert "- [decision] Use FastAPI for server -- async-first and Pydantic" in content
+    assert "# Daily Log: 2026-03-31" in content
+    assert "## Sessions" in content
+    assert "### Session 1:" in content
+    assert "First session" in content
+    assert "**Context**: Worked on server setup" in content
+    assert "**Decisions Made**:" in content
+    assert "**Lessons Learned**:" in content
 
 
 @pytest.mark.asyncio
@@ -143,11 +155,10 @@ async def test_append_to_daily_log_appends_to_existing(mock_vault: Path) -> None
         "created: 2026-03-31\n"
         "updated: 2026-03-31\n"
         "---\n\n"
-        "# 2026-03-31\n\n"
-        "## Session 1\n\n"
-        "**Summary:** Earlier session\n\n"
-        "**Memories extracted:**\n"
-        "- [fact] Old fact\n"
+        "# Daily Log: 2026-03-31\n\n"
+        "## Sessions\n\n"
+        "### Session 1: 10:00 - Earlier session\n\n"
+        "**Context**: Did some earlier work\n"
     )
     (mock_vault / "dailys" / "2026-03-31.md").write_text(existing, encoding="utf-8")
 
@@ -156,10 +167,10 @@ async def test_append_to_daily_log_appends_to_existing(mock_vault: Path) -> None
     assert result["action"] == "append"
 
     content = (mock_vault / "dailys" / "2026-03-31.md").read_text(encoding="utf-8")
-    assert "## Session 1" in content
-    assert "## Session 2" in content
-    assert "**Summary:** Second session" in content
-    assert "- [fact] Old fact" in content
+    assert "### Session 1:" in content
+    assert "### Session 2:" in content
+    assert "Second session" in content
+    assert "Earlier session" in content
 
 
 @pytest.mark.asyncio
@@ -171,7 +182,8 @@ async def test_append_to_daily_log_updates_frontmatter(mock_vault: Path) -> None
         "created: 2026-03-30\n"
         "updated: 2026-03-30\n"
         "---\n\n"
-        "# 2026-03-30\n"
+        "# Daily Log: 2026-03-30\n\n"
+        "## Sessions\n"
     )
     (mock_vault / "dailys" / "2026-03-31.md").write_text(existing, encoding="utf-8")
 
@@ -179,6 +191,22 @@ async def test_append_to_daily_log_updates_frontmatter(mock_vault: Path) -> None
 
     content = (mock_vault / "dailys" / "2026-03-31.md").read_text(encoding="utf-8")
     assert "updated: 2026-03-31" in content
+
+
+@pytest.mark.asyncio
+async def test_append_to_daily_log_omits_empty_sections(mock_vault: Path) -> None:
+    ctx = SessionContext(context="Quick debugging session.")
+    result = await append_to_daily_log(
+        SAMPLE_MEMORIES, "Debug session", date(2026, 3, 31), session_ctx=ctx
+    )
+
+    assert result["action"] == "create"
+    content = (mock_vault / "dailys" / "2026-03-31.md").read_text(encoding="utf-8")
+    assert "**Context**: Quick debugging session." in content
+    assert "**Key Exchanges**" not in content
+    assert "**Decisions Made**" not in content
+    assert "**Lessons Learned**" not in content
+    assert "**Action Items**" not in content
 
 
 @pytest.mark.asyncio

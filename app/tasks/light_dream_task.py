@@ -14,6 +14,7 @@ from app.models.db import async_session_factory
 from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import DreamDeps, MergeDeps, run_dream_extraction, run_merge
+from app.services.dream_models import SessionLogEntry
 from app.services.git_ops import git_ops_service
 
 log = get_logger("jarvis.tasks.light_dream")
@@ -179,6 +180,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     source_date=source_date_for_git,
                     session_id=deps.session_id,
                     summary=summary.summary if hasattr(summary, "summary") else "",
+                    session_log=getattr(summary, "session_log", SessionLogEntry()),
                 )
                 merge_result, merge_usage, merge_tool_calls = await run_merge(merge_deps)
                 files_modified = [{"path": f.path, "action": f.action} for f in merge_result.files]

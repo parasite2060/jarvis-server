@@ -6,18 +6,17 @@ from httpx import AsyncClient
 
 API_KEY = "test-api-key"
 AUTH_HEADER = {"Authorization": f"Bearer {API_KEY}"}
-SETTINGS_ATTR = "app.services.file_manifest.settings.ai_memory_repo_path"
-FILES_SETTINGS_ATTR = "app.api.routes.files.settings.ai_memory_repo_path"
+MANIFEST_SETTINGS = "app.services.file_manifest.settings"
+FILES_SETTINGS = "app.api.routes.files.settings"
+MEMORY_FILES_SETTINGS = "app.services.memory_files.settings"
 
 
 @pytest.fixture()
 def mock_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr(SETTINGS_ATTR, str(tmp_path))
-    monkeypatch.setattr(FILES_SETTINGS_ATTR, str(tmp_path))
-    monkeypatch.setattr(
-        "app.services.memory_files.settings.ai_memory_repo_path",
-        str(tmp_path),
-    )
+    _mock = type("_S", (), {"ai_memory_repo_path": str(tmp_path)})()
+    monkeypatch.setattr(MANIFEST_SETTINGS, _mock)
+    monkeypatch.setattr(FILES_SETTINGS, _mock)
+    monkeypatch.setattr(MEMORY_FILES_SETTINGS, _mock)
     (tmp_path / "SOUL.md").write_text("# Soul\n\nTest soul content", encoding="utf-8")
     (tmp_path / "IDENTITY.md").write_text("# Identity\n\nTest identity", encoding="utf-8")
     (tmp_path / "MEMORY.md").write_text("# Memory\n\nTest memory", encoding="utf-8")

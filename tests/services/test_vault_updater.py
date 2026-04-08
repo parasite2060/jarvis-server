@@ -7,6 +7,7 @@ import pytest
 
 from app.services.vault_updater import (
     FOLDER_TYPE_MAP,
+    VAULT_FOLDERS,
     build_frontmatter,
     extract_created_date,
     regenerate_index,
@@ -415,3 +416,191 @@ class TestUpdateFileManifest:
             patch("app.services.vault_updater.async_session_factory", mock_factory),
         ):
             await update_file_manifest(files_modified)
+
+
+class TestVaultFoldersIncludeNewTypes:
+    def test_vault_folders_includes_new_types(self) -> None:
+        expected_new = {"concepts", "connections", "lessons", "references"}
+        assert expected_new.issubset(set(VAULT_FOLDERS))
+
+    def test_vault_folders_includes_original_types(self) -> None:
+        expected_original = {"decisions", "projects", "patterns", "templates"}
+        assert expected_original.issubset(set(VAULT_FOLDERS))
+
+    def test_folder_type_map_covers_all_vault_folders(self) -> None:
+        for folder in VAULT_FOLDERS:
+            assert folder in FOLDER_TYPE_MAP, f"{folder} missing from FOLDER_TYPE_MAP"
+
+    def test_folder_type_map_new_entries(self) -> None:
+        assert FOLDER_TYPE_MAP["concepts"] == "concept"
+        assert FOLDER_TYPE_MAP["connections"] == "connection"
+        assert FOLDER_TYPE_MAP["lessons"] == "lesson"
+        assert FOLDER_TYPE_MAP["references"] == "reference"
+
+
+class TestWriteVaultFolderFileNewTypes:
+    @pytest.mark.asyncio
+    async def test_creates_concept_file(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "clean-arch.md",
+            "title": "Clean Architecture",
+            "summary": "Core concept",
+            "content": "# Clean Architecture\n\n## What It Is\n\nSeparation of concerns...",
+            "tags": ["architecture"],
+            "action": "create",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("concepts", entry, SOURCE_DATE)
+
+        assert result == {"path": "concepts/clean-arch.md", "action": "create"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "type: concept" in written_content
+
+    @pytest.mark.asyncio
+    async def test_creates_connection_file(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "firmware-backend.md",
+            "title": "Firmware to Backend",
+            "summary": "Cross-domain mapping",
+            "content": "# Firmware to Backend\n\n## Relationship\n\nBoth use...",
+            "tags": ["cross-domain"],
+            "action": "create",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("connections", entry, SOURCE_DATE)
+
+        assert result == {"path": "connections/firmware-backend.md", "action": "create"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "type: connection" in written_content
+
+    @pytest.mark.asyncio
+    async def test_creates_lesson_file(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "mock-db-failure.md",
+            "title": "Mock DB Migration Failure",
+            "summary": "DB mocks hid migration bug",
+            "content": "# Mock DB Migration Failure\n\n## Lesson\n\nUse real DB...",
+            "tags": ["testing"],
+            "action": "create",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("lessons", entry, SOURCE_DATE)
+
+        assert result == {"path": "lessons/mock-db-failure.md", "action": "create"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "type: lesson" in written_content
+
+    @pytest.mark.asyncio
+    async def test_creates_reference_file(self) -> None:
+        entry: dict[str, Any] = {
+            "filename": "nestjs-coding-style.md",
+            "title": "NestJS Coding Style",
+            "summary": "Coding conventions",
+            "content": "# NestJS Coding Style\n\nPascalCase classes...",
+            "tags": ["standards"],
+            "action": "create",
+        }
+        mock_write = AsyncMock()
+        mock_read = AsyncMock(return_value=None)
+
+        with (
+            patch("app.services.vault_updater.write_vault_file", mock_write),
+            patch("app.services.vault_updater.read_vault_file", mock_read),
+        ):
+            result = await write_vault_folder_file("references", entry, SOURCE_DATE)
+
+        assert result == {"path": "references/nestjs-coding-style.md", "action": "create"}
+        written_content: str = mock_write.call_args[0][1]
+        assert "type: reference" in written_content
+
+
+class TestUpdateVaultFoldersNewTypes:
+    @pytest.mark.asyncio
+    async def test_processes_new_folder_types(self) -> None:
+        vault_updates: dict[str, list[dict[str, Any]]] = {
+            "concepts": [
+                {
+                    "filename": "c.md",
+                    "title": "C",
+                    "summary": "Sum",
+                    "content": "# C\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "connections": [
+                {
+                    "filename": "conn.md",
+                    "title": "Conn",
+                    "summary": "Sum",
+                    "content": "# Conn\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "lessons": [
+                {
+                    "filename": "l.md",
+                    "title": "L",
+                    "summary": "Sum",
+                    "content": "# L\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+            "references": [
+                {
+                    "filename": "r.md",
+                    "title": "R",
+                    "summary": "Sum",
+                    "content": "# R\n\nContent",
+                    "tags": [],
+                    "action": "create",
+                }
+            ],
+        }
+
+        mock_write_file = AsyncMock(
+            side_effect=lambda f, e, d: {"path": f"{f}/{e['filename']}", "action": "create"}
+        )
+        mock_regen = AsyncMock(
+            side_effect=lambda f, d, summaries=None: {
+                "path": f"{f}/_index.md",
+                "action": "rewrite",
+            }
+        )
+
+        with (
+            patch("app.services.vault_updater.write_vault_folder_file", mock_write_file),
+            patch("app.services.vault_updater.regenerate_index", mock_regen),
+        ):
+            results = await update_vault_folders(vault_updates, SOURCE_DATE)
+
+        assert len(results) == 8  # 4 files + 4 indexes
+        paths = [r["path"] for r in results]
+        assert "concepts/c.md" in paths
+        assert "connections/conn.md" in paths
+        assert "lessons/l.md" in paths
+        assert "references/r.md" in paths
+        assert "concepts/_index.md" in paths
+        assert "connections/_index.md" in paths
+        assert "lessons/_index.md" in paths
+        assert "references/_index.md" in paths

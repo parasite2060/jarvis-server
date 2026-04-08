@@ -5,12 +5,15 @@ import pytest
 
 from app.services.context_assembly import MAX_MEMORY_LINES, assemble_context
 
-SETTINGS_ATTR = "app.services.memory_files.settings.ai_memory_repo_path"
+SETTINGS_MODULE = "app.services.memory_files.settings"
 
 
 @pytest.fixture()
 def mock_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr(SETTINGS_ATTR, str(tmp_path))
+    monkeypatch.setattr(
+        SETTINGS_MODULE,
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
 
     soul = "---\ntype: soul\n---\n# Soul\nSoul content"
     (tmp_path / "SOUL.md").write_text(soul, encoding="utf-8")
@@ -89,7 +92,10 @@ async def test_assemble_context_includes_daily_logs(
 async def test_assemble_context_skips_missing_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(SETTINGS_ATTR, str(tmp_path))
+    monkeypatch.setattr(
+        SETTINGS_MODULE,
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
 
     (tmp_path / "SOUL.md").write_text("# Soul\nMinimal", encoding="utf-8")
 

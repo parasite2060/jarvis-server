@@ -12,7 +12,7 @@ def _make_jsonl(*entries: dict) -> str:  # type: ignore[type-arg]
 class TestParseTranscript:
     def test_extracts_human_and_assistant_text(self) -> None:
         raw = _make_jsonl(
-            {"type": "human", "message": {"role": "user", "content": "Hello"}},
+            {"type": "user", "message": {"role": "user", "content": "Hello"}},
             {"type": "assistant", "message": {"role": "assistant", "content": "Hi there"}},
         )
 
@@ -22,7 +22,7 @@ class TestParseTranscript:
 
     def test_skips_tool_use_and_tool_result(self) -> None:
         raw = _make_jsonl(
-            {"type": "human", "message": {"role": "user", "content": "Fix the bug"}},
+            {"type": "user", "message": {"role": "user", "content": "Fix the bug"}},
             {"type": "tool_use", "name": "Read", "input": {"file_path": "/src/auth.ts"}},
             {"type": "tool_result", "name": "Read", "output": "export function auth()..."},
             {"type": "assistant", "message": {"role": "assistant", "content": "Done"}},
@@ -36,7 +36,7 @@ class TestParseTranscript:
     def test_skips_progress_and_system(self) -> None:
         raw = _make_jsonl(
             {"type": "system", "message": {"content": "system prompt"}},
-            {"type": "human", "message": {"role": "user", "content": "Hi"}},
+            {"type": "user", "message": {"role": "user", "content": "Hi"}},
             {"type": "progress", "data": "thinking..."},
             {"type": "assistant", "message": {"role": "assistant", "content": "Hello"}},
         )
@@ -62,11 +62,13 @@ class TestParseTranscript:
 
         result = parse_transcript(raw)
 
-        assert result == "Assistant: Found the issue. Fixed it."
+        assert "Found the issue." in result
+        assert "Fixed it." in result
+        assert "[Tool: Edit]" in result
 
     def test_handles_content_as_string(self) -> None:
         raw = _make_jsonl(
-            {"type": "human", "message": {"role": "user", "content": "Simple text"}},
+            {"type": "user", "message": {"role": "user", "content": "Simple text"}},
         )
 
         result = parse_transcript(raw)
@@ -75,7 +77,7 @@ class TestParseTranscript:
 
     def test_handles_malformed_jsonl_lines(self) -> None:
         raw = (
-            '{"type":"human","message":{"role":"user","content":"Hello"}}\n'
+            '{"type":"user","message":{"role":"user","content":"Hello"}}\n'
             "NOT JSON\n"
             '{"type":"assistant","message":{"role":"assistant","content":"Hi"}}'
         )
@@ -89,7 +91,7 @@ class TestParseTranscript:
 
     def test_handles_missing_message_field(self) -> None:
         raw = _make_jsonl(
-            {"type": "human"},
+            {"type": "user"},
             {"type": "assistant", "message": {"role": "assistant", "content": "Response"}},
         )
 
@@ -99,7 +101,7 @@ class TestParseTranscript:
 
     def test_handles_missing_content_field(self) -> None:
         raw = _make_jsonl(
-            {"type": "human", "message": {"role": "user"}},
+            {"type": "user", "message": {"role": "user"}},
             {"type": "assistant", "message": {"role": "assistant", "content": "OK"}},
         )
 
@@ -109,7 +111,7 @@ class TestParseTranscript:
 
     def test_handles_empty_content_string(self) -> None:
         raw = _make_jsonl(
-            {"type": "human", "message": {"role": "user", "content": ""}},
+            {"type": "user", "message": {"role": "user", "content": ""}},
             {"type": "assistant", "message": {"role": "assistant", "content": "Reply"}},
         )
 

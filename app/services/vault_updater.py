@@ -15,13 +15,26 @@ from app.services.memory_files import read_vault_file, write_vault_file
 
 log = get_logger("jarvis.services.vault_updater")
 
-VAULT_FOLDERS = ("decisions", "projects", "patterns", "templates")
+VAULT_FOLDERS = (
+    "decisions",
+    "projects",
+    "patterns",
+    "templates",
+    "concepts",
+    "connections",
+    "lessons",
+    "references",
+)
 
 FOLDER_TYPE_MAP: dict[str, str] = {
     "decisions": "decision",
     "projects": "project",
     "patterns": "pattern",
     "templates": "template",
+    "concepts": "concept",
+    "connections": "connection",
+    "lessons": "lesson",
+    "references": "reference",
 }
 
 

@@ -2,9 +2,31 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ALLOWED_VAULT_TARGETS = ("memory", "decisions", "patterns", "projects", "templates")
+ALLOWED_VAULT_TARGETS = (
+    "memory",
+    "decisions",
+    "patterns",
+    "projects",
+    "templates",
+    "concepts",
+    "connections",
+    "lessons",
+    "references",
+    "reviews",
+)
 
-VaultTarget = Literal["memory", "decisions", "patterns", "projects", "templates"]
+VaultTarget = Literal[
+    "memory",
+    "decisions",
+    "patterns",
+    "projects",
+    "templates",
+    "concepts",
+    "connections",
+    "lessons",
+    "references",
+    "reviews",
+]
 
 
 class MemoryItem(BaseModel):
@@ -14,9 +36,17 @@ class MemoryItem(BaseModel):
     source_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
+class SessionLogEntry(BaseModel):
+    context: str = ""
+    decisions_made: list[str] = Field(default_factory=list)
+    lessons_learned: list[str] = Field(default_factory=list)
+    action_items: list[str] = Field(default_factory=list)
+
+
 class ExtractionSummary(BaseModel):
     summary: str = ""
     no_extract: bool = False
+    session_log: SessionLogEntry = Field(default_factory=SessionLogEntry)
 
 
 class FileAction(BaseModel):
@@ -62,6 +92,9 @@ class VaultUpdates(BaseModel):
     projects: list[VaultFileEntry] = Field(default_factory=list)
     patterns: list[VaultFileEntry] = Field(default_factory=list)
     templates: list[VaultFileEntry] = Field(default_factory=list)
+    concepts: list[VaultFileEntry] = Field(default_factory=list)
+    connections: list[VaultFileEntry] = Field(default_factory=list)
+    lessons: list[VaultFileEntry] = Field(default_factory=list)
 
 
 class ConsolidationOutput(BaseModel):

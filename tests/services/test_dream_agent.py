@@ -1,7 +1,9 @@
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models.test import TestModel
 
 from app.services.dream_agent import (
@@ -9,13 +11,11 @@ from app.services.dream_agent import (
     DreamDeps,
     _count_tool_calls,
     consolidation_to_dict,
-    extraction_to_dict,
 )
 from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
-    DreamExtraction,
-    MemoryItem,
+    ExtractionSummary,
     VaultFileEntry,
     VaultUpdates,
 )
@@ -26,10 +26,16 @@ from app.services.dream_models import (
 
 
 @pytest.fixture
-def dream_deps() -> DreamDeps:
+def dream_deps(tmp_path: Path) -> DreamDeps:
+    transcript = tmp_path / "transcript.txt"
+    transcript.write_text(
+        "User: hello\n\nAssistant: hi there\n\nUser: how are you?\n\n"
+        "Assistant: I'm good\n\nUser: let's work on the project\n",
+        encoding="utf-8",
+    )
     return DreamDeps(
         transcript_id=1,
-        parsed_lines=["user: hello", "assistant: hi there", "user: how are you?"],
+        workspace=tmp_path,
         session_id="test-session-123",
         project="test-project",
         token_count=100,
@@ -68,78 +74,31 @@ def deep_dream_deps() -> DeepDreamDeps:
 
 class TestLightDreamAgent:
     def test_agent_has_correct_output_type(self) -> None:
-        agent: Agent[DreamDeps, DreamExtraction] = Agent(
+        agent: Agent[DreamDeps, ExtractionSummary] = Agent(
             TestModel(),
             deps_type=DreamDeps,
-            output_type=DreamExtraction,
+            output_type=ExtractionSummary,
             retries=2,
             output_retries=3,
         )
-        assert agent.output_type is DreamExtraction
+        assert agent.output_type is ExtractionSummary
 
-    async def test_get_transcript_stats(self, dream_deps: DreamDeps) -> None:
-        agent: Agent[DreamDeps, DreamExtraction] = Agent(
-            TestModel(),
-            deps_type=DreamDeps,
-            output_type=DreamExtraction,
-        )
+    def test_dream_deps_has_workspace(self, dream_deps: DreamDeps) -> None:
+        assert dream_deps.workspace.is_dir()
+        assert (dream_deps.workspace / "transcript.txt").is_file()
 
-        @agent.tool
-        async def get_transcript_stats(ctx: RunContext[DreamDeps]) -> dict:
-            lines = ctx.deps.parsed_lines
-            total_chars = sum(len(line) for line in lines)
-            total_lines = len(lines)
-            estimated_tokens = ctx.deps.token_count or (total_chars // 4)
-            return {
-                "total_chars": total_chars,
-                "total_lines": total_lines,
-                "estimated_tokens": estimated_tokens,
-                "session_id": ctx.deps.session_id,
-                "project": ctx.deps.project,
-            }
+    def test_dream_deps_session_log_fields(self, dream_deps: DreamDeps) -> None:
+        assert dream_deps.session_context == ""
+        assert dream_deps.session_decisions == []
+        assert dream_deps.session_lessons == []
+        assert dream_deps.session_action_items == []
 
-        result = await agent.run("test", deps=dream_deps)
-        assert result.output.no_extract is False
-
-    async def test_get_transcript_metadata(self, dream_deps: DreamDeps) -> None:
-        agent: Agent[DreamDeps, DreamExtraction] = Agent(
-            TestModel(),
-            deps_type=DreamDeps,
-            output_type=DreamExtraction,
-        )
-
-        @agent.tool
-        async def get_transcript_metadata(ctx: RunContext[DreamDeps]) -> dict:
-            return {
-                "session_id": ctx.deps.session_id,
-                "project": ctx.deps.project,
-                "created_at": ctx.deps.created_at.isoformat() if ctx.deps.created_at else None,
-                "token_count": ctx.deps.token_count,
-            }
-
-        result = await agent.run("test", deps=dream_deps)
-        assert result.output.no_extract is False
-
-    async def test_get_transcript_chunk_normal_range(self, dream_deps: DreamDeps) -> None:
-        lines = dream_deps.parsed_lines
-        clamped_start = max(0, 0)
-        clamped_end = min(len(lines), 2)
-        chunk = "\n".join(lines[clamped_start:clamped_end])
-        assert chunk == "user: hello\nassistant: hi there"
-
-    async def test_get_transcript_chunk_clamps_out_of_bounds(self, dream_deps: DreamDeps) -> None:
-        lines = dream_deps.parsed_lines
-        clamped_start = max(0, -5)
-        clamped_end = min(len(lines), 100)
-        chunk = "\n".join(lines[clamped_start:clamped_end])
-        assert chunk == "\n".join(lines)
-
-    async def test_run_dream_extraction_returns_tuple(self, dream_deps: DreamDeps) -> None:
+    async def test_run_extraction_returns_tuple(self, dream_deps: DreamDeps) -> None:
         test_model = TestModel()
-        agent: Agent[DreamDeps, DreamExtraction] = Agent(
+        agent: Agent[DreamDeps, ExtractionSummary] = Agent(
             test_model,
             deps_type=DreamDeps,
-            output_type=DreamExtraction,
+            output_type=ExtractionSummary,
             retries=2,
             output_retries=3,
         )
@@ -148,39 +107,9 @@ class TestLightDreamAgent:
         usage = result.usage()
         tool_call_count = _count_tool_calls(result.all_messages())
 
-        assert isinstance(result.output, DreamExtraction)
+        assert isinstance(result.output, ExtractionSummary)
         assert usage is not None
         assert isinstance(tool_call_count, int)
-
-
-class TestExtractionToDict:
-    def test_basic_extraction(self) -> None:
-        extraction = DreamExtraction(
-            no_extract=False,
-            summary="A test summary",
-            decisions=[
-                MemoryItem(
-                    content="Decided to use Python",
-                    vault_target="decisions",
-                    source_date="2026-04-05",
-                ),
-            ],
-            preferences=[],
-            patterns=[],
-            corrections=[],
-            facts=[],
-        )
-        result = extraction_to_dict(extraction)
-        assert result["no_extract"] is False
-        assert result["summary"] == "A test summary"
-        assert len(result["decisions"]) == 1
-        assert result["decisions"][0]["content"] == "Decided to use Python"
-        assert result["preferences"] == []
-
-    def test_no_extract_flag(self) -> None:
-        extraction = DreamExtraction(no_extract=True, summary="")
-        result = extraction_to_dict(extraction)
-        assert result["no_extract"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -229,10 +158,7 @@ class TestDeepDreamAgent:
             daily_log="",
             soul_md="",
         )
-        if not deps.memu_memories:
-            result = "No MemU memories for today."
-        else:
-            result = "has memories"
+        result = "No MemU memories for today." if not deps.memu_memories else "has memories"
         assert result == "No MemU memories for today."
 
     async def test_read_soul_file_tool(self, deep_dream_deps: DeepDreamDeps) -> None:
@@ -295,6 +221,37 @@ class TestConsolidationToDict:
         assert len(result["vault_updates"]["decisions"]) == 1
         assert result["vault_updates"]["projects"] == []
 
+    def test_consolidation_with_new_vault_types(self) -> None:
+        output = ConsolidationOutput(
+            memory_md="# Memory",
+            daily_summary="Test day",
+            vault_updates=VaultUpdates(
+                concepts=[
+                    VaultFileEntry(
+                        filename="clean-architecture.md",
+                        title="Clean Architecture",
+                        summary="Core concept",
+                        content="# Clean Architecture",
+                        action="create",
+                    ),
+                ],
+                connections=[
+                    VaultFileEntry(
+                        filename="clean-arch-and-nestjs.md",
+                        title="Clean Architecture x NestJS",
+                        summary="How they map",
+                        content="# Clean Architecture x NestJS",
+                        action="create",
+                    ),
+                ],
+                lessons=[],
+            ),
+        )
+        result = consolidation_to_dict(output)
+        assert len(result["vault_updates"]["concepts"]) == 1
+        assert len(result["vault_updates"]["connections"]) == 1
+        assert result["vault_updates"]["lessons"] == []
+
 
 # ---------------------------------------------------------------------------
 # Utility Tests
@@ -315,16 +272,13 @@ class TestCountToolCalls:
         class FakePart:
             tool_name = "get_transcript_stats"
 
-        class FakeMsg:
-            parts = [FakePart()]
-
-        assert _count_tool_calls([FakeMsg()]) == 1
+        msg = ModelResponse(parts=[FakePart()])  # type: ignore[list-item]
+        assert _count_tool_calls([msg]) == 1
 
     def test_multiple_tool_calls(self) -> None:
         class FakePart:
             tool_name = "some_tool"
 
-        class FakeMsg:
-            parts = [FakePart(), FakePart()]
-
-        assert _count_tool_calls([FakeMsg(), FakeMsg()]) == 4
+        msg1 = ModelResponse(parts=[FakePart(), FakePart()])  # type: ignore[list-item]
+        msg2 = ModelResponse(parts=[FakePart(), FakePart()])  # type: ignore[list-item]
+        assert _count_tool_calls([msg1, msg2]) == 4

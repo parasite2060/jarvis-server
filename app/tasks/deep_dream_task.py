@@ -134,7 +134,11 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         "vault_updates"
     )
     has_vault_content = vault_updates is not None and any(
-        vault_updates.get(f) for f in ("decisions", "projects", "patterns", "templates")
+        vault_updates.get(f)
+        for f in (
+            "decisions", "projects", "patterns", "templates",
+            "concepts", "connections", "lessons",
+        )
     )
     if has_vault_content and vault_updates is not None:
         try:
