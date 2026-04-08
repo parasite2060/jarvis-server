@@ -1,8 +1,13 @@
 from app.services.dream_models import (
     ALLOWED_VAULT_TARGETS,
+    ConnectionCandidate,
+    KnowledgeGap,
     LightSleepOutput,
+    PromotionCandidate,
+    REMSleepOutput,
     ScoredCandidate,
     SessionLogEntry,
+    Theme,
     VaultFileEntry,
     VaultUpdates,
 )
@@ -126,3 +131,104 @@ class TestVaultUpdates:
         assert len(vu.concepts) == 1
         assert len(vu.connections) == 1
         assert len(vu.lessons) == 1
+
+
+class TestTheme:
+    def test_default_values(self) -> None:
+        theme = Theme(topic="async patterns")
+        assert theme.topic == "async patterns"
+        assert theme.session_count == 0
+        assert theme.evidence == []
+
+    def test_with_all_fields(self) -> None:
+        theme = Theme(
+            topic="error handling",
+            session_count=3,
+            evidence=["session-1: used Result type", "session-2: no try-catch"],
+        )
+        assert theme.session_count == 3
+        assert len(theme.evidence) == 2
+
+
+class TestConnectionCandidate:
+    def test_required_fields(self) -> None:
+        conn = ConnectionCandidate(
+            concept_a="DDD",
+            concept_b="Clean Architecture",
+            relationship="complementary patterns",
+        )
+        assert conn.concept_a == "DDD"
+        assert conn.concept_b == "Clean Architecture"
+        assert conn.relationship == "complementary patterns"
+        assert conn.evidence_sessions == []
+
+    def test_with_evidence_sessions(self) -> None:
+        conn = ConnectionCandidate(
+            concept_a="FastAPI",
+            concept_b="Pydantic",
+            relationship="validation layer",
+            evidence_sessions=["2026-04-01", "2026-04-03"],
+        )
+        assert len(conn.evidence_sessions) == 2
+
+
+class TestPromotionCandidate:
+    def test_required_fields(self) -> None:
+        promo = PromotionCandidate(
+            source_file="lessons/error-handling.md",
+            target_folder="patterns",
+            reason="Appeared in 4 different contexts",
+        )
+        assert promo.source_file == "lessons/error-handling.md"
+        assert promo.target_folder == "patterns"
+        assert promo.reason == "Appeared in 4 different contexts"
+
+
+class TestKnowledgeGap:
+    def test_default_values(self) -> None:
+        gap = KnowledgeGap(concept="event sourcing")
+        assert gap.concept == "event sourcing"
+        assert gap.mentioned_in_files == []
+
+    def test_with_mentions(self) -> None:
+        gap = KnowledgeGap(
+            concept="CQRS",
+            mentioned_in_files=["dailys/2026-04-01.md", "dailys/2026-04-03.md"],
+        )
+        assert len(gap.mentioned_in_files) == 2
+
+
+class TestREMSleepOutput:
+    def test_default_values(self) -> None:
+        output = REMSleepOutput()
+        assert output.themes == []
+        assert output.new_connections == []
+        assert output.promotion_candidates == []
+        assert output.gaps == []
+
+    def test_with_all_fields(self) -> None:
+        output = REMSleepOutput(
+            themes=[Theme(topic="async", session_count=2)],
+            new_connections=[
+                ConnectionCandidate(
+                    concept_a="A", concept_b="B", relationship="related"
+                )
+            ],
+            promotion_candidates=[
+                PromotionCandidate(
+                    source_file="lessons/x.md",
+                    target_folder="patterns",
+                    reason="3+ contexts",
+                )
+            ],
+            gaps=[KnowledgeGap(concept="missing-concept")],
+        )
+        assert len(output.themes) == 1
+        assert len(output.new_connections) == 1
+        assert len(output.promotion_candidates) == 1
+        assert len(output.gaps) == 1
+
+    def test_empty_output_is_valid(self) -> None:
+        output = REMSleepOutput()
+        assert len(output.themes) == 0
+        assert len(output.new_connections) == 0

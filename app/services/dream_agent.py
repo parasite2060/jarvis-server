@@ -21,6 +21,8 @@ from app.services.dream_models import (
     LightSleepOutput,
     MemoryItem,
     RecordResult,
+    REMSleepOutput,
+    ScoredCandidate,
     SessionLogEntry,
 )
 
@@ -842,6 +844,93 @@ async def run_phase1_light_sleep(
         "Read all inputs via tools before producing output.",
         deps=deps,
         usage_limits=PHASE1_USAGE_LIMITS,
+    )
+    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: REM Sleep Agent
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Phase2Deps:
+    source_date: date
+    daily_logs: dict[str, str]  # date string → content
+    vault_indexes: dict[str, str]  # folder name → _index.md content
+    phase1_candidates: list[ScoredCandidate]
+
+
+def _load_phase2_prompt() -> str:
+    return (_PROMPTS_DIR / "deep_dream_phase2_rem_sleep.md").read_text(encoding="utf-8")
+
+
+_phase2_agent: Agent[Phase2Deps, REMSleepOutput] | None = None
+
+
+def _get_phase2_agent() -> Agent[Phase2Deps, REMSleepOutput]:
+    global _phase2_agent
+    if _phase2_agent is not None:
+        return _phase2_agent
+
+    agent: Agent[Phase2Deps, REMSleepOutput] = Agent(
+        _build_model(),
+        deps_type=Phase2Deps,
+        output_type=REMSleepOutput,
+        instructions=_load_phase2_prompt(),
+        retries=2,
+        output_retries=3,
+        history_processors=[compact_history],
+    )
+
+    @agent.tool
+    async def read_daily_log(ctx: RunContext[Phase2Deps], date_str: str) -> str:
+        """Return daily log content for a specific date (YYYY-MM-DD)."""
+        content = ctx.deps.daily_logs.get(date_str)
+        if content is None:
+            return f"No daily log found for {date_str}"
+        return content
+
+    @agent.tool
+    async def read_vault_index(ctx: RunContext[Phase2Deps], folder: str) -> str:
+        """Return _index.md content for a vault folder."""
+        content = ctx.deps.vault_indexes.get(folder)
+        if content is None:
+            return f"No _index.md found for folder '{folder}'"
+        return content
+
+    @agent.tool
+    async def get_phase1_candidates(ctx: RunContext[Phase2Deps]) -> str:
+        """Return formatted Phase 1 scored candidates."""
+        candidates = ctx.deps.phase1_candidates
+        if not candidates:
+            return "No Phase 1 candidates available."
+        lines: list[str] = []
+        for i, c in enumerate(candidates, 1):
+            flag = " [CONTRADICTION]" if c.contradiction_flag else ""
+            sessions = ", ".join(c.source_sessions) if c.source_sessions else "n/a"
+            lines.append(
+                f"[{i}] ({c.category}) {c.content} "
+                f"[reinforced={c.reinforcement_count}, sessions={sessions}]{flag}"
+            )
+        return "\n".join(lines)
+
+    _phase2_agent = agent
+    return _phase2_agent
+
+
+PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=80_000, tool_calls_limit=20)
+
+
+async def run_phase2_rem_sleep(
+    deps: Phase2Deps,
+) -> tuple[REMSleepOutput, RunUsage, int]:
+    agent = _get_phase2_agent()
+    result = await agent.run(
+        "Analyze cross-session patterns using the available tools. "
+        "Read daily logs, vault indexes, and Phase 1 candidates before producing output.",
+        deps=deps,
+        usage_limits=PHASE2_USAGE_LIMITS,
     )
     return result.output, result.usage(), _count_tool_calls(result.all_messages())
 

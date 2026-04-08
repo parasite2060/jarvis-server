@@ -11,7 +11,9 @@ from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
     LightSleepOutput,
+    REMSleepOutput,
     ScoredCandidate,
+    Theme,
     VaultUpdates,
 )
 
@@ -126,6 +128,17 @@ SAMPLE_PHASE1_EMPTY = LightSleepOutput(
 
 SAMPLE_PHASE1_USAGE = RunUsage(input_tokens=50, output_tokens=30, requests=1)
 
+SAMPLE_PHASE2_OUTPUT = REMSleepOutput(
+    themes=[Theme(topic="async patterns", session_count=3, evidence=["session-1", "session-2"])],
+    new_connections=[],
+    promotion_candidates=[],
+    gaps=[],
+)
+
+SAMPLE_PHASE2_EMPTY = REMSleepOutput()
+
+SAMPLE_PHASE2_USAGE = RunUsage(input_tokens=40, output_tokens=20, requests=1)
+
 SAMPLE_USAGE = RunUsage(input_tokens=200, output_tokens=100, requests=1)
 
 
@@ -187,6 +200,8 @@ def _pipeline_patches(
     memu_error: Exception | None = None,
     phase1_output: LightSleepOutput | None = None,
     phase1_error: Exception | None = None,
+    phase2_output: REMSleepOutput | None = None,
+    phase2_error: Exception | None = None,
 ) -> dict[str, Any]:
     cons_dict = consolidation_dict or SAMPLE_CONSOLIDATION_DICT
     patches: dict[str, Any] = {
@@ -202,6 +217,15 @@ def _pipeline_patches(
                 3,
             ),
             side_effect=phase1_error,
+        ),
+        "app.tasks.deep_dream_task.read_vault_file": AsyncMock(return_value=None),
+        "app.tasks.deep_dream_task.run_phase2_rem_sleep": AsyncMock(
+            return_value=(
+                phase2_output or SAMPLE_PHASE2_OUTPUT,
+                SAMPLE_PHASE2_USAGE,
+                5,
+            ),
+            side_effect=phase2_error,
         ),
         "app.tasks.deep_dream_task.run_deep_dream_consolidation": AsyncMock(
             return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5)
@@ -711,3 +735,79 @@ async def test_backup_files_skips_missing_files() -> None:
         await _backup_files(date(2026, 4, 5))
 
     mock_write.assert_not_called()
+
+
+# ── Phase 2: REM Sleep tests ──
+
+
+@pytest.mark.asyncio
+async def test_phase2_runs_after_phase1() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase2_mock = patches["app.tasks.deep_dream_task.run_phase2_rem_sleep"]
+    phase2_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_phase2_failure_does_not_block_consolidation() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase2_error=RuntimeError("LLM timeout"))
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_phase2_empty_output_does_not_block_consolidation() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase2_output=SAMPLE_PHASE2_EMPTY)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
+    consolidation_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_phase2_skipped_when_phase1_has_no_candidates() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase1_output=SAMPLE_PHASE1_EMPTY)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "skipped"
+    phase2_mock = patches["app.tasks.deep_dream_task.run_phase2_rem_sleep"]
+    phase2_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_phase2_gathers_daily_logs() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    read_vault_mock = patches["app.tasks.deep_dream_task.read_vault_file"]
+    call_args_list = [call.args[0] for call in read_vault_mock.call_args_list]
+    daily_calls = [a for a in call_args_list if a.startswith("dailys/")]
+    assert len(daily_calls) == 7
+
+
+@pytest.mark.asyncio
+async def test_phase2_gathers_vault_indexes() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    read_vault_mock = patches["app.tasks.deep_dream_task.read_vault_file"]
+    call_args_list = [call.args[0] for call in read_vault_mock.call_args_list]
+    index_calls = [a for a in call_args_list if a.endswith("/_index.md")]
+    assert len(index_calls) == 6

@@ -119,3 +119,34 @@ class LightSleepOutput(BaseModel):
     candidates: list[ScoredCandidate] = Field(default_factory=list)
     duplicates_removed: int = 0
     contradictions_found: int = 0
+
+
+class Theme(BaseModel):
+    topic: str
+    session_count: int = 0
+    evidence: list[str] = Field(default_factory=list)
+
+
+class ConnectionCandidate(BaseModel):
+    concept_a: str
+    concept_b: str
+    relationship: str
+    evidence_sessions: list[str] = Field(default_factory=list)
+
+
+class PromotionCandidate(BaseModel):
+    source_file: str
+    target_folder: str
+    reason: str
+
+
+class KnowledgeGap(BaseModel):
+    concept: str
+    mentioned_in_files: list[str] = Field(default_factory=list)
+
+
+class REMSleepOutput(BaseModel):
+    themes: list[Theme] = Field(default_factory=list)
+    new_connections: list[ConnectionCandidate] = Field(default_factory=list)
+    promotion_candidates: list[PromotionCandidate] = Field(default_factory=list)
+    gaps: list[KnowledgeGap] = Field(default_factory=list)

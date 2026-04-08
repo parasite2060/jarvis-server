@@ -9,6 +9,7 @@ from pydantic_ai.models.test import TestModel
 from app.services.dream_agent import (
     DeepDreamDeps,
     DreamDeps,
+    Phase2Deps,
     RecordDeps,
     _count_tool_calls,
     consolidation_to_dict,
@@ -19,6 +20,8 @@ from app.services.dream_models import (
     ExtractionSummary,
     LightSleepOutput,
     RecordResult,
+    REMSleepOutput,
+    ScoredCandidate,
     SessionLogEntry,
     VaultFileEntry,
     VaultUpdates,
@@ -273,6 +276,86 @@ class TestPhase1LightSleepAgent:
         assert deep_dream_deps.daily_log != ""
         assert len(deep_dream_deps.memu_memories) > 0
         assert deep_dream_deps.soul_md != ""
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: REM Sleep Agent Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def phase2_deps() -> Phase2Deps:
+    return Phase2Deps(
+        source_date=date(2026, 4, 5),
+        daily_logs={
+            "2026-04-05": "## Session 1\nWorked on async patterns",
+            "2026-04-04": "## Session 2\nRefactored error handling",
+            "2026-04-03": "## Session 3\nDiscussed DDD concepts",
+        },
+        vault_indexes={
+            "decisions": "# Decisions Index\n- use-python.md",
+            "patterns": "# Patterns Index\n- async-patterns.md",
+            "concepts": "# Concepts Index\n- ddd.md",
+        },
+        phase1_candidates=[
+            ScoredCandidate(
+                content="Use async patterns",
+                category="patterns",
+                reinforcement_count=3,
+                source_sessions=["session-1", "session-2", "session-3"],
+            ),
+            ScoredCandidate(
+                content="Prefer Result type for errors",
+                category="decisions",
+                contradiction_flag=True,
+                source_sessions=["session-2"],
+            ),
+        ],
+    )
+
+
+class TestPhase2REMSleepAgent:
+    def test_agent_has_correct_output_type(self) -> None:
+        agent: Agent[Phase2Deps, REMSleepOutput] = Agent(
+            TestModel(),
+            deps_type=Phase2Deps,
+            output_type=REMSleepOutput,
+            retries=2,
+            output_retries=3,
+        )
+        assert agent.output_type is REMSleepOutput
+
+    def test_phase2_deps_has_daily_logs(self, phase2_deps: Phase2Deps) -> None:
+        assert len(phase2_deps.daily_logs) == 3
+        assert "2026-04-05" in phase2_deps.daily_logs
+
+    def test_phase2_deps_has_vault_indexes(self, phase2_deps: Phase2Deps) -> None:
+        assert len(phase2_deps.vault_indexes) == 3
+        assert "decisions" in phase2_deps.vault_indexes
+
+    def test_phase2_deps_has_phase1_candidates(self, phase2_deps: Phase2Deps) -> None:
+        assert len(phase2_deps.phase1_candidates) == 2
+        assert phase2_deps.phase1_candidates[0].content == "Use async patterns"
+
+    async def test_run_phase2_returns_tuple(self, phase2_deps: Phase2Deps) -> None:
+        test_model = TestModel()
+        agent: Agent[Phase2Deps, REMSleepOutput] = Agent(
+            test_model,
+            deps_type=Phase2Deps,
+            output_type=REMSleepOutput,
+            retries=2,
+            output_retries=3,
+        )
+
+        result = await agent.run(
+            "Analyze cross-session patterns.", deps=phase2_deps
+        )
+        usage = result.usage()
+        tool_call_count = _count_tool_calls(result.all_messages())
+
+        assert isinstance(result.output, REMSleepOutput)
+        assert usage is not None
+        assert isinstance(tool_call_count, int)
 
 
 class TestConsolidationToDict:
