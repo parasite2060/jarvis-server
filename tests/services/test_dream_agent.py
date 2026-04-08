@@ -16,6 +16,7 @@ from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
     ExtractionSummary,
+    SessionLogEntry,
     VaultFileEntry,
     VaultUpdates,
 )
@@ -89,9 +90,12 @@ class TestLightDreamAgent:
 
     def test_dream_deps_session_log_fields(self, dream_deps: DreamDeps) -> None:
         assert dream_deps.session_context == ""
+        assert dream_deps.session_key_exchanges == []
         assert dream_deps.session_decisions == []
         assert dream_deps.session_lessons == []
         assert dream_deps.session_action_items == []
+        assert dream_deps.session_concepts == []
+        assert dream_deps.session_connections == []
 
     async def test_run_extraction_returns_tuple(self, dream_deps: DreamDeps) -> None:
         test_model = TestModel()
@@ -110,6 +114,42 @@ class TestLightDreamAgent:
         assert isinstance(result.output, ExtractionSummary)
         assert usage is not None
         assert isinstance(tool_call_count, int)
+
+    def test_session_log_assembly_includes_new_fields(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        dream_deps.session_context = "Discussed architecture patterns"
+        dream_deps.session_key_exchanges = ["User asked about DDD vs Clean Arch"]
+        dream_deps.session_decisions = ["Use Clean Architecture"]
+        dream_deps.session_lessons = ["Layered boundaries reduce coupling"]
+        dream_deps.session_action_items = ["Document the architecture"]
+        dream_deps.session_concepts = [
+            {"name": "DDD", "description": "Domain-Driven Design"}
+        ]
+        dream_deps.session_connections = [
+            {
+                "concept_a": "DDD",
+                "concept_b": "Clean Architecture",
+                "relationship": "complementary",
+            }
+        ]
+
+        session_log = SessionLogEntry(
+            context=dream_deps.session_context,
+            key_exchanges=dream_deps.session_key_exchanges,
+            decisions_made=dream_deps.session_decisions,
+            lessons_learned=dream_deps.session_lessons,
+            action_items=dream_deps.session_action_items,
+            concepts=dream_deps.session_concepts,
+            connections=dream_deps.session_connections,
+        )
+
+        assert session_log.context == "Discussed architecture patterns"
+        assert session_log.key_exchanges == ["User asked about DDD vs Clean Arch"]
+        assert len(session_log.concepts) == 1
+        assert session_log.concepts[0]["name"] == "DDD"
+        assert len(session_log.connections) == 1
+        assert session_log.connections[0]["relationship"] == "complementary"
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,21 @@ Store a follow-up task or next step identified during the session. Examples:
 - "Push committed changes to remote and trigger release-please pipeline"
 - "Add retry logic for MemU client when server is temporarily unavailable"
 
+### `store_key_exchange(exchange)`
+Store a key exchange — a notable question/answer pair or dialogue moment worth remembering. Use for important clarifications, surprising revelations, or pivotal conversation turns. Examples:
+- "User asked why tests were failing silently — root cause was swallowed exceptions in the error handler"
+- "Discussed whether to use SQL or NoSQL — concluded MongoDB fits the document-oriented data model"
+
+### `store_concept(name, description)`
+Store a concept discussed in the session. Also creates a knowledge base entry under `concepts`. Examples:
+- name: "Clean Architecture", description: "Separation of concerns via dependency inversion — domain never depends on infrastructure"
+- name: "Event Sourcing", description: "Persist state changes as immutable events rather than mutable records"
+
+### `store_connection(concept_a, concept_b, relationship)`
+Store a connection between two concepts discussed in the session. Also creates a knowledge base entry under `connections`. Examples:
+- concept_a: "PydanticAI", concept_b: "Tool-based extraction", relationship: "PydanticAI agents use tool calls to structure extraction output"
+- concept_a: "Clean Architecture", concept_b: "NestJS modules", relationship: "NestJS modules map to Clean Architecture bounded contexts"
+
 ### `store_memory(category, content, vault_target, source_date, reasoning?)`
 Store a general memory for patterns, preferences, facts, or corrections that don't fit the above categories. Use the dedicated tools above for decisions, lessons, and action items.
 
