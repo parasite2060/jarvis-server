@@ -1,8 +1,11 @@
+import math
 import re
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from app.core.logging import get_logger
+from app.services.dream_models import HealthReport
 from app.services.memory_files import read_vault_file, write_vault_file
 from app.services.memu_client import memu_memorize, memu_retrieve
 
@@ -195,3 +198,156 @@ async def align_memu_with_memory(
     )
 
     return {"items_synced": items_synced, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Scoring (deterministic Python, NOT LLM)
+# ---------------------------------------------------------------------------
+
+DEFAULT_SCORING_WEIGHTS: dict[str, float] = {
+    "frequency": 0.25,
+    "recency": 0.25,
+    "relevance": 0.20,
+    "consistency": 0.20,
+    "breadth": 0.10,
+}
+
+DEFAULT_DECAY_RATE = 0.03
+
+
+def calculate_candidate_score(
+    reinforcement_count: int,
+    days_since_reinforced: int,
+    in_active_project: bool,
+    has_contradiction: bool,
+    context_count: int,
+    weights: dict[str, float] | None = None,
+    decay_rate: float = DEFAULT_DECAY_RATE,
+) -> float:
+    w = weights or DEFAULT_SCORING_WEIGHTS
+    freq = min(reinforcement_count / 10.0, 1.0)
+    recency = math.exp(-decay_rate * days_since_reinforced)
+    relevance = 1.0 if in_active_project else 0.3
+    consistency = 0.0 if has_contradiction else 1.0
+    breadth = min(context_count / 5.0, 1.0)
+    return (
+        w.get("frequency", 0.25) * freq
+        + w.get("recency", 0.25) * recency
+        + w.get("relevance", 0.20) * relevance
+        + w.get("consistency", 0.20) * consistency
+        + w.get("breadth", 0.10) * breadth
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Health checks (deterministic Python, NOT LLM)
+# ---------------------------------------------------------------------------
+
+VAULT_FOLDERS = (
+    "decisions",
+    "patterns",
+    "projects",
+    "templates",
+    "concepts",
+    "connections",
+    "lessons",
+    "references",
+    "reviews",
+)
+
+STALE_DAYS_DEFAULT = 60
+MEMORY_OVERFLOW_THRESHOLD = 180
+
+
+async def run_health_checks(
+    workspace: Path,
+    knowledge_gaps: list[str] | None = None,
+    stale_days: int = STALE_DAYS_DEFAULT,
+) -> HealthReport:
+    orphan_notes: list[str] = []
+    stale_notes: list[str] = []
+    missing_frontmatter: list[str] = []
+    unresolved_contradictions: list[str] = []
+    memory_overflow = False
+
+    today = date.today()
+
+    for folder in VAULT_FOLDERS:
+        folder_path = workspace / folder
+        if not folder_path.is_dir():
+            continue
+
+        index_path = folder_path / "_index.md"
+        index_content = ""
+        if index_path.is_file():
+            index_content = index_path.read_text(encoding="utf-8")
+
+        for md_file in sorted(folder_path.glob("*.md")):
+            if md_file.name == "_index.md":
+                continue
+
+            rel_path = f"{folder}/{md_file.name}"
+            text = md_file.read_text(encoding="utf-8")
+
+            # Check if referenced in _index.md
+            stem = md_file.stem
+            if index_content and stem not in index_content and md_file.name not in index_content:
+                orphan_notes.append(rel_path)
+
+            # Check frontmatter
+            if not text.startswith("---"):
+                missing_frontmatter.append(rel_path)
+                continue
+
+            fm_end = text.find("---", 3)
+            if fm_end == -1:
+                missing_frontmatter.append(rel_path)
+                continue
+
+            frontmatter = text[3:fm_end]
+
+            # Check for contradictions
+            if re.search(r"has_contradiction:\s*true", frontmatter, re.IGNORECASE):
+                unresolved_contradictions.append(rel_path)
+
+            # Check for stale notes
+            reviewed_match = re.search(
+                r"last_reviewed:\s*(\d{4}-\d{2}-\d{2})", frontmatter
+            )
+            if reviewed_match:
+                try:
+                    last_reviewed = datetime.strptime(
+                        reviewed_match.group(1), "%Y-%m-%d"
+                    ).date()
+                    if (today - last_reviewed).days > stale_days:
+                        stale_notes.append(rel_path)
+                except ValueError:
+                    pass
+
+    # Check MEMORY.md overflow
+    memory_path = workspace / "MEMORY.md"
+    if memory_path.is_file():
+        line_count = len(memory_path.read_text(encoding="utf-8").splitlines())
+        if line_count > MEMORY_OVERFLOW_THRESHOLD:
+            memory_overflow = True
+
+    gaps = knowledge_gaps or []
+
+    total_issues = (
+        len(orphan_notes)
+        + len(stale_notes)
+        + len(missing_frontmatter)
+        + len(unresolved_contradictions)
+        + (1 if memory_overflow else 0)
+        + len(gaps)
+    )
+
+    return HealthReport(
+        orphan_notes=orphan_notes,
+        stale_notes=stale_notes,
+        missing_frontmatter=missing_frontmatter,
+        unresolved_contradictions=unresolved_contradictions,
+        memory_overflow=memory_overflow,
+        knowledge_gaps=gaps,
+        total_issues=total_issues,
+    )

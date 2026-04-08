@@ -1,10 +1,13 @@
+import json
 import time
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from pydantic_ai.exceptions import UsageLimitExceeded
 from sqlalchemy import select
 
+from app.config import settings
 from app.core.exceptions import DreamError
 from app.core.logging import get_logger
 from app.models.db import async_session_factory
@@ -12,7 +15,9 @@ from app.models.tables import Dream
 from app.services.context_cache import invalidate_context_cache
 from app.services.deep_dream import (
     align_memu_with_memory,
+    calculate_candidate_score,
     gather_consolidation_inputs,
+    run_health_checks,
     validate_consolidated_output,
     write_consolidated_files,
 )
@@ -24,11 +29,54 @@ from app.services.dream_agent import (
     run_phase1_light_sleep,
     run_phase2_rem_sleep,
 )
+from app.services.dream_models import HealthReport, LightSleepOutput, REMSleepOutput
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import read_vault_file, write_vault_file
 from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
+
+
+def _format_phase1_summary(
+    phase1_output: LightSleepOutput,
+    scores: dict[str, float],
+) -> str:
+    lines: list[str] = ["## Phase 1: Light Sleep Candidates"]
+    lines.append(f"Total candidates: {len(phase1_output.candidates)}")
+    lines.append(f"Duplicates removed: {phase1_output.duplicates_removed}")
+    lines.append(f"Contradictions found: {phase1_output.contradictions_found}")
+    lines.append("")
+    for c in phase1_output.candidates:
+        score = scores.get(c.content, 0.0)
+        flag = " [CONTRADICTION]" if c.contradiction_flag else ""
+        sessions = ", ".join(c.source_sessions) if c.source_sessions else "n/a"
+        lines.append(
+            f"- ({c.category}) {c.content} "
+            f"[score={score:.2f}, reinforced={c.reinforcement_count}, "
+            f"sessions={sessions}]{flag}"
+        )
+    return "\n".join(lines)
+
+
+def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
+    lines: list[str] = ["## Phase 2: REM Sleep Analysis"]
+    if phase2_output.themes:
+        lines.append("### Themes")
+        for t in phase2_output.themes:
+            lines.append(f"- {t.topic} (seen in {t.session_count} sessions)")
+    if phase2_output.new_connections:
+        lines.append("### New Connections")
+        for c in phase2_output.new_connections:
+            lines.append(f"- {c.concept_a} <-> {c.concept_b}: {c.relationship}")
+    if phase2_output.promotion_candidates:
+        lines.append("### Promotion Candidates")
+        for p in phase2_output.promotion_candidates:
+            lines.append(f"- {p.source_file} -> {p.target_folder}: {p.reason}")
+    if phase2_output.gaps:
+        lines.append("### Knowledge Gaps")
+        for g in phase2_output.gaps:
+            lines.append(f"- {g.concept}")
+    return "\n".join(lines)
 
 
 async def _backup_files(source_date: date) -> None:
@@ -157,10 +205,27 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             total_tokens=phase2_usage.total_tokens,
             tool_calls=phase2_tool_calls,
         )
+        phase2_result: REMSleepOutput | None = phase2_output
     except Exception as exc:
+        phase2_result = None
         log.warning("deep_dream.phase2.failed", dream_id=dream_id, error=str(exc))
 
-    # Step 3: PydanticAI consolidation agent
+    # Step 2e: Compute scores for Phase 1 candidates (deterministic Python)
+    candidate_scores: dict[str, float] = {}
+    for candidate in phase1_output.candidates:
+        candidate_scores[candidate.content] = calculate_candidate_score(
+            reinforcement_count=candidate.reinforcement_count,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=candidate.contradiction_flag,
+            context_count=len(candidate.source_sessions),
+        )
+
+    # Step 2f: Format Phase 1+2 summaries for consolidation agent
+    phase1_text = _format_phase1_summary(phase1_output, candidate_scores)
+    phase2_text = _format_phase2_summary(phase2_result) if phase2_result else ""
+
+    # Step 3: PydanticAI consolidation agent (Phase 3 — Deep Sleep)
     consolidation_result: dict[str, Any] | None = None
     is_partial = False
     usage_input_tokens: int | None = None
@@ -174,6 +239,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             memory_md=memory_md,
             daily_log=daily_log,
             soul_md=soul_md,
+            phase1_summary=phase1_text,
+            phase2_summary=phase2_text,
         )
         output, usage, tool_call_count = await run_deep_dream_consolidation(deps)
         consolidation_result = consolidation_to_dict(output)
@@ -247,6 +314,30 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     except Exception as exc:
         log.warning("deep_dream.manifest.failed", dream_id=dream_id, error=str(exc))
 
+    # Step 6d: Health checks (deterministic Python post-processing)
+    health_report: HealthReport | None = None
+    try:
+        knowledge_gap_names = (
+            [g.concept for g in phase2_result.gaps] if phase2_result else []
+        )
+        workspace = Path(settings.jarvis_memory_path)
+        health_report = await run_health_checks(
+            workspace, knowledge_gaps=knowledge_gap_names
+        )
+        log.info(
+            "deep_dream.health_check.completed",
+            dream_id=dream_id,
+            total_issues=health_report.total_issues,
+            orphans=len(health_report.orphan_notes),
+            stale=len(health_report.stale_notes),
+            missing_fm=len(health_report.missing_frontmatter),
+            contradictions=len(health_report.unresolved_contradictions),
+            memory_overflow=health_report.memory_overflow,
+            gaps=len(health_report.knowledge_gaps),
+        )
+    except Exception as exc:
+        log.warning("deep_dream.health_check.failed", dream_id=dream_id, error=str(exc))
+
     # Step 7: Git branch and PR
     stats = consolidation_result.get("stats", {})
     git_result: dict[str, str] = {"git_branch": "", "git_pr_url": "", "git_pr_status": ""}
@@ -284,12 +375,17 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         f"memory_md_len={len(memory_md)}, "
         f"daily_log_len={len(daily_log)}"
     )
-    output_raw = (
-        f"line_count={validated.get('line_count', 0)}, "
-        f"total_processed={stats.get('total_memories_processed', 0)}, "
-        f"duplicates={stats.get('duplicates_removed', 0)}, "
-        f"contradictions={stats.get('contradictions_resolved', 0)}"
-    )
+    output_parts = [
+        f"line_count={validated.get('line_count', 0)}",
+        f"total_processed={stats.get('total_memories_processed', 0)}",
+        f"duplicates={stats.get('duplicates_removed', 0)}",
+        f"contradictions={stats.get('contradictions_resolved', 0)}",
+    ]
+    if health_report is not None:
+        output_parts.append(
+            f"health_report={json.dumps(health_report.model_dump())}"
+        )
+    output_raw = ", ".join(output_parts)
 
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))

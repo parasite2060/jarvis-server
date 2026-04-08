@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -376,3 +377,319 @@ async def test_align_memu_empty_memory_md_returns_zero() -> None:
     assert result["items_synced"] == 0
     assert result["errors"] == 0
     mock_memorize.assert_not_called()
+
+
+# ── calculate_candidate_score tests ──
+
+
+class TestCalculateCandidateScore:
+    def test_perfect_score_with_high_reinforcement(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=10,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=5,
+        )
+        assert score == pytest.approx(1.0, abs=0.01)
+
+    def test_zero_reinforcement_still_has_base_score(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=0,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=0,
+        )
+        # recency=1.0 (days=0), relevance=1.0, consistency=1.0
+        # freq=0, breadth=0
+        expected = 0.25 * 1.0 + 0.20 * 1.0 + 0.20 * 1.0
+        assert score == pytest.approx(expected, abs=0.01)
+
+    def test_contradiction_zeroes_consistency(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score_clean = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=3,
+        )
+        score_contradiction = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=True,
+            context_count=3,
+        )
+        assert score_clean > score_contradiction
+        # Difference should be exactly the consistency weight (0.20)
+        assert score_clean - score_contradiction == pytest.approx(0.20, abs=0.01)
+
+    def test_recency_decays_over_time(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score_recent = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=3,
+        )
+        score_old = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=60,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=3,
+        )
+        assert score_recent > score_old
+
+    def test_inactive_project_lowers_relevance(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score_active = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=3,
+        )
+        score_inactive = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=False,
+            has_contradiction=False,
+            context_count=3,
+        )
+        assert score_active > score_inactive
+
+    def test_custom_weights(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        custom_weights = {
+            "frequency": 1.0,
+            "recency": 0.0,
+            "relevance": 0.0,
+            "consistency": 0.0,
+            "breadth": 0.0,
+        }
+        score = calculate_candidate_score(
+            reinforcement_count=10,
+            days_since_reinforced=0,
+            in_active_project=False,
+            has_contradiction=True,
+            context_count=0,
+            weights=custom_weights,
+        )
+        assert score == pytest.approx(1.0, abs=0.01)
+
+    def test_frequency_capped_at_one(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score_10 = calculate_candidate_score(
+            reinforcement_count=10,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=5,
+        )
+        score_20 = calculate_candidate_score(
+            reinforcement_count=20,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=5,
+        )
+        assert score_10 == pytest.approx(score_20, abs=0.01)
+
+    def test_breadth_capped_at_one(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score_5 = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=5,
+        )
+        score_10 = calculate_candidate_score(
+            reinforcement_count=5,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=False,
+            context_count=10,
+        )
+        assert score_5 == pytest.approx(score_10, abs=0.01)
+
+
+# ── run_health_checks tests ──
+
+
+@pytest.fixture()
+def vault_workspace(tmp_path: Path) -> Path:
+    # Create a basic vault structure
+    (tmp_path / "decisions").mkdir()
+    (tmp_path / "patterns").mkdir()
+    (tmp_path / "concepts").mkdir()
+
+    # Create _index.md files
+    (tmp_path / "decisions" / "_index.md").write_text(
+        "# Decisions\n- [[arch-choices]]\n", encoding="utf-8"
+    )
+    (tmp_path / "patterns" / "_index.md").write_text(
+        "# Patterns\n- [[async-patterns]]\n", encoding="utf-8"
+    )
+    (tmp_path / "concepts" / "_index.md").write_text(
+        "# Concepts\n", encoding="utf-8"
+    )
+
+    # Create vault files with frontmatter
+    (tmp_path / "decisions" / "arch-choices.md").write_text(
+        "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n# Arch Choices\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "patterns" / "async-patterns.md").write_text(
+        "---\ntype: pattern\nlast_reviewed: 2026-01-01\n---\n# Async Patterns\n",
+        encoding="utf-8",
+    )
+
+    # MEMORY.md with reasonable size
+    (tmp_path / "MEMORY.md").write_text(
+        "\n".join(f"- Line {i}" for i in range(100)), encoding="utf-8"
+    )
+
+    return tmp_path
+
+
+@pytest.mark.asyncio
+async def test_health_checks_detects_orphan_notes(vault_workspace: Path) -> None:
+    # Create an orphan file not in _index.md
+    (vault_workspace / "concepts" / "orphan-concept.md").write_text(
+        "---\ntype: concept\nlast_reviewed: 2026-04-01\n---\n# Orphan\n",
+        encoding="utf-8",
+    )
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace)
+
+    assert "concepts/orphan-concept.md" in report.orphan_notes
+
+
+@pytest.mark.asyncio
+async def test_health_checks_detects_stale_notes(vault_workspace: Path) -> None:
+    from app.services.deep_dream import run_health_checks
+
+    # patterns/async-patterns.md has last_reviewed: 2026-01-01 which is stale
+    report = await run_health_checks(vault_workspace, stale_days=60)
+
+    assert "patterns/async-patterns.md" in report.stale_notes
+
+
+@pytest.mark.asyncio
+async def test_health_checks_detects_missing_frontmatter(vault_workspace: Path) -> None:
+    (vault_workspace / "decisions" / "no-fm.md").write_text(
+        "# No Frontmatter\nJust content.", encoding="utf-8"
+    )
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace)
+
+    assert "decisions/no-fm.md" in report.missing_frontmatter
+
+
+@pytest.mark.asyncio
+async def test_health_checks_detects_contradictions(vault_workspace: Path) -> None:
+    (vault_workspace / "decisions" / "contradicted.md").write_text(
+        "---\ntype: decision\nhas_contradiction: true\n"
+        "contradiction_reason: outdated\n---\n# Old\n",
+        encoding="utf-8",
+    )
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace)
+
+    assert "decisions/contradicted.md" in report.unresolved_contradictions
+
+
+@pytest.mark.asyncio
+async def test_health_checks_detects_memory_overflow(vault_workspace: Path) -> None:
+    (vault_workspace / "MEMORY.md").write_text(
+        "\n".join(f"- Line {i}" for i in range(200)), encoding="utf-8"
+    )
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace)
+
+    assert report.memory_overflow is True
+
+
+@pytest.mark.asyncio
+async def test_health_checks_no_overflow_under_threshold(vault_workspace: Path) -> None:
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace)
+
+    assert report.memory_overflow is False
+
+
+@pytest.mark.asyncio
+async def test_health_checks_includes_knowledge_gaps(vault_workspace: Path) -> None:
+    from app.services.deep_dream import run_health_checks
+
+    gaps = ["event sourcing", "CQRS"]
+    report = await run_health_checks(vault_workspace, knowledge_gaps=gaps)
+
+    assert report.knowledge_gaps == gaps
+    assert report.total_issues >= 2
+
+
+@pytest.mark.asyncio
+async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None:
+    # Add orphan + missing frontmatter + contradiction
+    (vault_workspace / "concepts" / "orphan.md").write_text(
+        "---\ntype: concept\nlast_reviewed: 2026-04-01\n---\n# Orphan\n",
+        encoding="utf-8",
+    )
+    (vault_workspace / "decisions" / "no-fm.md").write_text(
+        "# No FM\n", encoding="utf-8"
+    )
+    (vault_workspace / "decisions" / "contradicted.md").write_text(
+        "---\nhas_contradiction: true\n---\n# X\n", encoding="utf-8"
+    )
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(vault_workspace, knowledge_gaps=["gap1"])
+
+    # orphan + missing_fm + contradiction + gap + stale (async-patterns)
+    assert report.total_issues == (
+        len(report.orphan_notes)
+        + len(report.stale_notes)
+        + len(report.missing_frontmatter)
+        + len(report.unresolved_contradictions)
+        + (1 if report.memory_overflow else 0)
+        + len(report.knowledge_gaps)
+    )
+
+
+@pytest.mark.asyncio
+async def test_health_checks_handles_empty_vault(tmp_path: Path) -> None:
+    (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(tmp_path)
+
+    assert report.total_issues == 0
+    assert report.orphan_notes == []
+    assert report.stale_notes == []

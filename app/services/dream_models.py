@@ -150,3 +150,13 @@ class REMSleepOutput(BaseModel):
     new_connections: list[ConnectionCandidate] = Field(default_factory=list)
     promotion_candidates: list[PromotionCandidate] = Field(default_factory=list)
     gaps: list[KnowledgeGap] = Field(default_factory=list)
+
+
+class HealthReport(BaseModel):
+    orphan_notes: list[str] = Field(default_factory=list)
+    stale_notes: list[str] = Field(default_factory=list)
+    missing_frontmatter: list[str] = Field(default_factory=list)
+    unresolved_contradictions: list[str] = Field(default_factory=list)
+    memory_overflow: bool = False
+    knowledge_gaps: list[str] = Field(default_factory=list)
+    total_issues: int = 0
