@@ -165,7 +165,7 @@ async def test_create_light_dream_pr_full_sequence() -> None:
 
     assert result["git_branch"] == "dream/light-2026-03-31-143000"
     assert result["git_pr_url"] == "https://github.com/owner/repo/pull/42"
-    assert result["git_pr_status"] == "auto_merge_enabled"
+    assert result["git_pr_status"] == "merged"
 
 
 @pytest.mark.asyncio
@@ -494,7 +494,7 @@ async def test_create_deep_dream_pr_respects_auto_merge() -> None:
             files, dream_id=5, source_date=date(2026, 3, 31)
         )
 
-    assert result["git_pr_status"] == "auto_merge_enabled"
+    assert result["git_pr_status"] == "merged"
     merge_calls = [c for c in gh_calls if c[0] == "pr" and c[1] == "merge"]
     assert len(merge_calls) == 1
 

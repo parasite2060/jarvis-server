@@ -3,49 +3,60 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_ai.usage import RunUsage
 
 from app.core.exceptions import DreamError
 from app.models.tables import Dream, ExtractedMemory, Transcript
-from app.services.memory_updater import MemoryItem
+from app.services.dream_models import (
+    ExtractionSummary,
+    FileAction,
+    MemoryItem,
+    MergeResult,
+    SessionLogEntry,
+)
 
-SAMPLE_EXTRACTION: dict[str, Any] = {
-    "no_extract": False,
-    "summary": "Discussed architecture decisions",
-    "decisions": [
-        {
-            "content": "Use FastAPI because async-first",
-            "reasoning": "async-first and Pydantic integration",
-            "vault_target": "decisions",
-            "source_date": "2026-03-31",
-        }
-    ],
-    "preferences": [
-        {
-            "content": "Prefer httpx over requests",
-            "vault_target": "memory",
-            "source_date": "2026-03-31",
-        }
-    ],
-    "patterns": [],
-    "corrections": [],
-    "facts": [
-        {
-            "content": "Project uses PostgreSQL",
-            "vault_target": "memory",
-            "source_date": "2026-03-31",
-        }
-    ],
-}
+SAMPLE_MEMORIES: list[MemoryItem] = [
+    MemoryItem(
+        content="Use FastAPI because async-first",
+        reasoning="async-first and Pydantic integration",
+        vault_target="decisions",
+        source_date="2026-03-31",
+    ),
+    MemoryItem(
+        content="Prefer httpx over requests",
+        reasoning=None,
+        vault_target="memory",
+        source_date="2026-03-31",
+    ),
+    MemoryItem(
+        content="Project uses PostgreSQL",
+        reasoning=None,
+        vault_target="memory",
+        source_date="2026-03-31",
+    ),
+]
 
-NO_EXTRACT_RESULT: dict[str, Any] = {
-    "no_extract": True,
-    "summary": "Quick fix, nothing notable",
-    "decisions": [],
-    "preferences": [],
-    "patterns": [],
-    "corrections": [],
-    "facts": [],
-}
+SAMPLE_SUMMARY = ExtractionSummary(
+    summary="Discussed architecture decisions",
+    no_extract=False,
+    session_log=SessionLogEntry(context="Architecture discussion"),
+)
+
+NO_EXTRACT_SUMMARY = ExtractionSummary(
+    summary="Quick fix, nothing notable",
+    no_extract=True,
+    session_log=SessionLogEntry(),
+)
+
+SAMPLE_MERGE_RESULT = MergeResult(
+    files=[
+        FileAction(path="MEMORY.md", action="append"),
+        FileAction(path="dailys/2026-03-31.md", action="create"),
+    ],
+    summary="Updated memory and daily log",
+)
+
+SAMPLE_USAGE = RunUsage(input_tokens=100, output_tokens=50, requests=1)
 
 
 def _make_transcript(
@@ -102,8 +113,6 @@ class FakeSession:
 
     async def execute(self, stmt: Any) -> MagicMock:
         result = MagicMock()
-        # Inspect the statement to figure out what entity is being queried
-        # SQLAlchemy select() stores columns_clause_froms
         stmt_str = str(stmt)
         if "transcripts" in stmt_str:
             result.scalar_one_or_none.return_value = self._factory.transcript
@@ -127,30 +136,73 @@ class FakeSession:
             item.id = self._factory.dream.id
 
 
+def _make_extraction_mock(
+    memories: list[MemoryItem] | None = None,
+    summary: ExtractionSummary | None = None,
+    usage: RunUsage | None = None,
+    side_effect: Exception | None = None,
+) -> AsyncMock:
+    """Create a mock for run_dream_extraction that populates deps.extracted_memories."""
+    mems = memories if memories is not None else SAMPLE_MEMORIES
+    summ = summary or SAMPLE_SUMMARY
+    usg = usage or SAMPLE_USAGE
+
+    async def _fake_extraction(deps: Any) -> tuple:
+        if side_effect:
+            raise side_effect
+        deps.extracted_memories.extend(mems)
+        return (summ, usg, 3)
+
+    return AsyncMock(side_effect=_fake_extraction)
+
+
+def _make_no_extract_mock() -> AsyncMock:
+    """Extraction that returns no_extract=True with no memories."""
+
+    async def _fake_extraction(deps: Any) -> tuple:
+        return (NO_EXTRACT_SUMMARY, SAMPLE_USAGE, 0)
+
+    return AsyncMock(side_effect=_fake_extraction)
+
+
 @pytest.mark.asyncio
 async def test_full_pipeline_success() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
 
-    mock_extract.assert_called_once_with("User: hello\n\nAssistant: hi there")
-    mock_memu.assert_called_once()
+    mock_extract.assert_called_once()
 
     memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
     assert len(memories) == 3
     types = {m.type for m in memories}
-    assert types == {"decisions", "preferences", "facts"}
+    # vault_target "memory" is not in MEMORY_CATEGORIES, so it maps to "facts"
+    assert types == {"decisions", "facts"}
 
     decision_mem = next(m for m in memories if m.type == "decisions")
     assert decision_mem.reasoning == "async-first and Pydantic integration"
@@ -170,13 +222,13 @@ async def test_no_extract_pipeline() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=NO_EXTRACT_RESULT)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -186,22 +238,22 @@ async def test_no_extract_pipeline() -> None:
     assert len(memories) == 0
     assert dream.status == "completed"
     assert dream.memories_extracted == 0
-    mock_memu.assert_called_once()
+    mock_merge.assert_not_called()
     assert transcript.status == "processed"
 
 
 @pytest.mark.asyncio
-async def test_gpt_failure_marks_dream_failed() -> None:
+async def test_extraction_failure_marks_dream_failed() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(side_effect=DreamError("API timeout"))
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_extract = _make_extraction_mock(side_effect=DreamError("API timeout"))
+    mock_merge = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
@@ -212,22 +264,24 @@ async def test_gpt_failure_marks_dream_failed() -> None:
     assert "API timeout" in dream.error_message
     assert dream.memories_extracted == 0
     assert transcript.status == "failed"
-    mock_memu.assert_called_once()
+    mock_merge.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_memu_failure_doesnt_fail_dream() -> None:
+async def test_merge_failure_doesnt_fail_dream() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(side_effect=Exception("MemU unreachable"))
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(side_effect=Exception("Merge agent unreachable"))
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -242,19 +296,19 @@ async def test_memu_failure_doesnt_fail_dream() -> None:
 async def test_transcript_not_found_returns_early() -> None:
     factory = FakeSessionFactory(None, _make_dream())
     mock_extract = AsyncMock()
-    mock_memu = AsyncMock()
+    mock_merge = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
     ):
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 99999)
 
     mock_extract.assert_not_called()
-    mock_memu.assert_not_called()
+    mock_merge.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -262,14 +316,28 @@ async def test_duration_ms_is_recorded() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc"})
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/1",
+            "git_pr_status": "created",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -281,66 +349,70 @@ async def test_duration_ms_is_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_all_memory_types_stored_with_correct_fields() -> None:
-    full_extraction: dict[str, Any] = {
-        "no_extract": False,
-        "summary": "Full extraction",
-        "decisions": [
-            {
-                "content": "Use FastAPI",
-                "reasoning": "async-first",
-                "vault_target": "decisions",
-                "source_date": "2026-03-31",
-            }
-        ],
-        "preferences": [
-            {
-                "content": "Prefer httpx",
-                "vault_target": "memory",
-                "source_date": "2026-03-31",
-            }
-        ],
-        "patterns": [
-            {
-                "content": "Always READ before WRITE",
-                "vault_target": "patterns",
-                "source_date": "2026-03-31",
-            }
-        ],
-        "corrections": [
-            {
-                "content": "CORRECTION: Was JWT -> Now session auth",
-                "vault_target": "memory",
-                "source_date": "2026-03-31",
-            }
-        ],
-        "facts": [
-            {
-                "content": "Project uses PostgreSQL",
-                "vault_target": "projects",
-                "source_date": "2026-03-31",
-            }
-        ],
-    }
+    # vault_target -> category mapping: if vault_target is in MEMORY_CATEGORIES it maps directly,
+    # otherwise falls back to "facts". Only "decisions", "patterns", "facts" from MEMORY_CATEGORIES
+    # overlap with VaultTarget values. Other vault_targets like "memory", "projects" map to "facts".
+    all_memories = [
+        MemoryItem(
+            content="Use FastAPI",
+            reasoning="async-first",
+            vault_target="decisions",
+            source_date="2026-03-31",
+        ),
+        MemoryItem(
+            content="Prefer httpx",
+            reasoning=None,
+            vault_target="memory",
+            source_date="2026-03-31",
+        ),
+        MemoryItem(
+            content="Always READ before WRITE",
+            reasoning=None,
+            vault_target="patterns",
+            source_date="2026-03-31",
+        ),
+        MemoryItem(
+            content="Project uses PostgreSQL",
+            reasoning=None,
+            vault_target="projects",
+            source_date="2026-03-31",
+        ),
+    ]
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=full_extraction)
-    mock_memu = AsyncMock(return_value={"task_id": "abc"})
+    mock_extract = _make_extraction_mock(memories=all_memories)
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/1",
+            "git_pr_status": "created",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
 
     memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
-    assert len(memories) == 5
+    assert len(memories) == 4
 
     types = sorted(m.type for m in memories)
-    assert types == ["corrections", "decisions", "facts", "patterns", "preferences"]
+    # "decisions" and "patterns" map directly; "memory" and "projects" -> "facts"
+    assert types == ["decisions", "facts", "facts", "patterns"]
 
     decision_mem = next(m for m in memories if m.type == "decisions")
     assert decision_mem.content == "Use FastAPI"
@@ -348,9 +420,11 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
     assert decision_mem.vault_target == "decisions"
     assert decision_mem.source_date == date(2026, 3, 31)
 
-    correction = next(m for m in memories if m.type == "corrections")
-    assert correction.reasoning is None
-    assert correction.vault_target == "memory"
+    facts = [m for m in memories if m.type == "facts"]
+    assert len(facts) == 2
+    fact_contents = {m.content for m in facts}
+    assert "Prefer httpx" in fact_contents
+    assert "Project uses PostgreSQL" in fact_contents
 
     pattern = next(m for m in memories if m.type == "patterns")
     assert pattern.vault_target == "patterns"
@@ -358,101 +432,12 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_full_pipeline_with_file_updates() -> None:
+async def test_full_pipeline_with_merge_and_files() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock(
-        return_value=[
-            {"path": "MEMORY.md", "action": "append", "line_count": 30, "memory_overflow": False},
-            {"path": "dailys/2026-03-31.md", "action": "create"},
-        ]
-    )
-
-    with (
-        patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-    ):
-        from app.tasks.light_dream_task import light_dream_task
-
-        await light_dream_task({}, 1)
-
-    mock_update_files.assert_called_once()
-    call_args = mock_update_files.call_args
-    assert call_args[0][0] == dream.id  # dream_id
-    assert isinstance(call_args[0][1], list)  # memories list
-    assert all(isinstance(m, MemoryItem) for m in call_args[0][1])
-    assert len(call_args[0][1]) == 3  # 1 decision + 1 preference + 1 fact
-
-    assert dream.status == "completed"
-    assert dream.files_modified is not None
-    assert len(dream.files_modified) == 2
-
-
-@pytest.mark.asyncio
-async def test_no_extract_skips_file_updates() -> None:
-    transcript = _make_transcript()
-    dream = _make_dream()
-    factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=NO_EXTRACT_RESULT)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock()
-
-    with (
-        patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-    ):
-        from app.tasks.light_dream_task import light_dream_task
-
-        await light_dream_task({}, 1)
-
-    mock_update_files.assert_not_called()
-    assert dream.files_modified is None
-
-
-@pytest.mark.asyncio
-async def test_file_update_failure_doesnt_fail_dream() -> None:
-    transcript = _make_transcript()
-    dream = _make_dream()
-    factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock(side_effect=RuntimeError("disk full"))
-
-    with (
-        patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
-    ):
-        from app.tasks.light_dream_task import light_dream_task
-
-        await light_dream_task({}, 1)
-
-    assert dream.status == "completed"
-    assert dream.memories_extracted == 3
-    assert dream.files_modified is None
-
-
-@pytest.mark.asyncio
-async def test_full_pipeline_with_git_pr() -> None:
-    transcript = _make_transcript()
-    dream = _make_dream()
-    factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock(
-        return_value=[
-            {"path": "MEMORY.md", "action": "append", "line_count": 30, "memory_overflow": False},
-            {"path": "dailys/2026-03-31.md", "action": "create"},
-        ]
-    )
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -465,13 +450,72 @@ async def test_full_pipeline_with_git_pr() -> None:
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_merge.assert_called_once()
+    assert dream.status == "completed"
+    assert dream.files_modified is not None
+    assert len(dream.files_modified) == 2
+
+
+@pytest.mark.asyncio
+async def test_no_extract_skips_merge() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_merge.assert_not_called()
+    assert dream.files_modified is None
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_with_git_pr() -> None:
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -491,27 +535,22 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock(
-        return_value=[
-            {"path": "MEMORY.md", "action": "append"},
-            {"path": "dailys/2026-03-31.md", "action": "create"},
-        ]
-    )
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(side_effect=RuntimeError("git push failed"))
     mock_cleanup = AsyncMock()
     mock_invalidate = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -520,9 +559,7 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     assert dream.memories_extracted == 3
     assert dream.git_branch is None
     assert dream.git_pr_url is None
-    # Cache NOT invalidated on git failure
     mock_invalidate.assert_not_called()
-    # Cleanup still called
     mock_cleanup.assert_called_once()
 
 
@@ -531,16 +568,16 @@ async def test_no_files_modified_skips_git_ops() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=NO_EXTRACT_RESULT)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
     mock_create_pr = AsyncMock()
     mock_cleanup = AsyncMock()
     mock_invalidate = AsyncMock()
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
@@ -560,13 +597,8 @@ async def test_context_cache_invalidated_after_pr() -> None:
     transcript = _make_transcript()
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
-    mock_extract = AsyncMock(return_value=SAMPLE_EXTRACTION)
-    mock_memu = AsyncMock(return_value={"task_id": "abc", "status": "accepted"})
-    mock_update_files = AsyncMock(
-        return_value=[
-            {"path": "MEMORY.md", "action": "append"},
-        ]
-    )
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_MERGE_RESULT, SAMPLE_USAGE, 2))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-100000",
@@ -579,13 +611,14 @@ async def test_context_cache_invalidated_after_pr() -> None:
 
     with (
         patch("app.tasks.light_dream_task.async_session_factory", factory),
-        patch("app.tasks.light_dream_task.extract_memories", mock_extract),
-        patch("app.tasks.light_dream_task.memu_memorize", mock_memu),
-        patch("app.tasks.light_dream_task.update_memory_files", mock_update_files),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_merge", mock_merge),
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)

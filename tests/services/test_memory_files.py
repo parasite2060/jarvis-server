@@ -8,8 +8,8 @@ from app.services.memory_files import read_vault_file, read_vault_file_lines
 @pytest.fixture()
 def mock_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
-        "app.services.memory_files.settings.ai_memory_repo_path",
-        str(tmp_path),
+        "app.services.memory_files.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
     )
     soul = "---\ntype: soul\n---\n# Soul\n\nTest soul content"
     (tmp_path / "SOUL.md").write_text(soul, encoding="utf-8")

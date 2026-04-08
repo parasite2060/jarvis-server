@@ -75,11 +75,57 @@ async def append_to_memory_md(
     }
 
 
+@dataclass(frozen=True)
+class SessionContext:
+    context: str = ""
+    decisions_made: list[str] = ()  # type: ignore[assignment]
+    lessons_learned: list[str] = ()  # type: ignore[assignment]
+    action_items: list[str] = ()  # type: ignore[assignment]
+
+
+def _build_session_block(
+    session_num: int,
+    session_summary: str,
+    session_time: str,
+    session_ctx: SessionContext | None = None,
+) -> str:
+    lines: list[str] = []
+    lines.append(f"\n### Session {session_num}: {session_time} - {session_summary}\n")
+
+    ctx = session_ctx or SessionContext()
+
+    if ctx.context:
+        lines.append(f"\n**Context**: {ctx.context}\n")
+
+    if ctx.decisions_made:
+        lines.append("\n**Decisions Made**:")
+        for item in ctx.decisions_made:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    if ctx.lessons_learned:
+        lines.append("\n**Lessons Learned**:")
+        for item in ctx.lessons_learned:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    if ctx.action_items:
+        lines.append("\n**Action Items**:")
+        for item in ctx.action_items:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 async def append_to_daily_log(
     memories: list[MemoryItem],
     session_summary: str,
     source_date: date,
+    session_ctx: SessionContext | None = None,
 ) -> dict[str, object]:
+    now = datetime.now(UTC)
+    session_time = now.strftime("%H:%M")
     daily_path = f"dailys/{source_date.isoformat()}.md"
 
     existing = await read_vault_file(daily_path)
@@ -92,7 +138,8 @@ async def append_to_daily_log(
             f"created: {source_date.isoformat()}\n"
             f"updated: {source_date.isoformat()}\n"
             "---\n\n"
-            f"# {source_date.isoformat()}\n"
+            f"# Daily Log: {source_date.isoformat()}\n\n"
+            "## Sessions\n"
         )
         existing = frontmatter
         action = "create"
@@ -100,17 +147,13 @@ async def append_to_daily_log(
     else:
         action = "append"
 
-    session_count = len(re.findall(r"^## Session \d+", existing, re.MULTILINE))
+    session_count = len(re.findall(r"^### Session \d+", existing, re.MULTILINE))
     session_num = session_count + 1
 
-    memory_lines = [_format_memory_line(m) for m in memories]
-    session_block = (
-        f"\n## Session {session_num}\n\n"
-        f"**Summary:** {session_summary}\n\n"
-        "**Memories extracted:**\n" + "\n".join(memory_lines) + "\n"
+    session_block = _build_session_block(
+        session_num, session_summary, session_time, session_ctx
     )
 
-    # Update frontmatter `updated` date
     updated_content = re.sub(
         r"^(updated:\s*)\S+",
         rf"\g<1>{source_date.isoformat()}",

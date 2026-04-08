@@ -14,7 +14,7 @@ from app.models.tables import FileManifest
 
 log = get_logger("jarvis.services.file_manifest")
 
-SKIP_DIRS = {".git", "node_modules", "__pycache__"}
+SKIP_DIRS = {".git", ".backups", "node_modules", "__pycache__"}
 VAULT_EXTENSIONS = {".md", ".yml", ".yaml"}
 
 

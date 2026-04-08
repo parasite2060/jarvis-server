@@ -2,3 +2,25 @@
 auto_merge: true
 deep_dream_cron: "0 20 * * *"  # 3AM GMT+7 = 8PM UTC — adjust to your timezone
 max_memory_lines: 200
+weekly_review_cron: "0 20 * * 0"  # Sunday 8PM UTC
+
+# Knowledge scoring weights (must sum to 1.0)
+scoring:
+  frequency: 0.25
+  recency: 0.25
+  relevance: 0.20
+  consistency: 0.20
+  breadth: 0.10
+
+# Lifecycle thresholds
+thresholds:
+  promotion_score: 0.7
+  pruning_score: 0.2
+  pruning_age_days: 30
+  stale_days: 60
+  decay_rate: 0.03
+
+# Automatic lifecycle transitions
+lifecycle:
+  auto_promote_draft: true
+  auto_archive_days: 90

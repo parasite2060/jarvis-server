@@ -17,8 +17,8 @@ TS = datetime(2026, 1, 1, tzinfo=UTC)
 @pytest.fixture()
 def mock_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
-        "app.services.file_manifest.settings.ai_memory_repo_path",
-        str(tmp_path),
+        "app.services.file_manifest.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
     )
     (tmp_path / "SOUL.md").write_text("# Soul\n\nTest soul content", encoding="utf-8")
     (tmp_path / "MEMORY.md").write_text("# Memory\n\nTest memory", encoding="utf-8")
@@ -118,3 +118,32 @@ def test_scan_and_hash_empty_directory(tmp_path: Path) -> None:
     files = _scan_and_hash(tmp_path)
 
     assert files == []
+
+
+def test_scan_and_hash_excludes_backups(tmp_path: Path) -> None:
+    backups_dir = tmp_path / ".backups"
+    backups_dir.mkdir()
+    (backups_dir / "snapshot.md").write_text("# Backup", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text("# Soul", encoding="utf-8")
+
+    files = _scan_and_hash(tmp_path)
+    paths = {f.relative_path for f in files}
+
+    assert "SOUL.md" in paths
+    assert not any(".backups" in p for p in paths)
+
+
+def test_scan_and_hash_includes_new_vault_folders(tmp_path: Path) -> None:
+    for folder in ("concepts", "connections", "lessons", "references", "reviews"):
+        folder_path = tmp_path / folder
+        folder_path.mkdir()
+        (folder_path / "_index.md").write_text(f"# {folder.title()} Index\n", encoding="utf-8")
+
+    files = _scan_and_hash(tmp_path)
+    paths = {f.relative_path for f in files}
+
+    assert "concepts/_index.md" in paths
+    assert "connections/_index.md" in paths
+    assert "lessons/_index.md" in paths
+    assert "references/_index.md" in paths
+    assert "reviews/_index.md" in paths

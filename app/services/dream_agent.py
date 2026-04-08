@@ -20,6 +20,7 @@ from app.services.dream_models import (
     ExtractionSummary,
     MemoryItem,
     MergeResult,
+    SessionLogEntry,
 )
 
 log = get_logger("jarvis.services.dream_agent")
@@ -226,6 +227,11 @@ class DreamDeps:
     project: str | None = None
     token_count: int | None = None
     created_at: datetime | None = None
+    # Session log sections (populated by store tools)
+    session_context: str = ""
+    session_decisions: list[str] = field(default_factory=list)
+    session_lessons: list[str] = field(default_factory=list)
+    session_action_items: list[str] = field(default_factory=list)
 
 
 def _load_extraction_prompt() -> str:
@@ -253,6 +259,42 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
     _register_file_tools(agent, allow_write=False)
 
     @agent.tool
+    async def store_context(ctx: RunContext[DreamDeps], content: str) -> str:
+        """Store the session context — a brief description of the session (1-3 sentences)."""
+        ctx.deps.session_context = content
+        return f"Context stored: {content[:80]}..."
+
+    @agent.tool
+    async def store_decision(
+        ctx: RunContext[DreamDeps], decision: str, reasoning: str
+    ) -> str:
+        """Store a decision made during the session. Format: what was decided and why."""
+        entry = f"{decision} — {reasoning}"
+        ctx.deps.session_decisions.append(entry)
+        # Also store as MemoryItem for knowledge base
+        ctx.deps.extracted_memories.append(
+            MemoryItem(
+                content=decision,
+                reasoning=reasoning,
+                vault_target="decisions",
+                source_date=date.today().isoformat(),
+            )
+        )
+        return f"Decision stored: {entry[:80]}..."
+
+    @agent.tool
+    async def store_lesson(ctx: RunContext[DreamDeps], lesson: str) -> str:
+        """Store a lesson learned — what went well, what could improve, or a surprising finding."""
+        ctx.deps.session_lessons.append(lesson)
+        return f"Lesson stored: {lesson[:80]}..."
+
+    @agent.tool
+    async def store_action_item(ctx: RunContext[DreamDeps], action: str) -> str:
+        """Store an action item or follow-up task identified during the session."""
+        ctx.deps.session_action_items.append(action)
+        return f"Action item stored: {action[:80]}..."
+
+    @agent.tool
     async def store_memory(
         ctx: RunContext[DreamDeps],
         category: str,
@@ -261,7 +303,10 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         source_date: str,
         reasoning: str | None = None,
     ) -> str:
-        """Store an extracted memory. Call for each insight found."""
+        """Store a general memory (pattern, preference, fact, correction).
+
+        Use store_decision/store_lesson/store_action_item for those types instead.
+        """
         if category not in MEMORY_CATEGORIES:
             return f"Invalid category '{category}'. Must be one of: {', '.join(MEMORY_CATEGORIES)}"
         if vault_target not in ALLOWED_VAULT_TARGETS:
@@ -282,18 +327,74 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
 
 EXTRACTION_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
+MIN_USER_MESSAGES = 3
+CONTEXT_RETRY_LIMIT = 3
+
+
+def _count_user_messages(workspace: Path) -> int:
+    transcript = workspace / "transcript.txt"
+    if not transcript.is_file():
+        return 0
+    text = transcript.read_text(encoding="utf-8")
+    return sum(1 for line in text.splitlines() if line.lstrip().startswith("User:"))
+
 
 async def run_dream_extraction(
     deps: DreamDeps,
 ) -> tuple[ExtractionSummary, RunUsage, int]:
+    # Skip very short sessions
+    user_msg_count = _count_user_messages(deps.workspace)
+    if user_msg_count < MIN_USER_MESSAGES:
+        log.info(
+            "dream_extraction.skipped.short_session",
+            user_messages=user_msg_count,
+        )
+        return (
+            ExtractionSummary(no_extract=True, summary="Session too short"),
+            RunUsage(),
+            0,
+        )
+
     agent = _get_extraction_agent()
     result = await agent.run(
-        "Extract memories from the transcript using the available tools. "
-        "Call store_memory() for each insight you find as you read.",
+        "Extract session insights from the transcript using the available tools. "
+        "Use store_context(), store_decision(), store_lesson(), store_action_item() "
+        "for structured session log. Use store_memory() only for general patterns, "
+        "preferences, facts, or corrections.",
         deps=deps,
         usage_limits=EXTRACTION_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+
+    # Context is required — retry if agent forgot to store it
+    for attempt in range(CONTEXT_RETRY_LIMIT):
+        if deps.session_context:
+            break
+        log.warning(
+            "dream_extraction.context_missing.retry",
+            attempt=attempt + 1,
+        )
+        result = await agent.run(
+            "You forgot to call store_context(). "
+            "Read the transcript and call store_context() with a brief "
+            "description of what this session was about (1-3 sentences). "
+            "This is required.",
+            deps=deps,
+            message_history=result.all_messages(),
+            usage_limits=EXTRACTION_LIMITS,
+        )
+
+    if not deps.session_context:
+        log.error("dream_extraction.context_missing.gave_up")
+
+    # Assemble session log from stored data
+    output = result.output
+    output.session_log = SessionLogEntry(
+        context=deps.session_context,
+        decisions_made=deps.session_decisions,
+        lessons_learned=deps.session_lessons,
+        action_items=deps.session_action_items,
+    )
+    return output, result.usage(), _count_tool_calls(result.all_messages())
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +409,7 @@ class MergeDeps:
     source_date: date = field(default_factory=date.today)
     session_id: str = ""
     summary: str = ""
+    session_log: SessionLogEntry = field(default_factory=SessionLogEntry)
 
 
 def _load_merge_prompt() -> str:
@@ -345,6 +447,28 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
             reason = f" (reason: {m.reasoning})" if m.reasoning else ""
             lines.append(f"[{i}] [{m.vault_target}] {m.source_date}: {m.content}{reason}")
         return "\n".join(lines)
+
+    @agent.tool
+    async def get_session_log(ctx: RunContext[MergeDeps]) -> str:
+        """Return the structured session log for daily log and knowledge base."""
+        parts: list[str] = []
+        parts.append(f"Summary: {ctx.deps.summary}")
+        sl = ctx.deps.session_log
+        if sl.context:
+            parts.append(f"Context: {sl.context}")
+        if sl.decisions_made:
+            parts.append("Decisions Made:")
+            for item in sl.decisions_made:
+                parts.append(f"  - {item}")
+        if sl.lessons_learned:
+            parts.append("Lessons Learned:")
+            for item in sl.lessons_learned:
+                parts.append(f"  - {item}")
+        if sl.action_items:
+            parts.append("Action Items:")
+            for item in sl.action_items:
+                parts.append(f"  - {item}")
+        return "\n".join(parts) if parts else "No session log available."
 
     @agent.tool
     async def memu_search(ctx: RunContext[MergeDeps], query: str, limit: int = 10) -> str:
@@ -385,8 +509,8 @@ MERGE_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 async def run_merge(deps: MergeDeps) -> tuple[MergeResult, RunUsage, int]:
     agent = _get_merge_agent()
     result = await agent.run(
-        "Merge the extracted memories into the ai-memory repository. "
-        "Call get_extracted_memories() first to see what needs to be merged.",
+        "Write the session to the daily log and distill insights into the knowledge base. "
+        "Call get_session_log() and get_extracted_memories() first to see what needs to be merged.",
         deps=deps,
         usage_limits=MERGE_LIMITS,
     )
@@ -488,7 +612,10 @@ def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
         "stats": output.stats.model_dump(),
         "vault_updates": {
             folder: [entry.model_dump() for entry in getattr(output.vault_updates, folder)]
-            for folder in ("decisions", "projects", "patterns", "templates")
+            for folder in (
+                "decisions", "projects", "patterns", "templates",
+                "concepts", "connections", "lessons",
+            )
         },
     }
 

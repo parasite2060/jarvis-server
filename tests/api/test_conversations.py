@@ -12,7 +12,7 @@ AUTH_HEADER = {"Authorization": f"Bearer {API_KEY}"}
 
 
 SAMPLE_JSONL = (
-    '{"type":"human","message":{"role":"user","content":"Hello"}}\n'
+    '{"type":"user","message":{"role":"user","content":"Hello"}}\n'
     '{"type":"assistant","message":{"role":"assistant","content":"Hi"}}'
 )
 
