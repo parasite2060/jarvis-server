@@ -229,9 +229,12 @@ class DreamDeps:
     created_at: datetime | None = None
     # Session log sections (populated by store tools)
     session_context: str = ""
+    session_key_exchanges: list[str] = field(default_factory=list)
     session_decisions: list[str] = field(default_factory=list)
     session_lessons: list[str] = field(default_factory=list)
     session_action_items: list[str] = field(default_factory=list)
+    session_concepts: list[dict[str, str]] = field(default_factory=list)
+    session_connections: list[dict[str, str]] = field(default_factory=list)
 
 
 def _load_extraction_prompt() -> str:
@@ -293,6 +296,53 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         """Store an action item or follow-up task identified during the session."""
         ctx.deps.session_action_items.append(action)
         return f"Action item stored: {action[:80]}..."
+
+    @agent.tool
+    async def store_key_exchange(ctx: RunContext[DreamDeps], exchange: str) -> str:
+        """Store a key exchange — a notable question/answer or dialogue moment worth remembering."""
+        ctx.deps.session_key_exchanges.append(exchange)
+        return f"Key exchange stored: {exchange[:80]}..."
+
+    @agent.tool
+    async def store_concept(
+        ctx: RunContext[DreamDeps], name: str, description: str
+    ) -> str:
+        """Store a concept discussed in the session. Creates a knowledge base entry."""
+        ctx.deps.session_concepts.append({"name": name, "description": description})
+        ctx.deps.extracted_memories.append(
+            MemoryItem(
+                content=f"{name}: {description}",
+                reasoning=None,
+                vault_target="concepts",
+                source_date=date.today().isoformat(),
+            )
+        )
+        return f"Concept stored: {name}"
+
+    @agent.tool
+    async def store_connection(
+        ctx: RunContext[DreamDeps],
+        concept_a: str,
+        concept_b: str,
+        relationship: str,
+    ) -> str:
+        """Store a connection between two concepts discussed in the session."""
+        ctx.deps.session_connections.append(
+            {
+                "concept_a": concept_a,
+                "concept_b": concept_b,
+                "relationship": relationship,
+            }
+        )
+        ctx.deps.extracted_memories.append(
+            MemoryItem(
+                content=f"{concept_a} <-> {concept_b}: {relationship}",
+                reasoning=None,
+                vault_target="connections",
+                source_date=date.today().isoformat(),
+            )
+        )
+        return f"Connection stored: {concept_a} <-> {concept_b}"
 
     @agent.tool
     async def store_memory(
@@ -358,9 +408,10 @@ async def run_dream_extraction(
     agent = _get_extraction_agent()
     result = await agent.run(
         "Extract session insights from the transcript using the available tools. "
-        "Use store_context(), store_decision(), store_lesson(), store_action_item() "
-        "for structured session log. Use store_memory() only for general patterns, "
-        "preferences, facts, or corrections.",
+        "Use store_context(), store_key_exchange(), store_decision(), store_lesson(), "
+        "store_action_item(), store_concept(), store_connection() for structured "
+        "session log. Use store_memory() only for general patterns, preferences, "
+        "facts, or corrections.",
         deps=deps,
         usage_limits=EXTRACTION_LIMITS,
     )
@@ -390,9 +441,12 @@ async def run_dream_extraction(
     output = result.output
     output.session_log = SessionLogEntry(
         context=deps.session_context,
+        key_exchanges=deps.session_key_exchanges,
         decisions_made=deps.session_decisions,
         lessons_learned=deps.session_lessons,
         action_items=deps.session_action_items,
+        concepts=deps.session_concepts,
+        connections=deps.session_connections,
     )
     return output, result.usage(), _count_tool_calls(result.all_messages())
 
@@ -460,6 +514,10 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
             parts.append("Decisions Made:")
             for item in sl.decisions_made:
                 parts.append(f"  - {item}")
+        if sl.key_exchanges:
+            parts.append("Key Exchanges:")
+            for item in sl.key_exchanges:
+                parts.append(f"  - {item}")
         if sl.lessons_learned:
             parts.append("Lessons Learned:")
             for item in sl.lessons_learned:
@@ -468,6 +526,17 @@ def _get_merge_agent() -> Agent[MergeDeps, MergeResult]:
             parts.append("Action Items:")
             for item in sl.action_items:
                 parts.append(f"  - {item}")
+        if sl.concepts:
+            parts.append("Concepts:")
+            for item in sl.concepts:
+                parts.append(f"  - {item.get('name', '')}: {item.get('description', '')}")
+        if sl.connections:
+            parts.append("Connections:")
+            for item in sl.connections:
+                parts.append(
+                    f"  - {item.get('concept_a', '')} <-> {item.get('concept_b', '')}: "
+                    f"{item.get('relationship', '')}"
+                )
         return "\n".join(parts) if parts else "No session log available."
 
     @agent.tool
