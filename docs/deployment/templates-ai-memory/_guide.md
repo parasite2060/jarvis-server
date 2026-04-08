@@ -177,7 +177,7 @@ Transitions:
 [How this concept is applied in practice]
 
 ## Related
-- [Related concept or file](filename.md)
+- [[connections/...]] or [[patterns/...]]
 ```
 
 ### Connection Files
@@ -272,6 +272,7 @@ Generates a weekly review summary in `reviews/YYYY-WW.md` covering:
 - **Imperative voice** — Write "Use X for Y" not "The project uses X"
 - **One line per entry, under 150 characters** — MEMORY.md is an index, not a dump
 - **CORRECTION prefix** — For changed facts: "CORRECTION: Was [old] -> Now [new] (date)"
+- **Wiki-links to vault files** — When a MEMORY.md entry has a corresponding vault file, append a wiki-link: `→ [[patterns/async-patterns]]`. This creates graph edges in Obsidian.
 - **Strong Patterns promotion** — Entries reinforced 3+ times across sessions are promoted to the `## Strong Patterns` section
 
 ## User Editing

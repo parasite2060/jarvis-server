@@ -33,17 +33,19 @@ The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Session
 
 ### Session 1: [HH:MM] - [Session Title]
 
-**Context**: [From session log context]
+**Context**: Write 1-3 narrative sentences describing what the session was about and why it started.
 
-**Decisions Made**:
-- [From session log decisions — each with rationale]
+**Key Exchanges**: Summarize the most important back-and-forth moments of the session in narrative prose. Focus on questions asked, answers given, and pivotal discussion points that shaped outcomes.
 
-**Lessons Learned**:
-- [From session log lessons]
+**Decisions Made**: Describe each decision in a full sentence including the rationale. For example: "Chose PydanticAI over LangChain because it offers native structured output validation without additional parsing layers."
+
+**Lessons Learned**: State each lesson as a narrative sentence explaining what was learned and why it matters. For example: "Discovered that mock-based database tests can silently pass when the real migration has a breaking column rename."
 
 **Action Items**:
-- [From session log action items]
+- [From session log action items — these remain as bullet points]
 ```
+
+**Important**: Write all sections except Action Items as **narrative sentences**, not `[type] content` bullet lists. The daily log should read like a concise journal entry, not a structured data dump.
 
 When appending to an existing daily log, increment the session number and preserve all existing session blocks. If a section has no content (e.g., no lessons learned), omit that section entirely rather than leaving it empty.
 

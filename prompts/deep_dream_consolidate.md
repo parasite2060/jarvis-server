@@ -48,9 +48,10 @@ last_reviewed: YYYY-MM-DD
 5. **Absolute dates only**: Use YYYY-MM-DD format. NEVER use "yesterday", "last week", "today", or any relative date.
 6. **Imperative voice**: "Use X for Y" not "The user uses X for Y".
 7. **One line per entry, under 150 characters**: MEMORY.md is an index, not a dump. Be concise.
-8. **Hard cap: 200 lines maximum**: The total MEMORY.md output (including frontmatter, headers, blank lines) must be <=200 lines. If you must cut, prune oldest Recent entries first.
-9. **Preserve YAML frontmatter**: Keep the original `created` date. Update `updated` and `last_reviewed` to today's date.
-10. **Include CORRECTION entries**: When contradictions are resolved, add a CORRECTION entry in the appropriate section so the change is visible.
+8. **Wiki-links to vault files**: When a MEMORY.md entry has a corresponding vault file, append a wiki-link: `→ [[patterns/async-patterns]]` or `→ [[decisions/tool-selections]]`. This creates graph edges in Obsidian. Only add links when the vault file actually exists.
+9. **Hard cap: 200 lines maximum**: The total MEMORY.md output (including frontmatter, headers, blank lines) must be <=200 lines. If you must cut, prune oldest Recent entries first.
+10. **Preserve YAML frontmatter**: Keep the original `created` date. Update `updated` and `last_reviewed` to today's date.
+11. **Include CORRECTION entries**: When contradictions are resolved, add a CORRECTION entry in the appropriate section so the change is visible.
 
 ## Daily Summary Rules
 
@@ -76,13 +77,106 @@ Route today's memories to vault folders based on content type. Each memory's `va
 
 ### Vault Folder Routing
 
-- **decisions/**: Any decision with reasoning ("chose X because Y"). File per topic area (e.g., `architecture-choices.md`, `tool-selections.md`). Group related decisions into existing files when they share a topic. Use ADR format: Decision, Context, Alternatives, Consequences.
+- **decisions/**: Any decision with reasoning ("chose X because Y"). File per topic area (e.g., `architecture-choices.md`, `tool-selections.md`). Group related decisions into existing files when they share a topic.
 - **projects/**: Active project context updates. One file per project (e.g., `jarvis.md`). Include current status, recent decisions, and tech stack.
-- **patterns/**: Session-extracted evolving patterns. File per category (e.g., `coding-patterns.md`, `architecture-patterns.md`). Include examples and reinforcement count. Format: Rule, Why, Evidence, Apply When.
+- **patterns/**: Session-extracted evolving patterns. File per category (e.g., `coding-patterns.md`, `architecture-patterns.md`). Include examples and reinforcement count.
 - **templates/**: Reusable templates, prompts, or frameworks discovered during sessions. One file per template.
-- **concepts/**: Core concept definitions and mental models. One file per concept (e.g., `clean-architecture.md`). Format: What It Is, How Used, Related.
-- **connections/**: Cross-domain relationships and mappings. One file per connection (e.g., `firmware-to-backend-patterns.md`). Format: Relationship, Mapping, Evidence, Implications.
-- **lessons/**: Lessons learned from incidents, mistakes, and debugging sessions. One file per lesson (e.g., `mock-db-migration-failure.md`). Format: Lesson, What Happened, Fix, Apply When.
+- **concepts/**: Core concept definitions and mental models. One file per concept (e.g., `clean-architecture.md`).
+- **connections/**: Cross-domain relationships and mappings. One file per connection (e.g., `firmware-to-backend-patterns.md`).
+- **lessons/**: Lessons learned from incidents, mistakes, and debugging sessions. One file per lesson (e.g., `mock-db-migration-failure.md`).
+
+### Content Templates
+
+Use the following templates when writing vault files. Each template defines the required sections — do NOT omit sections, but you may leave a section body as "None yet" if no content applies.
+
+#### Decision Files (ADR Format)
+
+```markdown
+# [Decision Title]
+
+## Decision
+[What was decided]
+
+## Context
+[Why this decision was needed]
+
+## Alternatives Considered
+- [Alternative 1]: [Why rejected]
+- [Alternative 2]: [Why rejected]
+
+## Consequences
+- [Positive consequence]
+- [Negative consequence or trade-off]
+```
+
+#### Pattern Files (Rule + Evidence)
+
+```markdown
+# [Pattern Name]
+
+## Rule
+[The pattern or rule, stated imperatively]
+
+## Why
+[Reasoning and evidence for the pattern]
+
+## Evidence
+- [Session/date where pattern was observed] (reinforced Nx)
+
+## Apply When
+[Conditions under which this pattern applies]
+```
+
+#### Lesson Files
+
+```markdown
+# [Lesson Title]
+
+## Lesson
+[The key takeaway, stated imperatively]
+
+## What Happened
+[Description of the incident or mistake]
+
+## Fix
+[How it was resolved]
+
+## Apply When
+[Conditions to watch for to prevent recurrence]
+```
+
+#### Concept Files
+
+```markdown
+# [Concept Name]
+
+## What It Is
+[Definition and explanation]
+
+## How Used
+[How this concept is applied in practice]
+
+## Related
+- [[connections/...]] or [[patterns/...]]
+```
+
+#### Connection Files
+
+```markdown
+# [Connection Title]
+
+## Relationship
+[Description of the cross-domain relationship]
+
+## Mapping
+[How concepts from domain A map to domain B]
+
+## Evidence
+- [Observations supporting this connection]
+
+## Implications
+[What this connection means for practice]
+```
 
 ### Vault File Content Rules
 
