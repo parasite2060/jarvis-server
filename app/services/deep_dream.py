@@ -223,7 +223,11 @@ def calculate_candidate_score(
     context_count: int,
     weights: dict[str, float] | None = None,
     decay_rate: float = DEFAULT_DECAY_RATE,
+    is_reference: bool = False,
 ) -> float:
+    if is_reference:
+        return 1.0  # Terminal node: references are permanent, never scored for pruning
+
     w = weights or DEFAULT_SCORING_WEIGHTS
     freq = min(reinforcement_count / 10.0, 1.0)
     recency = math.exp(-decay_rate * days_since_reinforced)
@@ -305,6 +309,10 @@ async def run_health_checks(
                 continue
 
             frontmatter = text[3:fm_end]
+
+            # Skip contradiction and stale checks for references/ (terminal nodes)
+            if folder == "references":
+                continue
 
             # Check for contradictions
             if re.search(r"has_contradiction:\s*true", frontmatter, re.IGNORECASE):
