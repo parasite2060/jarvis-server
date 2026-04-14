@@ -443,3 +443,130 @@ async def run_health_checks(
         unclassified_lessons=unclassified_lessons,
         total_issues=total_issues,
     )
+
+
+# ---------------------------------------------------------------------------
+# Auto-fix: deterministic fixes for health check issues
+# ---------------------------------------------------------------------------
+
+WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+DEFAULT_FRONTMATTER = """\
+---
+type: {type}
+status: draft
+tags: []
+created: {date}
+updated: {date}
+last_reviewed: {date}
+reinforcement_count: 0
+confidence: low
+---
+"""
+
+
+async def auto_fix_health_issues(
+    workspace: Path,
+    report: HealthReport,
+) -> dict[str, int]:
+    """Auto-fix deterministic health issues. Returns counts of fixes applied."""
+    fixed_backlinks = 0
+    fixed_frontmatter = 0
+    fixed_orphans = 0
+
+    today_str = date.today().isoformat()
+
+    # 1. Fix missing backlinks — add reverse link to target's ## Related section
+    for entry in report.missing_backlinks:
+        parts = entry.split(" → ")
+        if len(parts) != 2:
+            continue
+        source_part = parts[0].strip()
+        target_part = parts[1].split(" (")[0].strip()
+
+        source_slug = source_part.replace(".md", "")
+        target_path = workspace / target_part
+
+        if not target_path.is_file():
+            continue
+
+        content = target_path.read_text(encoding="utf-8")
+
+        # Check if ## Related section exists
+        if "## Related" in content:
+            # Append to existing Related section
+            related_idx = content.index("## Related")
+            # Find end of Related section (next ## or end of file)
+            next_section = content.find("\n## ", related_idx + 10)
+            insert_pos = next_section if next_section != -1 else len(content)
+            new_link = f"- [[{source_slug}]]\n"
+            if new_link.strip() not in content:
+                content = content[:insert_pos] + new_link + content[insert_pos:]
+                target_path.write_text(content, encoding="utf-8")
+                fixed_backlinks += 1
+        else:
+            # Add ## Related section at end of file
+            content = content.rstrip() + f"\n\n## Related\n- [[{source_slug}]]\n"
+            target_path.write_text(content, encoding="utf-8")
+            fixed_backlinks += 1
+
+    # 2. Fix missing frontmatter — add default template
+    for rel_path in report.missing_frontmatter:
+        file_path = workspace / rel_path
+        if not file_path.is_file():
+            continue
+
+        folder = rel_path.split("/")[0]
+        type_map = {
+            "decisions": "decision",
+            "patterns": "pattern",
+            "projects": "project",
+            "templates": "template",
+            "concepts": "concept",
+            "connections": "connection",
+            "lessons": "lesson",
+            "references": "reference",
+            "reviews": "review",
+        }
+        file_type = type_map.get(folder, "unknown")
+        fm = DEFAULT_FRONTMATTER.format(type=file_type, date=today_str)
+
+        content = file_path.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            file_path.write_text(fm + "\n" + content, encoding="utf-8")
+            fixed_frontmatter += 1
+
+    # 3. Fix orphan notes — add to _index.md
+    for rel_path in report.orphan_notes:
+        parts = rel_path.split("/", 1)
+        if len(parts) != 2:
+            continue
+        folder, filename = parts
+        stem = filename.replace(".md", "")
+        title = stem.replace("-", " ").title()
+
+        index_path = workspace / folder / "_index.md"
+        if not index_path.is_file():
+            continue
+
+        index_content = index_path.read_text(encoding="utf-8")
+        entry = f"- [{title}]({filename})\n"
+        if filename not in index_content and stem not in index_content:
+            index_content = index_content.rstrip() + "\n" + entry
+            index_path.write_text(index_content, encoding="utf-8")
+            fixed_orphans += 1
+
+    fixes = {
+        "backlinks_fixed": fixed_backlinks,
+        "frontmatter_fixed": fixed_frontmatter,
+        "orphans_fixed": fixed_orphans,
+        "total_fixed": fixed_backlinks + fixed_frontmatter + fixed_orphans,
+    }
+
+    if fixes["total_fixed"] > 0:
+        log.info(
+            "deep_dream.auto_fix.completed",
+            **fixes,
+        )
+
+    return fixes
