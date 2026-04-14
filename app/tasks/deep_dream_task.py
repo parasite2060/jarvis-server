@@ -361,6 +361,41 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         except Exception:
             pass
 
+    # Step 6e: Auto-fix deterministic health issues
+    auto_fix_result: dict[str, int] = {}
+    if health_report is not None and health_report.total_issues > 0:
+        try:
+            from app.services.deep_dream import auto_fix_health_issues
+
+            workspace = Path(settings.jarvis_memory_path)
+            auto_fix_result = await auto_fix_health_issues(workspace, health_report)
+            if auto_fix_result.get("total_fixed", 0) > 0:
+                log.info(
+                    "deep_dream.auto_fix.applied",
+                    dream_id=dream_id,
+                    **auto_fix_result,
+                )
+                # Log fixes to vault log
+                for fix_type in ("backlinks_fixed", "frontmatter_fixed", "orphans_fixed"):
+                    count = auto_fix_result.get(fix_type, 0)
+                    if count > 0:
+                        action = fix_type.replace("_fixed", "")
+                        await append_vault_log(
+                            "update",
+                            f"Auto-fixed {count} {action} issues",
+                        )
+                # Update file manifest after fixes
+                try:
+                    await update_file_manifest(files_modified)
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.warning(
+                "deep_dream.auto_fix.failed",
+                dream_id=dream_id,
+                error=str(exc),
+            )
+
     # Step 7: Git branch and PR
     stats = consolidation_result.get("stats", {})
     git_result: dict[str, str] = {"git_branch": "", "git_pr_url": "", "git_pr_status": ""}

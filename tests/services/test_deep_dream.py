@@ -1055,3 +1055,135 @@ class TestUnclassifiedLessons:
             + len(report.unclassified_lessons)
         )
         assert report.total_issues == expected_total
+
+
+class TestAutoFixHealthIssues:
+    @pytest.mark.asyncio
+    async def test_fixes_missing_backlinks(self, tmp_path: Path) -> None:
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+
+        (decisions_dir / "_index.md").write_text(
+            "- [Choice](choice.md)", encoding="utf-8"
+        )
+        (decisions_dir / "choice.md").write_text(
+            "---\ntype: decision\ncreated: 2026-04-14\n"
+            "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
+            "# Choice\nSee [[patterns/my-pattern]]\n",
+            encoding="utf-8",
+        )
+        (patterns_dir / "_index.md").write_text(
+            "- [My Pattern](my-pattern.md)", encoding="utf-8"
+        )
+        (patterns_dir / "my-pattern.md").write_text(
+            "---\ntype: pattern\ncreated: 2026-04-14\n"
+            "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
+            "# My Pattern\nSome content\n",
+            encoding="utf-8",
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues, run_health_checks
+
+        report = await run_health_checks(tmp_path)
+        assert len(report.missing_backlinks) > 0
+
+        fixes = await auto_fix_health_issues(tmp_path, report)
+        assert fixes["backlinks_fixed"] >= 1
+
+        pattern_content = (patterns_dir / "my-pattern.md").read_text(encoding="utf-8")
+        assert "[[decisions/choice]]" in pattern_content
+
+    @pytest.mark.asyncio
+    async def test_fixes_missing_frontmatter(self, tmp_path: Path) -> None:
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+        (decisions_dir / "_index.md").write_text(
+            "- [No FM](no-fm.md)", encoding="utf-8"
+        )
+        (decisions_dir / "no-fm.md").write_text(
+            "# No Frontmatter\nJust content\n", encoding="utf-8"
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_frontmatter=["decisions/no-fm.md"],
+            total_issues=1,
+        )
+
+        fixes = await auto_fix_health_issues(tmp_path, report)
+        assert fixes["frontmatter_fixed"] == 1
+
+        content = (decisions_dir / "no-fm.md").read_text(encoding="utf-8")
+        assert content.startswith("---")
+        assert "type: decision" in content
+        assert "# No Frontmatter" in content
+
+    @pytest.mark.asyncio
+    async def test_fixes_orphan_notes(self, tmp_path: Path) -> None:
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        (patterns_dir / "_index.md").write_text(
+            "# Patterns Index\n", encoding="utf-8"
+        )
+        (patterns_dir / "orphan-pattern.md").write_text(
+            "---\ntype: pattern\n---\n# Orphan\n", encoding="utf-8"
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            orphan_notes=["patterns/orphan-pattern.md"],
+            total_issues=1,
+        )
+
+        fixes = await auto_fix_health_issues(tmp_path, report)
+        assert fixes["orphans_fixed"] == 1
+
+        index = (patterns_dir / "_index.md").read_text(encoding="utf-8")
+        assert "orphan-pattern.md" in index
+
+    @pytest.mark.asyncio
+    async def test_appends_to_existing_related_section(self, tmp_path: Path) -> None:
+        concepts_dir = tmp_path / "concepts"
+        concepts_dir.mkdir()
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+
+        (concepts_dir / "_index.md").write_text("- [C](c.md)", encoding="utf-8")
+        (concepts_dir / "c.md").write_text(
+            "---\ntype: concept\ncreated: 2026-04-14\n"
+            "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
+            "# Concept C\nContent\n\n## Related\n- [[patterns/existing]]\n",
+            encoding="utf-8",
+        )
+
+        (decisions_dir / "_index.md").write_text("- [D](d.md)", encoding="utf-8")
+        (decisions_dir / "d.md").write_text(
+            "---\ntype: decision\ncreated: 2026-04-14\n"
+            "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
+            "# Decision D\nSee [[concepts/c]]\n",
+            encoding="utf-8",
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues, run_health_checks
+
+        report = await run_health_checks(tmp_path)
+        fixes = await auto_fix_health_issues(tmp_path, report)
+
+        concept_content = (concepts_dir / "c.md").read_text(encoding="utf-8")
+        assert "[[decisions/d]]" in concept_content
+        assert "[[patterns/existing]]" in concept_content
+
+    @pytest.mark.asyncio
+    async def test_no_fixes_when_no_issues(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(total_issues=0)
+        fixes = await auto_fix_health_issues(tmp_path, report)
+        assert fixes["total_fixed"] == 0
