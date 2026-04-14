@@ -11,6 +11,7 @@ from app.services.dream_models import (
     Theme,
     VaultFileEntry,
     VaultUpdates,
+    WeeklyReviewOutput,
 )
 
 
@@ -270,3 +271,36 @@ class TestHealthReport:
         assert data["orphan_notes"] == ["a.md"]
         assert data["total_issues"] == 1
         assert data["memory_overflow"] is False
+
+
+class TestWeeklyReviewOutput:
+    def test_default_values(self) -> None:
+        output = WeeklyReviewOutput()
+        assert output.review_content == ""
+        assert output.week_themes == []
+        assert output.stale_action_items == []
+        assert output.project_updates == {}
+
+    def test_with_all_fields(self) -> None:
+        output = WeeklyReviewOutput(
+            review_content="# Weekly Review\n## Themes\n- Architecture",
+            week_themes=["Architecture", "Testing"],
+            stale_action_items=["Update docs", "Fix CI"],
+            project_updates={"jarvis": "Completed feature X"},
+        )
+        assert len(output.week_themes) == 2
+        assert len(output.stale_action_items) == 2
+        assert output.project_updates["jarvis"] == "Completed feature X"
+        assert "# Weekly Review" in output.review_content
+
+    def test_model_dump_serializes(self) -> None:
+        output = WeeklyReviewOutput(
+            review_content="content",
+            week_themes=["theme1"],
+            project_updates={"proj": "update"},
+        )
+        data = output.model_dump()
+        assert data["review_content"] == "content"
+        assert data["week_themes"] == ["theme1"]
+        assert data["project_updates"] == {"proj": "update"}
+        assert data["stale_action_items"] == []

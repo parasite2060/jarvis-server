@@ -24,6 +24,7 @@ from app.services.dream_models import (
     REMSleepOutput,
     ScoredCandidate,
     SessionLogEntry,
+    WeeklyReviewOutput,
 )
 
 log = get_logger("jarvis.services.dream_agent")
@@ -943,6 +944,77 @@ async def run_phase2_rem_sleep(
         "Read daily logs, vault indexes, and Phase 1 candidates before producing output.",
         deps=deps,
         usage_limits=PHASE2_USAGE_LIMITS,
+    )
+    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+
+
+# ---------------------------------------------------------------------------
+# Weekly Review Agent
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WeeklyReviewDeps:
+    source_date: date
+    week_number: str  # YYYY-WW format
+    daily_logs: dict[str, str]  # date string -> content
+    vault_indexes: dict[str, str]  # folder name -> _index.md content
+
+
+def _load_weekly_review_prompt() -> str:
+    return (_PROMPTS_DIR / "weekly_review_agent.md").read_text(encoding="utf-8")
+
+
+_weekly_review_agent: Agent[WeeklyReviewDeps, WeeklyReviewOutput] | None = None
+
+
+def _get_weekly_review_agent() -> Agent[WeeklyReviewDeps, WeeklyReviewOutput]:
+    global _weekly_review_agent
+    if _weekly_review_agent is not None:
+        return _weekly_review_agent
+
+    agent: Agent[WeeklyReviewDeps, WeeklyReviewOutput] = Agent(
+        _build_model(),
+        deps_type=WeeklyReviewDeps,
+        output_type=WeeklyReviewOutput,
+        instructions=_load_weekly_review_prompt(),
+        retries=2,
+        output_retries=3,
+        history_processors=[compact_history],
+    )
+
+    @agent.tool
+    async def read_daily_log(ctx: RunContext[WeeklyReviewDeps], date_str: str) -> str:
+        """Return daily log content for a specific date (YYYY-MM-DD)."""
+        content = ctx.deps.daily_logs.get(date_str)
+        if content is None:
+            return f"No daily log found for {date_str}"
+        return content
+
+    @agent.tool
+    async def read_vault_index(ctx: RunContext[WeeklyReviewDeps], folder: str) -> str:
+        """Return _index.md content for a vault folder."""
+        content = ctx.deps.vault_indexes.get(folder)
+        if content is None:
+            return f"No _index.md found for folder '{folder}'"
+        return content
+
+    _weekly_review_agent = agent
+    return _weekly_review_agent
+
+
+WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=30)
+
+
+async def run_weekly_review(
+    deps: WeeklyReviewDeps,
+) -> tuple[WeeklyReviewOutput, RunUsage, int]:
+    agent = _get_weekly_review_agent()
+    result = await agent.run(
+        "Synthesize the past 7 days of daily logs into a weekly review. "
+        "Read all daily logs and vault indexes before producing output.",
+        deps=deps,
+        usage_limits=WEEKLY_REVIEW_USAGE_LIMITS,
     )
     return result.output, result.usage(), _count_tool_calls(result.all_messages())
 
