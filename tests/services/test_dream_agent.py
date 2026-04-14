@@ -11,6 +11,7 @@ from app.services.dream_agent import (
     DreamDeps,
     Phase2Deps,
     RecordDeps,
+    WeeklyReviewDeps,
     _count_tool_calls,
     consolidation_to_dict,
 )
@@ -25,6 +26,7 @@ from app.services.dream_models import (
     SessionLogEntry,
     VaultFileEntry,
     VaultUpdates,
+    WeeklyReviewOutput,
 )
 
 # ---------------------------------------------------------------------------
@@ -658,3 +660,76 @@ class TestCountToolCalls:
         msg1 = ModelResponse(parts=[FakePart(), FakePart()])  # type: ignore[list-item]
         msg2 = ModelResponse(parts=[FakePart(), FakePart()])  # type: ignore[list-item]
         assert _count_tool_calls([msg1, msg2]) == 4
+
+
+# ---------------------------------------------------------------------------
+# Weekly Review Agent Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def weekly_review_deps() -> WeeklyReviewDeps:
+    return WeeklyReviewDeps(
+        source_date=date(2026, 4, 5),
+        week_number="2026-W14",
+        daily_logs={
+            "2026-04-05": "## Session 1\nWorked on weekly review feature",
+            "2026-04-04": "## Session 2\nRefactored dream agent",
+            "2026-04-03": "## Session 3\nDiscussed architecture",
+        },
+        vault_indexes={
+            "decisions": "# Decisions Index\n- use-python.md",
+            "patterns": "# Patterns Index\n- async-patterns.md",
+        },
+    )
+
+
+class TestWeeklyReviewAgent:
+    def test_agent_has_correct_output_type(self) -> None:
+        agent: Agent[WeeklyReviewDeps, WeeklyReviewOutput] = Agent(
+            TestModel(),
+            deps_type=WeeklyReviewDeps,
+            output_type=WeeklyReviewOutput,
+            retries=2,
+            output_retries=3,
+        )
+        assert agent.output_type is WeeklyReviewOutput
+
+    def test_weekly_review_deps_has_daily_logs(
+        self, weekly_review_deps: WeeklyReviewDeps
+    ) -> None:
+        assert len(weekly_review_deps.daily_logs) == 3
+        assert "2026-04-05" in weekly_review_deps.daily_logs
+
+    def test_weekly_review_deps_has_vault_indexes(
+        self, weekly_review_deps: WeeklyReviewDeps
+    ) -> None:
+        assert len(weekly_review_deps.vault_indexes) == 2
+        assert "decisions" in weekly_review_deps.vault_indexes
+
+    def test_weekly_review_deps_has_week_number(
+        self, weekly_review_deps: WeeklyReviewDeps
+    ) -> None:
+        assert weekly_review_deps.week_number == "2026-W14"
+
+    async def test_run_weekly_review_returns_tuple(
+        self, weekly_review_deps: WeeklyReviewDeps
+    ) -> None:
+        test_model = TestModel()
+        agent: Agent[WeeklyReviewDeps, WeeklyReviewOutput] = Agent(
+            test_model,
+            deps_type=WeeklyReviewDeps,
+            output_type=WeeklyReviewOutput,
+            retries=2,
+            output_retries=3,
+        )
+
+        result = await agent.run(
+            "Synthesize weekly review.", deps=weekly_review_deps
+        )
+        usage = result.usage()
+        tool_call_count = _count_tool_calls(result.all_messages())
+
+        assert isinstance(result.output, WeeklyReviewOutput)
+        assert usage is not None
+        assert isinstance(tool_call_count, int)

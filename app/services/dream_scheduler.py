@@ -7,7 +7,7 @@ from arq.connections import ArqRedis
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.models.config_schemas import DEFAULT_DEEP_DREAM_CRON
+from app.models.config_schemas import DEFAULT_DEEP_DREAM_CRON, DEFAULT_WEEKLY_REVIEW_CRON
 from app.services.cron_parser import next_run_from_cron
 
 log = get_logger("jarvis.services.dream_scheduler")
@@ -19,13 +19,18 @@ class DreamScheduler:
         self._wake_event = asyncio.Event()
         self._current_cron: str | None = None
         self._current_job_id: str | None = None
+        self._current_weekly_cron: str | None = None
+        self._current_weekly_job_id: str | None = None
 
     async def run(self) -> None:
         while True:
             self._wake_event.clear()
 
             cron_expr = await self._read_cron()
+            weekly_cron_expr = await self._read_weekly_cron()
             now = datetime.now(UTC)
+
+            # Schedule deep dream
             next_run = next_run_from_cron(cron_expr, now)
             sleep_seconds = max((next_run - now).total_seconds(), 1)
 
@@ -60,6 +65,41 @@ class DreamScheduler:
             except Exception as exc:
                 log.warning("dream_scheduler.enqueue_failed", error=str(exc))
 
+            # Schedule weekly review
+            weekly_next_run = next_run_from_cron(weekly_cron_expr, now)
+            weekly_sleep = max((weekly_next_run - now).total_seconds(), 1)
+            sleep_seconds = min(sleep_seconds, weekly_sleep)
+
+            if weekly_cron_expr != self._current_weekly_cron:
+                log.info(
+                    "dream_scheduler.weekly_schedule_changed",
+                    old_cron=self._current_weekly_cron,
+                    new_cron=weekly_cron_expr,
+                    next_run=weekly_next_run.isoformat(),
+                )
+                await self._abort_weekly_job()
+                self._current_weekly_cron = weekly_cron_expr
+
+            weekly_job_id = f"weekly_review_cron:{int(weekly_next_run.timestamp())}"
+            try:
+                result = await self._pool.enqueue_job(
+                    "weekly_review_task",
+                    trigger="auto",
+                    _job_id=weekly_job_id,
+                    _defer_until=weekly_next_run,
+                )
+                if result is not None:
+                    self._current_weekly_job_id = weekly_job_id
+                    log.info(
+                        "dream_scheduler.weekly_job_enqueued",
+                        job_id=weekly_job_id,
+                        next_run=weekly_next_run.isoformat(),
+                    )
+                else:
+                    log.info("dream_scheduler.weekly_job_already_exists", job_id=weekly_job_id)
+            except Exception as exc:
+                log.warning("dream_scheduler.weekly_enqueue_failed", error=str(exc))
+
             try:
                 await asyncio.wait_for(self._wake_event.wait(), timeout=sleep_seconds)
                 log.info("dream_scheduler.woke_early", reason="config_changed")
@@ -83,6 +123,20 @@ class DreamScheduler:
             )
         self._current_job_id = None
 
+    async def _abort_weekly_job(self) -> None:
+        if not self._current_weekly_job_id:
+            return
+        try:
+            await self._pool.abort_job(self._current_weekly_job_id)
+            log.info("dream_scheduler.weekly_job_aborted", job_id=self._current_weekly_job_id)
+        except Exception as exc:
+            log.warning(
+                "dream_scheduler.weekly_abort_failed",
+                job_id=self._current_weekly_job_id,
+                error=str(exc),
+            )
+        self._current_weekly_job_id = None
+
     async def _read_cron(self) -> str:
         config_path = Path(settings.ai_memory_repo_path) / "config.yml"
         try:
@@ -91,3 +145,12 @@ class DreamScheduler:
             return str(parsed.get("deep_dream_cron", DEFAULT_DEEP_DREAM_CRON))
         except Exception:
             return DEFAULT_DEEP_DREAM_CRON
+
+    async def _read_weekly_cron(self) -> str:
+        config_path = Path(settings.ai_memory_repo_path) / "config.yml"
+        try:
+            content = await asyncio.to_thread(config_path.read_text, encoding="utf-8")
+            parsed = yaml.safe_load(content) or {}
+            return str(parsed.get("weekly_review_cron", DEFAULT_WEEKLY_REVIEW_CRON))
+        except Exception:
+            return DEFAULT_WEEKLY_REVIEW_CRON

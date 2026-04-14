@@ -152,6 +152,13 @@ class REMSleepOutput(BaseModel):
     gaps: list[KnowledgeGap] = Field(default_factory=list)
 
 
+class WeeklyReviewOutput(BaseModel):
+    review_content: str = ""
+    week_themes: list[str] = Field(default_factory=list)
+    stale_action_items: list[str] = Field(default_factory=list)
+    project_updates: dict[str, str] = Field(default_factory=dict)
+
+
 class HealthReport(BaseModel):
     orphan_notes: list[str] = Field(default_factory=list)
     stale_notes: list[str] = Field(default_factory=list)

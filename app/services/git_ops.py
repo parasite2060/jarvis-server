@@ -298,6 +298,98 @@ class GitOpsService:
             "git_pr_status": pr_status,
         }
 
+    async def create_weekly_review_pr(
+        self,
+        files_modified: list[dict[str, object]],
+        dream_id: int,
+        week_number: str,
+        source_date: date,
+    ) -> dict[str, str]:
+        branch_name = f"dream/review-{week_number}"
+        commit_msg = f"dream(review): weekly review {week_number}"
+        pr_title = f"dream(review): weekly review {week_number}"
+
+        file_paths = [
+            str(entry["path"])
+            for entry in files_modified
+            if "path" in entry and "error" not in entry
+        ]
+
+        if not file_paths:
+            log.info("git_ops.weekly_review_pr.no_files", dream_id=dream_id)
+            return {"git_branch": "", "git_pr_url": "", "git_pr_status": "no_files"}
+
+        config = await self.read_dream_config()
+        auto_merge = bool(config.get("auto_merge", True))
+
+        await self.ensure_main_fresh()
+
+        try:
+            await self.run_git(["checkout", "-b", branch_name, "origin/main"])
+        except GitOpsError:
+            suffix = 2
+            while suffix <= 10:
+                candidate = f"{branch_name}-{suffix}"
+                try:
+                    await self.run_git(["checkout", "-b", candidate, "origin/main"])
+                    branch_name = candidate
+                    break
+                except GitOpsError:
+                    suffix += 1
+            else:
+                raise GitOpsError(f"Could not create branch {branch_name} (all suffixes taken)")
+
+        log.info("git_ops.weekly_review_pr.branch_created", branch=branch_name)
+
+        await self.run_git(["add"] + file_paths)
+
+        try:
+            await self.run_git(["diff", "--cached", "--quiet"])
+            log.info("git_ops.weekly_review_pr.no_changes", branch=branch_name)
+            return {"git_branch": branch_name, "git_pr_url": "", "git_pr_status": "no_changes"}
+        except GitOpsError:
+            pass
+
+        await self.run_git(["commit", "-m", commit_msg])
+        log.info("git_ops.weekly_review_pr.committed", branch=branch_name)
+
+        await self.run_git(["push", "origin", branch_name])
+        log.info("git_ops.weekly_review_pr.pushed", branch=branch_name)
+
+        pr_body = (
+            f"## Weekly Review\n\n"
+            f"**Dream ID:** {dream_id}\n"
+            f"**Week:** {week_number}\n"
+            f"**Date:** {source_date.isoformat()}\n\n"
+            f"### Changed Files\n"
+            + "\n".join(f"- `{p}`" for p in file_paths)
+            + f"\n\n**Total:** {len(file_paths)} file(s) modified"
+        )
+
+        pr_stdout, _, _ = await self.run_gh(
+            ["pr", "create", "--title", pr_title, "--body", pr_body, "--base", "main"]
+        )
+        pr_url = pr_stdout.strip()
+        log.info("git_ops.weekly_review_pr.created", pr_url=pr_url)
+
+        pr_status = "created"
+
+        if auto_merge:
+            try:
+                await self.run_gh(
+                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
+                )
+                pr_status = "merged"
+                log.info("git_ops.weekly_review_pr.merged", pr_url=pr_url)
+            except GitOpsError as exc:
+                log.warning("git_ops.weekly_review_pr.merge_failed", pr_url=pr_url, error=str(exc))
+
+        return {
+            "git_branch": branch_name,
+            "git_pr_url": pr_url,
+            "git_pr_status": pr_status,
+        }
+
     async def cleanup_branch(self, branch_name: str) -> None:
         try:
             await self.run_git(["checkout", "main"])

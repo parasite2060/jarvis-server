@@ -4,6 +4,7 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.tasks.deep_dream_task import deep_dream_task
 from app.tasks.light_dream_task import light_dream_task
+from app.tasks.weekly_review_task import weekly_review_task
 
 log = get_logger("jarvis.tasks.worker")
 
@@ -17,7 +18,7 @@ async def shutdown(ctx: dict) -> None:  # type: ignore[type-arg]
 
 
 class WorkerSettings:
-    functions = [light_dream_task, deep_dream_task]
+    functions = [light_dream_task, deep_dream_task, weekly_review_task]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_startup = startup
     on_shutdown = shutdown
