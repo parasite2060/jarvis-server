@@ -22,18 +22,29 @@ RELATIVE_DATE_PATTERN = re.compile(
 async def gather_consolidation_inputs(source_date: date) -> dict[str, Any] | None:
     log.info("deep_dream.gather.started", source_date=source_date.isoformat())
 
-    memu_result = await memu_retrieve(
-        query=f"memories from {source_date.isoformat()}",
-        method="rag",
-    )
-    memories: list[dict[str, Any]] = memu_result.get("memories", [])
-    if not memories:
-        log.info("deep_dream.gather.skipped", reason="no_memories")
-        return None
+    # MemU is supplementary — graceful degradation if unavailable
+    memories: list[dict[str, Any]] = []
+    try:
+        memu_result = await memu_retrieve(
+            query=f"memories from {source_date.isoformat()}",
+            method="rag",
+        )
+        memories = memu_result.get("memories", [])
+    except Exception as exc:
+        log.warning(
+            "deep_dream.gather.memu_failed",
+            error=str(exc),
+            source_date=source_date.isoformat(),
+        )
 
     memory_md = await read_vault_file("MEMORY.md") or ""
     daily_log = await read_vault_file(f"dailys/{source_date.isoformat()}.md") or ""
     soul_md = await read_vault_file("SOUL.md") or ""
+
+    # Skip if there's truly nothing to consolidate (no memories AND no daily log)
+    if not memories and not daily_log.strip():
+        log.info("deep_dream.gather.skipped", reason="no_content")
+        return None
 
     log.info(
         "deep_dream.gather.completed",
