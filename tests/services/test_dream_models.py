@@ -1,4 +1,5 @@
 from app.services.dream_models import (
+    ALLOWED_RELATIONSHIP_TYPES,
     ALLOWED_VAULT_TARGETS,
     ConnectionCandidate,
     HealthReport,
@@ -26,6 +27,23 @@ class TestAllowedVaultTargets:
 
     def test_total_count(self) -> None:
         assert len(ALLOWED_VAULT_TARGETS) == 10
+
+
+class TestAllowedRelationshipTypes:
+    def test_has_all_seven_types(self) -> None:
+        expected = {
+            "extends",
+            "contradicts",
+            "supports",
+            "inspired_by",
+            "supersedes",
+            "derived_from",
+            "addresses_gap",
+        }
+        assert set(ALLOWED_RELATIONSHIP_TYPES) == expected
+
+    def test_total_count(self) -> None:
+        assert len(ALLOWED_RELATIONSHIP_TYPES) == 7
 
 
 class TestSessionLogEntry:
@@ -163,6 +181,23 @@ class TestConnectionCandidate:
         assert conn.concept_b == "Clean Architecture"
         assert conn.relationship == "complementary patterns"
         assert conn.evidence_sessions == []
+
+    def test_default_relationship_type(self) -> None:
+        conn = ConnectionCandidate(
+            concept_a="A",
+            concept_b="B",
+            relationship="related",
+        )
+        assert conn.relationship_type == "supports"
+
+    def test_explicit_relationship_type(self) -> None:
+        conn = ConnectionCandidate(
+            concept_a="A",
+            concept_b="B",
+            relationship="B replaces A",
+            relationship_type="supersedes",
+        )
+        assert conn.relationship_type == "supersedes"
 
     def test_with_evidence_sessions(self) -> None:
         conn = ConnectionCandidate(

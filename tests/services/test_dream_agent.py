@@ -161,6 +161,124 @@ class TestLightDreamAgent:
 
 
 # ---------------------------------------------------------------------------
+# store_connection Tool Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStoreConnectionTool:
+    @pytest.mark.asyncio
+    async def test_store_connection_default_relationship_type(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_connection":
+                tool = t
+                break
+        assert tool is not None
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        result = await tool.function(
+            ctx, concept_a="A", concept_b="B", relationship="related"
+        )
+        assert "[supports]" in result
+        assert len(dream_deps.session_connections) == 1
+        assert dream_deps.session_connections[0]["relationship_type"] == "supports"
+
+    @pytest.mark.asyncio
+    async def test_store_connection_valid_relationship_type(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_connection":
+                tool = t
+                break
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        result = await tool.function(
+            ctx,
+            concept_a="A",
+            concept_b="B",
+            relationship="B replaces A",
+            relationship_type="supersedes",
+        )
+        assert "[supersedes]" in result
+        assert dream_deps.session_connections[0]["relationship_type"] == "supersedes"
+
+    @pytest.mark.asyncio
+    async def test_store_connection_invalid_relationship_type(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_connection":
+                tool = t
+                break
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        result = await tool.function(
+            ctx,
+            concept_a="A",
+            concept_b="B",
+            relationship="related",
+            relationship_type="invalid_type",
+        )
+        assert "Invalid relationship_type" in result
+        assert len(dream_deps.session_connections) == 0
+
+    @pytest.mark.asyncio
+    async def test_store_connection_all_valid_types(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+        from app.services.dream_models import ALLOWED_RELATIONSHIP_TYPES
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_connection":
+                tool = t
+                break
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        for rel_type in ALLOWED_RELATIONSHIP_TYPES:
+            result = await tool.function(
+                ctx,
+                concept_a="X",
+                concept_b="Y",
+                relationship="test",
+                relationship_type=rel_type,
+            )
+            assert f"[{rel_type}]" in result
+
+
+# ---------------------------------------------------------------------------
 # Deep Dream Agent Tests
 # ---------------------------------------------------------------------------
 

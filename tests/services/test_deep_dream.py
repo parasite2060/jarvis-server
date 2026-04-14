@@ -697,7 +697,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
 
     report = await run_health_checks(vault_workspace, knowledge_gaps=["gap1"])
 
-    # orphan + missing_fm + contradiction + gap + stale (async-patterns)
+    # orphan + missing_fm + contradiction + gap + stale (async-patterns) + missing_backlinks
     assert report.total_issues == (
         len(report.orphan_notes)
         + len(report.stale_notes)
@@ -705,6 +705,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
         + len(report.unresolved_contradictions)
         + (1 if report.memory_overflow else 0)
         + len(report.knowledge_gaps)
+        + len(report.missing_backlinks)
     )
 
 
@@ -777,3 +778,160 @@ async def test_health_check_skips_references_contradictions(tmp_path: Path) -> N
     report = await run_health_checks(tmp_path)
 
     assert "references/ref-with-flag.md" not in report.unresolved_contradictions
+
+
+# ── missing backlink detection tests ──
+
+
+class TestMissingBacklinks:
+    @pytest.mark.asyncio
+    async def test_model_has_missing_backlinks_field(self) -> None:
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport()
+        assert report.missing_backlinks == []
+
+    @pytest.mark.asyncio
+    async def test_detects_missing_backlink(self, tmp_path: Path) -> None:
+        decisions = tmp_path / "decisions"
+        patterns = tmp_path / "patterns"
+        decisions.mkdir()
+        patterns.mkdir()
+        (decisions / "_index.md").write_text("- [RC](runtime-choice.md) -- rc", encoding="utf-8")
+        (patterns / "_index.md").write_text("- [AP](async-patterns.md) -- ap", encoding="utf-8")
+
+        # Decision links to pattern, but pattern does NOT link back
+        (decisions / "runtime-choice.md").write_text(
+            "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n"
+            "# Runtime Choice\nUse [[patterns/async-patterns]] for perf.\n",
+            encoding="utf-8",
+        )
+        (patterns / "async-patterns.md").write_text(
+            "---\ntype: pattern\nlast_reviewed: 2026-04-01\n---\n"
+            "# Async Patterns\nNo links here.\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert len(report.missing_backlinks) == 1
+        assert "decisions/runtime-choice.md" in report.missing_backlinks[0]
+        assert "patterns/async-patterns.md" in report.missing_backlinks[0]
+        assert "no reverse link" in report.missing_backlinks[0]
+
+    @pytest.mark.asyncio
+    async def test_no_flag_when_bidirectional(self, tmp_path: Path) -> None:
+        decisions = tmp_path / "decisions"
+        patterns = tmp_path / "patterns"
+        decisions.mkdir()
+        patterns.mkdir()
+        (decisions / "_index.md").write_text("- [RC](runtime-choice.md) -- rc", encoding="utf-8")
+        (patterns / "_index.md").write_text("- [AP](async-patterns.md) -- ap", encoding="utf-8")
+
+        (decisions / "runtime-choice.md").write_text(
+            "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n"
+            "# Runtime Choice\nUse [[patterns/async-patterns]] for perf.\n",
+            encoding="utf-8",
+        )
+        (patterns / "async-patterns.md").write_text(
+            "---\ntype: pattern\nlast_reviewed: 2026-04-01\n---\n"
+            "# Async Patterns\n## Related\n- [[decisions/runtime-choice]]\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert report.missing_backlinks == []
+
+    @pytest.mark.asyncio
+    async def test_skips_references_terminal_node(self, tmp_path: Path) -> None:
+        decisions = tmp_path / "decisions"
+        references = tmp_path / "references"
+        decisions.mkdir()
+        references.mkdir()
+        (decisions / "_index.md").write_text("- [RC](runtime-choice.md) -- rc", encoding="utf-8")
+        (references / "_index.md").write_text("- [CS](coding-standards.md) -- cs", encoding="utf-8")
+
+        # Decision links to reference; reference does NOT link back (terminal node)
+        (decisions / "runtime-choice.md").write_text(
+            "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n"
+            "# Runtime Choice\nPer [[references/coding-standards]].\n",
+            encoding="utf-8",
+        )
+        (references / "coding-standards.md").write_text(
+            "---\ntype: reference\nstatus: permanent\nlast_reviewed: 2026-04-01\n---\n"
+            "# Coding Standards\nNo outbound links.\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert report.missing_backlinks == []
+
+    @pytest.mark.asyncio
+    async def test_total_issues_includes_missing_backlinks(self, tmp_path: Path) -> None:
+        decisions = tmp_path / "decisions"
+        patterns = tmp_path / "patterns"
+        decisions.mkdir()
+        patterns.mkdir()
+        (decisions / "_index.md").write_text("- [RC](runtime-choice.md) -- rc", encoding="utf-8")
+        (patterns / "_index.md").write_text("- [AP](async-patterns.md) -- ap", encoding="utf-8")
+
+        (decisions / "runtime-choice.md").write_text(
+            "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n"
+            "# RC\nUse [[patterns/async-patterns]].\n",
+            encoding="utf-8",
+        )
+        (patterns / "async-patterns.md").write_text(
+            "---\ntype: pattern\nlast_reviewed: 2026-04-01\n---\n"
+            "# AP\nNo backlink.\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert len(report.missing_backlinks) == 1
+        assert report.total_issues >= 1
+        # Verify missing_backlinks is counted in total
+        expected_total = (
+            len(report.orphan_notes)
+            + len(report.stale_notes)
+            + len(report.missing_frontmatter)
+            + len(report.unresolved_contradictions)
+            + (1 if report.memory_overflow else 0)
+            + len(report.knowledge_gaps)
+            + len(report.missing_backlinks)
+        )
+        assert report.total_issues == expected_total
+
+    @pytest.mark.asyncio
+    async def test_skips_nonexistent_target(self, tmp_path: Path) -> None:
+        decisions = tmp_path / "decisions"
+        decisions.mkdir()
+        (decisions / "_index.md").write_text("- [RC](runtime-choice.md) -- rc", encoding="utf-8")
+
+        # Links to a file that doesn't exist -- should not flag as missing backlink
+        (decisions / "runtime-choice.md").write_text(
+            "---\ntype: decision\nlast_reviewed: 2026-04-01\n---\n"
+            "# RC\nSee [[patterns/nonexistent]].\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert report.missing_backlinks == []

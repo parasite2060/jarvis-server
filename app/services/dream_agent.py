@@ -16,6 +16,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from app.config import settings
 from app.core.logging import get_logger
 from app.services.dream_models import (
+    ALLOWED_RELATIONSHIP_TYPES,
     ALLOWED_VAULT_TARGETS,
     ExtractionSummary,
     LightSleepOutput,
@@ -329,24 +330,34 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         concept_a: str,
         concept_b: str,
         relationship: str,
+        relationship_type: str = "supports",
     ) -> str:
-        """Store a connection between two concepts discussed in the session."""
+        """Store a connection between two concepts discussed in the session.
+
+        Optional relationship_type classifies the edge:
+        extends, contradicts, supports, inspired_by, supersedes, derived_from, addresses_gap.
+        Defaults to 'supports'.
+        """
+        if relationship_type not in ALLOWED_RELATIONSHIP_TYPES:
+            valid = ", ".join(ALLOWED_RELATIONSHIP_TYPES)
+            return f"Invalid relationship_type '{relationship_type}'. Must be one of: {valid}"
         ctx.deps.session_connections.append(
             {
                 "concept_a": concept_a,
                 "concept_b": concept_b,
                 "relationship": relationship,
+                "relationship_type": relationship_type,
             }
         )
         ctx.deps.extracted_memories.append(
             MemoryItem(
-                content=f"{concept_a} <-> {concept_b}: {relationship}",
+                content=f"{concept_a} <-> {concept_b}: {relationship} ({relationship_type})",
                 reasoning=None,
                 vault_target="connections",
                 source_date=date.today().isoformat(),
             )
         )
-        return f"Connection stored: {concept_a} <-> {concept_b}"
+        return f"Connection stored: {concept_a} <-> {concept_b} [{relationship_type}]"
 
     @agent.tool
     async def store_memory(

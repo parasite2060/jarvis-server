@@ -15,6 +15,16 @@ ALLOWED_VAULT_TARGETS = (
     "reviews",
 )
 
+ALLOWED_RELATIONSHIP_TYPES = (
+    "extends",
+    "contradicts",
+    "supports",
+    "inspired_by",
+    "supersedes",
+    "derived_from",
+    "addresses_gap",
+)
+
 VaultTarget = Literal[
     "memory",
     "decisions",
@@ -131,6 +141,7 @@ class ConnectionCandidate(BaseModel):
     concept_a: str
     concept_b: str
     relationship: str
+    relationship_type: str = "supports"
     evidence_sessions: list[str] = Field(default_factory=list)
 
 
@@ -166,4 +177,5 @@ class HealthReport(BaseModel):
     unresolved_contradictions: list[str] = Field(default_factory=list)
     memory_overflow: bool = False
     knowledge_gaps: list[str] = Field(default_factory=list)
+    missing_backlinks: list[str] = Field(default_factory=list)
     total_issues: int = 0
