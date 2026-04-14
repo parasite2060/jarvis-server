@@ -67,7 +67,7 @@ All vault markdown files MUST have YAML frontmatter at the top of the file:
 ```yaml
 ---
 type: soul | identity | memory | daily | decision | project | pattern | template | concept | connection | lesson | reference | review | topic | index | guide
-status: draft | active | superseded | archived
+status: draft | active | superseded | archived | permanent
 tags: [relevant, tags]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -101,11 +101,34 @@ Vault files progress through these states:
 3. **superseded** — Replaced by a newer version; `superseded_by` points to the replacement
 4. **archived** — No longer relevant, kept for historical reference
 
+5. **permanent** -- Terminal node, never transitions. Used exclusively for `references/` files.
+
 Transitions:
 - `draft -> active`: Promoted when reinforcement_count >= 3 or manually promoted
 - `active -> superseded`: When a contradiction is resolved and a new entry replaces this one
 - `active -> archived`: When content is no longer relevant (auto after 90 days without reinforcement, configurable)
 - `superseded -> archived`: After the replacement is confirmed active
+
+## Terminal Node Principle
+
+Terminal nodes are files that receive inbound links but never write outbound wiki-links. They form a stable ground truth layer that other knowledge builds upon.
+
+### Why Terminal Nodes
+Without terminal nodes, the knowledge graph can develop circular references where A links to B links to C links to A. Terminal nodes break this by creating a stable "bottom layer."
+
+### Terminal Folders
+- `references/` -- the only terminal folder in the vault
+
+### Non-Terminal Folders
+All other folders (decisions/, patterns/, concepts/, connections/, lessons/, projects/) freely cross-reference each other using bidirectional `[[wiki-links]]`.
+
+### Terminal Node Properties
+- `status: permanent` (never changes)
+- Score: always 1.0 (never pruned)
+- No reinforcement counting or decay
+- Health checks: structural only (frontmatter, broken links), no staleness
+- May be manually edited by the user
+- May receive inbound links from the consolidation agent
 
 ## Content Templates
 
@@ -207,13 +230,16 @@ Transitions:
 
 ## Folder-Specific Rules
 
-### references/ — No Decay
+### references/ -- Terminal Nodes (Foundation Layer)
 
-Files in `references/` represent permanent standards (coding standards, architecture guides, framework conventions). They:
-- Are NOT subject to staleness pruning
-- Are NOT subject to decay rate
+Files in `references/` represent permanent standards (coding standards, architecture guides, framework conventions). They are **terminal nodes** in the knowledge graph:
+- Have `status: permanent` (never draft, active, superseded, or archived)
+- Are NOT subject to staleness pruning or decay
+- Receive inbound links from other vault files (`[[references/x]]`)
+- NEVER write outbound wiki-links to other vault files
 - Are only updated when the underlying standard changes
-- Were originally extracted from the knowledge base or manually curated
+- Health checks verify structural integrity but not freshness
+- `calculate_candidate_score()` returns 1.0 (maximum -- never pruned)
 
 ### patterns/ — Session-Extracted
 

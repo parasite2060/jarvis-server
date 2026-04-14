@@ -508,6 +508,32 @@ class TestCalculateCandidateScore:
         )
         assert score_10 == pytest.approx(score_20, abs=0.01)
 
+    def test_reference_always_returns_max_score(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=0,
+            days_since_reinforced=999,
+            in_active_project=False,
+            has_contradiction=True,
+            context_count=0,
+            is_reference=True,
+        )
+        assert score == 1.0
+
+    def test_reference_false_behaves_normally(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=0,
+            days_since_reinforced=999,
+            in_active_project=False,
+            has_contradiction=True,
+            context_count=0,
+            is_reference=False,
+        )
+        assert score < 1.0
+
     def test_breadth_capped_at_one(self) -> None:
         from app.services.deep_dream import calculate_candidate_score
 
@@ -693,3 +719,61 @@ async def test_health_checks_handles_empty_vault(tmp_path: Path) -> None:
     assert report.total_issues == 0
     assert report.orphan_notes == []
     assert report.stale_notes == []
+
+
+@pytest.mark.asyncio
+async def test_health_check_skips_references_stale(tmp_path: Path) -> None:
+    refs_dir = tmp_path / "references"
+    refs_dir.mkdir()
+    index = refs_dir / "_index.md"
+    index.write_text("- [Old Ref](old-ref.md) -- old reference", encoding="utf-8")
+    old_ref = refs_dir / "old-ref.md"
+    old_ref.write_text(
+        "---\ntype: reference\nstatus: permanent\n"
+        "last_reviewed: 2024-01-01\n---\n# Old Ref",
+        encoding="utf-8",
+    )
+    (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(tmp_path)
+
+    assert "references/old-ref.md" not in report.stale_notes
+
+
+@pytest.mark.asyncio
+async def test_health_check_checks_references_frontmatter(tmp_path: Path) -> None:
+    refs_dir = tmp_path / "references"
+    refs_dir.mkdir()
+    index = refs_dir / "_index.md"
+    index.write_text("- [Bad Ref](bad-ref.md) -- no frontmatter", encoding="utf-8")
+    bad_ref = refs_dir / "bad-ref.md"
+    bad_ref.write_text("# Bad Ref\nNo frontmatter here", encoding="utf-8")
+    (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(tmp_path)
+
+    assert "references/bad-ref.md" in report.missing_frontmatter
+
+
+@pytest.mark.asyncio
+async def test_health_check_skips_references_contradictions(tmp_path: Path) -> None:
+    refs_dir = tmp_path / "references"
+    refs_dir.mkdir()
+    index = refs_dir / "_index.md"
+    index.write_text("- [Ref](ref-with-flag.md) -- ref", encoding="utf-8")
+    ref_file = refs_dir / "ref-with-flag.md"
+    ref_file.write_text(
+        "---\ntype: reference\nhas_contradiction: true\n---\n# Ref",
+        encoding="utf-8",
+    )
+    (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+    from app.services.deep_dream import run_health_checks
+
+    report = await run_health_checks(tmp_path)
+
+    assert "references/ref-with-flag.md" not in report.unresolved_contradictions

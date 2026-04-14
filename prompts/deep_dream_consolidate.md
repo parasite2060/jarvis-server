@@ -208,6 +208,16 @@ Use the following templates when writing vault files. Each template defines the 
 - When an entry has not been reinforced for 30+ days and has a low confidence score, it may be pruned.
 - Entries in references/ are never subject to decay or pruning.
 
+### Terminal Node Rules (references/)
+
+Files in `references/` are TERMINAL NODES (foundation layer):
+- You MAY add `[[references/x]]` links FROM decisions/, patterns/, concepts/ TO references/ files
+- You MUST NOT add `[[wiki-links]]` FROM references/ files to other vault files
+- references/ files are NEVER pruned, NEVER scored, NEVER decayed -- they are permanent ground truth
+- references/ files always have `status: permanent`
+- When you encounter a references/ file during consolidation, only fix structural issues (frontmatter format, broken section headers) -- never add outbound links or change status
+- Exception for Story 9.10: When checking missing backlinks, do NOT expect references/ to link back (they are terminal)
+
 ### When No Vault Content Exists
 
 If no vault-worthy content exists today, set all vault folder arrays to empty.
