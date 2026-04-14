@@ -31,7 +31,7 @@ from app.services.dream_agent import (
 )
 from app.services.dream_models import HealthReport, LightSleepOutput, REMSleepOutput
 from app.services.git_ops import git_ops_service
-from app.services.memory_files import read_vault_file, write_vault_file
+from app.services.memory_files import append_vault_log, read_vault_file, write_vault_file
 from app.services.vault_updater import update_file_manifest, update_vault_folders
 
 log = get_logger("jarvis.tasks.deep_dream")
@@ -314,6 +314,18 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     except Exception as exc:
         log.warning("deep_dream.manifest.failed", dream_id=dream_id, error=str(exc))
 
+    # Step 6c2: Append to vault log
+    try:
+        for fm in files_modified:
+            path = fm.get("path", "") if isinstance(fm, dict) else str(fm)
+            action = fm.get("action", "update") if isinstance(fm, dict) else "update"
+            if action == "create":
+                await append_vault_log("create", str(path))
+            else:
+                await append_vault_log("update", str(path))
+    except Exception as exc:
+        log.warning("deep_dream.vault_log.failed", dream_id=dream_id, error=str(exc))
+
     # Step 6d: Health checks (deterministic Python post-processing)
     health_report: HealthReport | None = None
     try:
@@ -337,6 +349,17 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         )
     except Exception as exc:
         log.warning("deep_dream.health_check.failed", dream_id=dream_id, error=str(exc))
+
+    if health_report is not None and health_report.total_issues > 0:
+        try:
+            await append_vault_log(
+                "lint",
+                f"Health check: {len(health_report.orphan_notes)} orphans, "
+                f"{len(health_report.stale_notes)} stale, "
+                f"{len(health_report.unresolved_contradictions)} contradictions",
+            )
+        except Exception:
+            pass
 
     # Step 7: Git branch and PR
     stats = consolidation_result.get("stats", {})

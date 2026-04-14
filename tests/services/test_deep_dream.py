@@ -508,6 +508,32 @@ class TestCalculateCandidateScore:
         )
         assert score_10 == pytest.approx(score_20, abs=0.01)
 
+    def test_failed_lesson_always_returns_max_score(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=0,
+            days_since_reinforced=999,
+            in_active_project=False,
+            has_contradiction=True,
+            context_count=0,
+            is_failed_lesson=True,
+        )
+        assert score == 1.0
+
+    def test_failed_lesson_false_behaves_normally(self) -> None:
+        from app.services.deep_dream import calculate_candidate_score
+
+        score = calculate_candidate_score(
+            reinforcement_count=0,
+            days_since_reinforced=999,
+            in_active_project=False,
+            has_contradiction=True,
+            context_count=0,
+            is_failed_lesson=False,
+        )
+        assert score < 1.0
+
     def test_reference_always_returns_max_score(self) -> None:
         from app.services.deep_dream import calculate_candidate_score
 
@@ -697,7 +723,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
 
     report = await run_health_checks(vault_workspace, knowledge_gaps=["gap1"])
 
-    # orphan + missing_fm + contradiction + gap + stale (async-patterns) + missing_backlinks
+    # orphan + missing_fm + contradiction + gap + stale + backlinks + unclassified
     assert report.total_issues == (
         len(report.orphan_notes)
         + len(report.stale_notes)
@@ -706,6 +732,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
         + (1 if report.memory_overflow else 0)
         + len(report.knowledge_gaps)
         + len(report.missing_backlinks)
+        + len(report.unclassified_lessons)
     )
 
 
@@ -913,6 +940,7 @@ class TestMissingBacklinks:
             + (1 if report.memory_overflow else 0)
             + len(report.knowledge_gaps)
             + len(report.missing_backlinks)
+            + len(report.unclassified_lessons)
         )
         assert report.total_issues == expected_total
 
@@ -935,3 +963,95 @@ class TestMissingBacklinks:
         report = await run_health_checks(tmp_path)
 
         assert report.missing_backlinks == []
+
+
+# ── unclassified lessons health check tests ──
+
+
+class TestUnclassifiedLessons:
+    @pytest.mark.asyncio
+    async def test_flags_old_lesson_without_outcome(self, tmp_path: Path) -> None:
+        lessons_dir = tmp_path / "lessons"
+        lessons_dir.mkdir()
+        index = lessons_dir / "_index.md"
+        index.write_text("- [Old Lesson](old-lesson.md) -- an old lesson", encoding="utf-8")
+        old_lesson = lessons_dir / "old-lesson.md"
+        old_lesson.write_text(
+            "---\ntype: lesson\ncreated: 2025-01-01\nlast_reviewed: 2026-04-01\n---\n# Old Lesson",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert "lessons/old-lesson.md" in report.unclassified_lessons
+        assert report.total_issues >= 1
+
+    @pytest.mark.asyncio
+    async def test_does_not_flag_lesson_with_outcome(self, tmp_path: Path) -> None:
+        lessons_dir = tmp_path / "lessons"
+        lessons_dir.mkdir()
+        index = lessons_dir / "_index.md"
+        index.write_text("- [Failed Lesson](failed-lesson.md) -- failed", encoding="utf-8")
+        failed_lesson = lessons_dir / "failed-lesson.md"
+        failed_lesson.write_text(
+            "---\ntype: lesson\ncreated: 2025-01-01\noutcome: failed\n"
+            "failure_reason: it broke\nlast_reviewed: 2026-04-01\n---\n# Failed Lesson",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert "lessons/failed-lesson.md" not in report.unclassified_lessons
+
+    @pytest.mark.asyncio
+    async def test_does_not_flag_recent_lesson_without_outcome(self, tmp_path: Path) -> None:
+        lessons_dir = tmp_path / "lessons"
+        lessons_dir.mkdir()
+        index = lessons_dir / "_index.md"
+        index.write_text("- [New Lesson](new-lesson.md) -- new", encoding="utf-8")
+        new_lesson = lessons_dir / "new-lesson.md"
+        new_lesson.write_text(
+            "---\ntype: lesson\ncreated: 2026-04-01\nlast_reviewed: 2026-04-01\n---\n# New Lesson",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        assert report.unclassified_lessons == []
+
+    @pytest.mark.asyncio
+    async def test_total_issues_includes_unclassified_lessons(self, tmp_path: Path) -> None:
+        lessons_dir = tmp_path / "lessons"
+        lessons_dir.mkdir()
+        index = lessons_dir / "_index.md"
+        index.write_text("- [Old](old.md) -- old", encoding="utf-8")
+        (lessons_dir / "old.md").write_text(
+            "---\ntype: lesson\ncreated: 2025-01-01\nlast_reviewed: 2026-04-01\n---\n# Old",
+            encoding="utf-8",
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        from app.services.deep_dream import run_health_checks
+
+        report = await run_health_checks(tmp_path)
+
+        expected_total = (
+            len(report.orphan_notes)
+            + len(report.stale_notes)
+            + len(report.missing_frontmatter)
+            + len(report.unresolved_contradictions)
+            + (1 if report.memory_overflow else 0)
+            + len(report.knowledge_gaps)
+            + len(report.missing_backlinks)
+            + len(report.unclassified_lessons)
+        )
+        assert report.total_issues == expected_total

@@ -53,9 +53,19 @@ class TestSessionLogEntry:
         assert entry.key_exchanges == []
         assert entry.decisions_made == []
         assert entry.lessons_learned == []
+        assert entry.failed_lessons == []
         assert entry.action_items == []
         assert entry.concepts == []
         assert entry.connections == []
+
+    def test_failed_lessons_accepts_data(self) -> None:
+        entry = SessionLogEntry(
+            failed_lessons=[
+                {"lesson": "Tried X", "outcome": "failed", "failure_reason": "It broke"},
+            ],
+        )
+        assert len(entry.failed_lessons) == 1
+        assert entry.failed_lessons[0]["outcome"] == "failed"
 
     def test_new_fields_accept_data(self) -> None:
         entry = SessionLogEntry(
@@ -280,7 +290,16 @@ class TestHealthReport:
         assert report.unresolved_contradictions == []
         assert report.memory_overflow is False
         assert report.knowledge_gaps == []
+        assert report.unclassified_lessons == []
         assert report.total_issues == 0
+
+    def test_unclassified_lessons_accepts_data(self) -> None:
+        report = HealthReport(
+            unclassified_lessons=["lessons/old-lesson.md"],
+            total_issues=1,
+        )
+        assert len(report.unclassified_lessons) == 1
+        assert report.unclassified_lessons[0] == "lessons/old-lesson.md"
 
     def test_with_all_fields(self) -> None:
         report = HealthReport(

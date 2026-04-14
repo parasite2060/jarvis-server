@@ -26,9 +26,15 @@ Store a decision made during the session. Call for each significant decision. Al
 - decision: "Use FastAPI for the server", reasoning: "async-first design and built-in Pydantic validation"
 - decision: "Switch from mocks to real DB in tests", reasoning: "mock/prod divergence caused a broken migration to pass tests"
 
-### `store_lesson(lesson)`
-Store a lesson learned — what went well, what could improve, or surprising findings. Examples:
+### `store_lesson(lesson, outcome?, failure_reason?)`
+Store a lesson learned — what went well, what could improve, or surprising findings. If the lesson is about something that FAILED or DIDN'T WORK, use:
+- `outcome='failed'` and `failure_reason='why it failed'`
+This prevents the AI from suggesting the same approach again (anti-repetition memory).
+For successful or mixed-outcome lessons, `outcome` is optional (values: `success`, `failed`, `mixed`).
+
+Examples:
 - "Pydantic v2 properties can't be monkeypatched — need to patch the underlying field instead"
+- store_lesson(lesson="Tried using SQLite for concurrent writes", outcome="failed", failure_reason="SQLite locks entire DB on write, causing timeouts under load")
 - "Fire-and-forget worker spawning needs PID tracking to prevent duplicate processes"
 
 ### `store_action_item(action)`

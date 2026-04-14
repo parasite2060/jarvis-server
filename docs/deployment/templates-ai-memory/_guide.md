@@ -26,6 +26,7 @@ ai-memory/
 ├── lessons/             # Lessons learned from incidents and mistakes
 ├── references/          # Permanent reference standards (no decay)
 ├── reviews/             # Weekly review summaries (YYYY-WW.md)
+├── log.md               # Append-only change log (not in session context)
 ├── topics/              # MEMORY.md overflow for deep entries
 ├── .backups/            # Consolidation snapshots (excluded from git)
 ├── config.yml           # Dream configuration (non-secrets only)
@@ -60,6 +61,37 @@ ai-memory/
 
 - **config.yml** — Dream engine settings including scoring weights, thresholds, and lifecycle rules. No secrets — API keys and credentials are managed by the Jarvis server's environment variables.
 
+## Change Log (log.md)
+
+The vault-root `log.md` is an append-only chronological record of all vault modifications.
+
+### Entry Format
+
+```
+## YYYY-MM-DD HH:MM
+- [action] description
+```
+
+### Action Prefixes
+
+| Action | When Used | Example |
+|--------|-----------|---------|
+| `ingest` | Record agent writes daily log | `Session "Fix plugin" -> dailys/2026-04-08.md` |
+| `reinforce` | Record agent increments count | `patterns/async.md (count: 4->5)` |
+| `create` | Deep dream creates vault file | `decisions/scoring.md` |
+| `update` | Deep dream updates vault file | `patterns/testing.md` |
+| `promote` | Deep dream promotes lesson->pattern | `lessons/pydantic.md -> patterns/pydantic-v2.md` |
+| `contradict` | Record agent flags contradiction | `patterns/old.md` |
+| `prune` | Deep dream removes stale entry | `patterns/unused.md` |
+| `lint` | Deep dream health check | `Health check: 2 orphans, 1 stale` |
+| `review` | Weekly review completes | `Weekly review 2026-W15 generated` |
+
+### Rules
+
+- **Append-only** -- never rewrite or truncate `log.md`
+- **Not in session context** -- too large for injection; available for on-demand reading
+- **Deterministic** -- log entries are written by Python task code, not by LLM tools
+
 ## Enhanced Frontmatter Standard
 
 All vault markdown files MUST have YAML frontmatter at the top of the file:
@@ -77,6 +109,8 @@ last_reinforced: YYYY-MM-DD
 confidence: 0.0-1.0
 superseded_by: filename.md  # only when status is superseded
 relationship_type: extends | contradicts | supports | inspired_by | supersedes | derived_from | addresses_gap  # connections only
+outcome: success | failed | mixed  # lessons only, classified by extraction or consolidation
+failure_reason: ""                   # required when outcome is "failed"
 ---
 ```
 
@@ -110,6 +144,17 @@ Transitions:
 - `active -> superseded`: When a contradiction is resolved and a new entry replaces this one
 - `active -> archived`: When content is no longer relevant (auto after 90 days without reinforcement, configurable)
 - `superseded -> archived`: After the replacement is confirmed active
+
+## Anti-Repetition Memory
+
+Lessons with `outcome: failed` are anti-repetition memory. They:
+- Are NEVER pruned, regardless of age or score
+- Are NEVER subject to decay
+- Must include `failure_reason` explaining why the approach failed
+- Prevent the AI from suggesting the same failed approach again
+- Are surfaced when the topic is discussed in future sessions
+
+The health check flags lessons older than 90 days without an `outcome` field as needing classification.
 
 ## Relationship Types
 

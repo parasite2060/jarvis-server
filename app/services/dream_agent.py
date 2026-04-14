@@ -237,6 +237,7 @@ class DreamDeps:
     session_key_exchanges: list[str] = field(default_factory=list)
     session_decisions: list[str] = field(default_factory=list)
     session_lessons: list[str] = field(default_factory=list)
+    session_failed_lessons: list[dict[str, str]] = field(default_factory=list)
     session_action_items: list[str] = field(default_factory=list)
     session_concepts: list[dict[str, str]] = field(default_factory=list)
     session_connections: list[dict[str, str]] = field(default_factory=list)
@@ -291,9 +292,22 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         return f"Decision stored: {entry[:80]}..."
 
     @agent.tool
-    async def store_lesson(ctx: RunContext[DreamDeps], lesson: str) -> str:
-        """Store a lesson learned — what went well, what could improve, or a surprising finding."""
+    async def store_lesson(
+        ctx: RunContext[DreamDeps],
+        lesson: str,
+        outcome: str | None = None,
+        failure_reason: str | None = None,
+    ) -> str:
+        """Store a lesson learned — what went well, what could improve, or a surprising finding.
+
+        If the lesson is about something that FAILED or DIDN'T WORK, use:
+        - outcome='failed' and failure_reason='why it failed'
+        Valid outcome values: success, failed, mixed. Optional for non-failed lessons.
+        """
         ctx.deps.session_lessons.append(lesson)
+        if outcome and outcome in ("success", "failed", "mixed") and outcome == "failed":
+            entry = {"lesson": lesson, "outcome": outcome, "failure_reason": failure_reason or ""}
+            ctx.deps.session_failed_lessons.append(entry)
         return f"Lesson stored: {lesson[:80]}..."
 
     @agent.tool
@@ -459,6 +473,7 @@ async def run_dream_extraction(
         key_exchanges=deps.session_key_exchanges,
         decisions_made=deps.session_decisions,
         lessons_learned=deps.session_lessons,
+        failed_lessons=deps.session_failed_lessons,
         action_items=deps.session_action_items,
         concepts=deps.session_concepts,
         connections=deps.session_connections,
