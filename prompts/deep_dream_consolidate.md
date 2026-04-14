@@ -51,7 +51,7 @@ last_reviewed: YYYY-MM-DD
 1. **Deduplicate**: Merge identical or near-identical entries. Keep the most informative version.
 2. **Resolve contradictions**: Latest information wins. Archive the old value with format: `CORRECTION: Was [old value] -> Now [new value] (YYYY-MM-DD)`
 3. **Promote patterns**: Entries seen 3+ times across sessions move to `## Strong Patterns` section. Add reinforcement count in parentheses, e.g., `(5x)`.
-4. **Prune stale**: Remove entries older than 30 days with no reinforcement. Do NOT prune entries in Strong Patterns.
+4. **Prune stale**: Remove entries older than 30 days with no reinforcement. Do NOT prune entries in Strong Patterns. Do NOT prune lessons with `outcome: failed` — these are anti-repetition memory that prevents re-exploring dead ends. Failed lessons have infinite retention regardless of score or age.
 5. **Absolute dates only**: Use YYYY-MM-DD format. NEVER use "yesterday", "last week", "today", or any relative date.
 6. **Imperative voice**: "Use X for Y" not "The user uses X for Y".
 7. **One line per entry, under 150 characters**: MEMORY.md is an index, not a dump. Be concise.
@@ -209,6 +209,7 @@ The `relationship_type` in frontmatter (extends, contradicts, supports, inspired
 - When a contradiction is resolved, mark the old entry as `superseded` and set `superseded_by` to the new filename.
 - When an entry has not been reinforced for 30+ days and has a low confidence score, it may be pruned.
 - Entries in references/ are never subject to decay or pruning.
+- Lessons with `outcome: failed` are exempt from all decay and pruning rules. They serve as permanent "what NOT to do" knowledge (anti-repetition memory).
 
 ### Typed Relationship Consolidation Rules
 

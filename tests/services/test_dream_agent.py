@@ -101,6 +101,7 @@ class TestLightDreamAgent:
         assert dream_deps.session_key_exchanges == []
         assert dream_deps.session_decisions == []
         assert dream_deps.session_lessons == []
+        assert dream_deps.session_failed_lessons == []
         assert dream_deps.session_action_items == []
         assert dream_deps.session_concepts == []
         assert dream_deps.session_connections == []
@@ -276,6 +277,87 @@ class TestStoreConnectionTool:
                 relationship_type=rel_type,
             )
             assert f"[{rel_type}]" in result
+
+
+# ---------------------------------------------------------------------------
+# store_lesson Tool Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStoreLessonTool:
+    @pytest.mark.asyncio
+    async def test_store_lesson_without_outcome(self, dream_deps: DreamDeps) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_lesson":
+                tool = t
+                break
+        assert tool is not None
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        result = await tool.function(ctx, lesson="Always test edge cases")
+        assert "Lesson stored" in result
+        assert len(dream_deps.session_lessons) == 1
+        assert dream_deps.session_failed_lessons == []
+
+    @pytest.mark.asyncio
+    async def test_store_lesson_with_failed_outcome(self, dream_deps: DreamDeps) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_lesson":
+                tool = t
+                break
+        assert tool is not None
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        result = await tool.function(
+            ctx,
+            lesson="Tried SQLite for concurrent writes",
+            outcome="failed",
+            failure_reason="SQLite locks entire DB on write",
+        )
+        assert "Lesson stored" in result
+        assert len(dream_deps.session_lessons) == 1
+        assert len(dream_deps.session_failed_lessons) == 1
+        assert dream_deps.session_failed_lessons[0]["outcome"] == "failed"
+        reason = dream_deps.session_failed_lessons[0]["failure_reason"]
+        assert reason == "SQLite locks entire DB on write"
+
+    @pytest.mark.asyncio
+    async def test_store_lesson_with_success_outcome_no_failed_entry(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool = None
+        for t in agent._function_toolset.tools.values():
+            if t.name == "store_lesson":
+                tool = t
+                break
+
+        ctx = MagicMock()
+        ctx.deps = dream_deps
+
+        await tool.function(ctx, lesson="Async patterns work well", outcome="success")
+        assert len(dream_deps.session_lessons) == 1
+        assert dream_deps.session_failed_lessons == []
 
 
 # ---------------------------------------------------------------------------

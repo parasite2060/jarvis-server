@@ -51,6 +51,7 @@ class SessionLogEntry(BaseModel):
     key_exchanges: list[str] = Field(default_factory=list)
     decisions_made: list[str] = Field(default_factory=list)
     lessons_learned: list[str] = Field(default_factory=list)
+    failed_lessons: list[dict[str, str]] = Field(default_factory=list)
     action_items: list[str] = Field(default_factory=list)
     concepts: list[dict[str, str]] = Field(default_factory=list)
     connections: list[dict[str, str]] = Field(default_factory=list)
@@ -178,4 +179,5 @@ class HealthReport(BaseModel):
     memory_overflow: bool = False
     knowledge_gaps: list[str] = Field(default_factory=list)
     missing_backlinks: list[str] = Field(default_factory=list)
+    unclassified_lessons: list[str] = Field(default_factory=list)
     total_issues: int = 0

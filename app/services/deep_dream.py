@@ -224,9 +224,13 @@ def calculate_candidate_score(
     weights: dict[str, float] | None = None,
     decay_rate: float = DEFAULT_DECAY_RATE,
     is_reference: bool = False,
+    is_failed_lesson: bool = False,
 ) -> float:
     if is_reference:
         return 1.0  # Terminal node: references are permanent, never scored for pruning
+
+    if is_failed_lesson:
+        return 1.0  # Anti-repetition: never prune failed lessons
 
     w = weights or DEFAULT_SCORING_WEIGHTS
     freq = min(reinforcement_count / 10.0, 1.0)
@@ -272,6 +276,7 @@ async def run_health_checks(
     stale_notes: list[str] = []
     missing_frontmatter: list[str] = []
     unresolved_contradictions: list[str] = []
+    unclassified_lessons: list[str] = []
     memory_overflow = False
 
     today = date.today()
@@ -331,6 +336,20 @@ async def run_health_checks(
                         stale_notes.append(rel_path)
                 except ValueError:
                     pass
+
+            # Check for unclassified lessons (older than 90 days, no outcome field)
+            if folder == "lessons":
+                created_match = re.search(r"created:\s*(\d{4}-\d{2}-\d{2})", frontmatter)
+                has_outcome = re.search(r"outcome:\s*\w+", frontmatter) is not None
+                if created_match and not has_outcome:
+                    try:
+                        created_date = datetime.strptime(
+                            created_match.group(1), "%Y-%m-%d"
+                        ).date()
+                        if (today - created_date).days > 90:
+                            unclassified_lessons.append(rel_path)
+                    except ValueError:
+                        pass
 
     # Check MEMORY.md overflow
     memory_path = workspace / "MEMORY.md"
@@ -399,6 +418,7 @@ async def run_health_checks(
         + (1 if memory_overflow else 0)
         + len(gaps)
         + len(missing_backlinks)
+        + len(unclassified_lessons)
     )
 
     return HealthReport(
@@ -409,5 +429,6 @@ async def run_health_checks(
         memory_overflow=memory_overflow,
         knowledge_gaps=gaps,
         missing_backlinks=missing_backlinks,
+        unclassified_lessons=unclassified_lessons,
         total_issues=total_issues,
     )

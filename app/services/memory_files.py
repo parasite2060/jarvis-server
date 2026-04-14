@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import settings
@@ -83,6 +84,23 @@ async def append_vault_file(relative_path: str, content: str) -> None:
     existing = await read_vault_file(relative_path)
     new_content = (existing or "") + content
     await write_vault_file(relative_path, new_content)
+
+
+ALLOWED_LOG_ACTIONS = (
+    "ingest", "reinforce", "create", "update",
+    "promote", "contradict", "prune", "lint", "review",
+)
+
+
+async def append_vault_log(action: str, description: str) -> None:
+    """Append a timestamped entry to vault-root log.md (append-only)."""
+    if action not in ALLOWED_LOG_ACTIONS:
+        log.warning("memory_files.vault_log.invalid_action", action=action)
+        return
+    now = datetime.now(UTC)
+    header_line = f"\n## {now.strftime('%Y-%m-%d %H:%M')}\n"
+    entry = f"- [{action}] {description}\n"
+    await append_vault_file("log.md", header_line + entry)
 
 
 async def ensure_vault_dir(relative_path: str) -> None:

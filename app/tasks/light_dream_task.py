@@ -16,6 +16,7 @@ from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import DreamDeps, RecordDeps, run_dream_extraction, run_record
 from app.services.dream_models import SessionLogEntry
 from app.services.git_ops import git_ops_service
+from app.services.memory_files import append_vault_log
 
 log = get_logger("jarvis.tasks.light_dream")
 
@@ -191,6 +192,18 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     files_count=len(files_modified),
                     record_summary=record_result.summary,
                 )
+                try:
+                    summary_title = (record_deps.summary[:60] if record_deps.summary else "session")
+                    await append_vault_log(
+                        "ingest",
+                        f'Session "{summary_title}" -> dailys/{source_date_for_git.isoformat()}.md',
+                    )
+                    summary_lower = (record_result.summary or "").lower()
+                    for f in record_result.files:
+                        if f.action == "update" and "reinforc" in summary_lower:
+                            await append_vault_log("reinforce", f.path)
+                except Exception as log_exc:
+                    log.warning("light_dream.vault_log.failed", error=str(log_exc))
             except Exception as exc:
                 log.warning(
                     "light_dream.record.failed",

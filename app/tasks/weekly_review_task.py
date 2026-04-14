@@ -10,7 +10,7 @@ from app.models.tables import Dream
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import WeeklyReviewDeps, run_weekly_review
 from app.services.git_ops import git_ops_service
-from app.services.memory_files import read_vault_file, write_vault_file
+from app.services.memory_files import append_vault_log, read_vault_file, write_vault_file
 
 log = get_logger("jarvis.tasks.weekly_review")
 
@@ -118,6 +118,10 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
     try:
         await write_vault_file(review_path, review_full)
         files_modified.append({"path": review_path, "action": "create"})
+        try:
+            await append_vault_log("review", f"Weekly review {week_num} generated")
+        except Exception as log_exc:
+            log.warning("weekly_review.vault_log.failed", dream_id=dream_id, error=str(log_exc))
         log.info("weekly_review.file_written", path=review_path)
     except Exception as exc:
         log.error("weekly_review.file_write.failed", dream_id=dream_id, error=str(exc))
