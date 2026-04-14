@@ -76,6 +76,7 @@ reinforcement_count: 0
 last_reinforced: YYYY-MM-DD
 confidence: 0.0-1.0
 superseded_by: filename.md  # only when status is superseded
+relationship_type: extends | contradicts | supports | inspired_by | supersedes | derived_from | addresses_gap  # connections only
 ---
 ```
 
@@ -91,6 +92,7 @@ superseded_by: filename.md  # only when status is superseded
 - `last_reinforced` — Date of most recent reinforcement
 - `confidence` — Score from 0.0 to 1.0 indicating reliability of this knowledge
 - `superseded_by` — Pointer to the replacement file when status is "superseded"
+- `relationship_type` — Type of relationship for connection files only (see Relationship Types below)
 
 ## Lifecycle States
 
@@ -108,6 +110,20 @@ Transitions:
 - `active -> superseded`: When a contradiction is resolved and a new entry replaces this one
 - `active -> archived`: When content is no longer relevant (auto after 90 days without reinforcement, configurable)
 - `superseded -> archived`: After the replacement is confirmed active
+
+## Relationship Types
+
+Connection files use `relationship_type` in frontmatter to classify the nature of the link:
+
+| Type | Definition | Consolidation Action |
+|------|-----------|---------------------|
+| `extends` | Builds on or elaborates an existing concept | Maintain bidirectional link |
+| `contradicts` | Conflicts with existing knowledge | Flag contradiction, potentially supersede |
+| `supports` | Provides evidence for or reinforces | Increment reinforcement count |
+| `inspired_by` | Loosely related, influenced thinking | Weak link, subject to decay |
+| `supersedes` | Replaces an older entry | Mark old as superseded |
+| `derived_from` | Directly derived from, subset of | Maintain as dependency link |
+| `addresses_gap` | Fills an identified knowledge gap | Close gap in health check |
 
 ## Terminal Node Principle
 
@@ -150,6 +166,9 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 ## Consequences
 - [Positive consequence]
 - [Negative consequence or trade-off]
+
+## Related
+- [[patterns/...]] or [[concepts/...]]
 ```
 
 ### Pattern Files
@@ -168,6 +187,9 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 
 ## Apply When
 [Conditions under which this pattern applies]
+
+## Related
+- [[decisions/...]] or [[concepts/...]]
 ```
 
 ### Lesson Files
@@ -186,6 +208,9 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 
 ## Apply When
 [Conditions to watch for to prevent recurrence]
+
+## Related
+- [[patterns/...]] or [[decisions/...]]
 ```
 
 ### Concept Files
@@ -205,6 +230,8 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 
 ### Connection Files
 
+Connection files have `relationship_type` in their frontmatter (see Relationship Types). The type drives consolidation behavior.
+
 ```markdown
 # [Connection Title]
 
@@ -219,6 +246,9 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 
 ## Implications
 [What this connection means for practice]
+
+## Related
+- [[concepts/...]]
 ```
 
 ## File Naming Convention
@@ -300,6 +330,32 @@ Generates a weekly review summary in `reviews/YYYY-WW.md` covering:
 - **CORRECTION prefix** — For changed facts: "CORRECTION: Was [old] -> Now [new] (date)"
 - **Wiki-links to vault files** — When a MEMORY.md entry has a corresponding vault file, append a wiki-link: `→ [[patterns/async-patterns]]`. This creates graph edges in Obsidian.
 - **Strong Patterns promotion** — Entries reinforced 3+ times across sessions are promoted to the `## Strong Patterns` section
+
+## Bidirectional Link Protocol
+
+Every forward `[[wiki-link]]` in a vault file creates a reverse entry in the target file's `## Related` section. This ensures Obsidian's graph view shows true bidirectional relationships and the knowledge graph compounds with every addition.
+
+### Rules
+
+1. When file A contains `[[folder-b/file-b]]`, then file B's `## Related` section must contain `[[folder-a/file-a]]`.
+2. The deep dream enforces this during Phase 3 consolidation -- every write updates both the source and target files.
+3. Missing backlinks are detected by the deterministic health check (`run_health_checks()`) as a safety net.
+
+### Terminal Node Exception
+
+Files in `references/` are terminal nodes:
+- They **receive** inbound links from other vault files (`[[references/x]]`)
+- They **never write** outbound wiki-links to other vault files
+- Missing backlink checks **skip** any link involving `references/` -- neither direction is flagged
+
+### Wiki-Link Format
+
+Use Obsidian wikilink syntax without the `.md` extension:
+```
+[[decisions/runtime-choice]]
+[[patterns/async-patterns]]
+[[concepts/clean-architecture]]
+```
 
 ## User Editing
 

@@ -169,6 +169,8 @@ Use the following templates when writing vault files. Each template defines the 
 
 #### Connection Files
 
+The `relationship_type` in frontmatter (extends, contradicts, supports, inspired_by, supersedes, derived_from, addresses_gap) drives consolidation behavior per the Typed Relationship Consolidation Rules.
+
 ```markdown
 # [Connection Title]
 
@@ -208,6 +210,17 @@ Use the following templates when writing vault files. Each template defines the 
 - When an entry has not been reinforced for 30+ days and has a low confidence score, it may be pruned.
 - Entries in references/ are never subject to decay or pruning.
 
+### Typed Relationship Consolidation Rules
+
+When processing connections with `relationship_type`, apply these rules:
+- `contradicts` — Flag contradiction. If evidence is strong enough, mark the weaker entry as `status: superseded` and set `superseded_by` to the stronger entry. Add a CORRECTION entry to MEMORY.md.
+- `supersedes` — Mark old entry as `status: superseded`, set `superseded_by` to the new file. The new entry inherits the old entry's reinforcement count.
+- `supports` — Increment reinforcement_count of the supported entity. Strengthens the evidence chain.
+- `extends` — Maintain bidirectional link. No special lifecycle action.
+- `derived_from` — Maintain link as dependency. The derived entry's validity depends on the source.
+- `inspired_by` — Weak link, subject to decay if not independently reinforced.
+- `addresses_gap` — Close the gap in health check. Link to the gap source file.
+
 ### Terminal Node Rules (references/)
 
 Files in `references/` are TERMINAL NODES (foundation layer):
@@ -217,6 +230,15 @@ Files in `references/` are TERMINAL NODES (foundation layer):
 - references/ files always have `status: permanent`
 - When you encounter a references/ file during consolidation, only fix structural issues (frontmatter format, broken section headers) -- never add outbound links or change status
 - Exception for Story 9.10: When checking missing backlinks, do NOT expect references/ to link back (they are terminal)
+
+### Bidirectional Link Protocol
+
+Every wiki-link you write MUST have a corresponding reverse entry in the target file:
+
+1. When you write `[[folder/filename]]` in a vault file, the target file's `## Related` section MUST contain a reverse link back to the source file.
+2. When creating or updating a vault file that references another vault file, update BOTH files in the same consolidation pass.
+3. **Exception**: `references/` files are terminal nodes -- they receive inbound links but NEVER write outbound wiki-links. Do NOT expect `references/` files to link back.
+4. **Example**: Writing `[[patterns/async-patterns]]` in `decisions/runtime-choice.md` requires adding `- [[decisions/runtime-choice]]` to the `## Related` section of `patterns/async-patterns.md`.
 
 ### When No Vault Content Exists
 

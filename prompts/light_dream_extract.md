@@ -46,10 +46,14 @@ Store a concept discussed in the session. Also creates a knowledge base entry un
 - name: "Clean Architecture", description: "Separation of concerns via dependency inversion — domain never depends on infrastructure"
 - name: "Event Sourcing", description: "Persist state changes as immutable events rather than mutable records"
 
-### `store_connection(concept_a, concept_b, relationship)`
-Store a connection between two concepts discussed in the session. Also creates a knowledge base entry under `connections`. Examples:
-- concept_a: "PydanticAI", concept_b: "Tool-based extraction", relationship: "PydanticAI agents use tool calls to structure extraction output"
-- concept_a: "Clean Architecture", concept_b: "NestJS modules", relationship: "NestJS modules map to Clean Architecture bounded contexts"
+### `store_connection(concept_a, concept_b, relationship, relationship_type?)`
+Store a connection between two concepts discussed in the session. Also creates a knowledge base entry under `connections`. Optional `relationship_type` classifies the edge:
+- `extends`, `contradicts`, `supports`, `inspired_by`, `supersedes`, `derived_from`, `addresses_gap`
+- Default: `supports` (if not specified)
+
+Examples:
+- concept_a: "PydanticAI", concept_b: "Tool-based extraction", relationship: "PydanticAI agents use tool calls to structure extraction output", relationship_type: "extends"
+- concept_a: "Clean Architecture", concept_b: "NestJS modules", relationship: "NestJS modules map to Clean Architecture bounded contexts", relationship_type: "supports"
 
 ### `store_memory(category, content, vault_target, source_date, reasoning?)`
 Store a general memory for patterns, preferences, facts, or corrections that don't fit the above categories. Use the dedicated tools above for decisions, lessons, and action items.

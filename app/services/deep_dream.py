@@ -339,6 +339,56 @@ async def run_health_checks(
         if line_count > MEMORY_OVERFLOW_THRESHOLD:
             memory_overflow = True
 
+    # Detect missing backlinks
+    wikilink_re = re.compile(r"\[\[([^\]]+)\]\]")
+    missing_backlinks: list[str] = []
+
+    for folder in VAULT_FOLDERS:
+        folder_path = workspace / folder
+        if not folder_path.is_dir():
+            continue
+
+        for md_file in sorted(folder_path.glob("*.md")):
+            if md_file.name == "_index.md":
+                continue
+
+            source_rel = f"{folder}/{md_file.name}"
+            source_slug = f"{folder}/{md_file.stem}"
+            text = md_file.read_text(encoding="utf-8")
+            links = wikilink_re.findall(text)
+
+            for link in links:
+                link_clean = link.split("|")[0].strip()
+                parts = link_clean.split("/", 1)
+                if len(parts) != 2:
+                    continue
+
+                target_folder = parts[0]
+                if target_folder not in VAULT_FOLDERS:
+                    continue
+
+                # Skip if source is in references/ (terminal: no outbound expected)
+                if folder == "references":
+                    continue
+
+                # Skip if target is in references/ (terminal: no reverse link expected)
+                if target_folder == "references":
+                    continue
+
+                target_name = parts[1]
+                if not target_name.endswith(".md"):
+                    target_name += ".md"
+                target_path = workspace / target_folder / target_name
+                if not target_path.is_file():
+                    continue
+
+                target_content = target_path.read_text(encoding="utf-8")
+                if f"[[{source_slug}]]" not in target_content:
+                    target_rel = f"{target_folder}/{target_name}"
+                    entry = f"{source_rel} \u2192 {target_rel} (no reverse link)"
+                    if entry not in missing_backlinks:
+                        missing_backlinks.append(entry)
+
     gaps = knowledge_gaps or []
 
     total_issues = (
@@ -348,6 +398,7 @@ async def run_health_checks(
         + len(unresolved_contradictions)
         + (1 if memory_overflow else 0)
         + len(gaps)
+        + len(missing_backlinks)
     )
 
     return HealthReport(
@@ -357,5 +408,6 @@ async def run_health_checks(
         unresolved_contradictions=unresolved_contradictions,
         memory_overflow=memory_overflow,
         knowledge_gaps=gaps,
+        missing_backlinks=missing_backlinks,
         total_issues=total_issues,
     )
