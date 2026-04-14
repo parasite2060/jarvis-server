@@ -26,6 +26,7 @@ from app.services.dream_agent import (
     Phase2Deps,
     consolidation_to_dict,
     run_deep_dream_consolidation,
+    run_health_fix,
     run_phase1_light_sleep,
     run_phase2_rem_sleep,
 )
@@ -227,6 +228,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
 
     # Step 3: PydanticAI consolidation agent (Phase 3 — Deep Sleep)
     consolidation_result: dict[str, Any] | None = None
+    consolidation_messages: list[Any] = []
     is_partial = False
     usage_input_tokens: int | None = None
     usage_output_tokens: int | None = None
@@ -242,7 +244,9 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             phase1_summary=phase1_text,
             phase2_summary=phase2_text,
         )
-        output, usage, tool_call_count = await run_deep_dream_consolidation(deps)
+        output, usage, tool_call_count, consolidation_messages = (
+            await run_deep_dream_consolidation(deps)
+        )
         consolidation_result = consolidation_to_dict(output)
         usage_input_tokens = usage.request_tokens
         usage_output_tokens = usage.response_tokens
@@ -361,29 +365,47 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         except Exception:
             pass
 
-    # Step 6e: Auto-fix deterministic health issues
-    auto_fix_result: dict[str, int] = {}
-    if health_report is not None and health_report.total_issues > 0:
+    # Step 6e: Agent-based health fix (same session as consolidation for context)
+    if health_report is not None and health_report.total_issues > 0 and consolidation_messages:
         try:
-            from app.services.deep_dream import auto_fix_health_issues
+            # Build health summary for the agent
+            issues: list[str] = []
+            for entry in health_report.missing_backlinks:
+                issues.append(f"- Missing backlink: {entry}")
+            for entry in health_report.orphan_notes:
+                issues.append(f"- Orphan note (not in _index.md): {entry}")
+            for entry in health_report.missing_frontmatter:
+                issues.append(f"- Missing YAML frontmatter: {entry}")
+            for entry in health_report.unresolved_contradictions:
+                issues.append(f"- Unresolved contradiction: {entry}")
+            for entry in health_report.knowledge_gaps:
+                issues.append(f"- Knowledge gap (concept referenced but no note): {entry}")
 
-            workspace = Path(settings.jarvis_memory_path)
-            auto_fix_result = await auto_fix_health_issues(workspace, health_report)
-            if auto_fix_result.get("total_fixed", 0) > 0:
-                log.info(
-                    "deep_dream.auto_fix.applied",
-                    dream_id=dream_id,
-                    **auto_fix_result,
+            if issues:
+                health_summary = "\n".join(issues)
+                deps_for_fix = DeepDreamDeps(
+                    source_date=source_date,
+                    memu_memories=memu_memories,
+                    memory_md=memory_md,
+                    daily_log=daily_log,
+                    soul_md=soul_md,
+                    phase1_summary=phase1_text,
+                    phase2_summary=phase2_text,
                 )
-                # Log fixes to vault log
-                for fix_type in ("backlinks_fixed", "frontmatter_fixed", "orphans_fixed"):
-                    count = auto_fix_result.get(fix_type, 0)
-                    if count > 0:
-                        action = fix_type.replace("_fixed", "")
-                        await append_vault_log(
-                            "update",
-                            f"Auto-fixed {count} {action} issues",
-                        )
+                fix_usage, fix_tool_calls = await run_health_fix(
+                    deps_for_fix, consolidation_messages, health_summary
+                )
+                log.info(
+                    "deep_dream.health_fix.completed",
+                    dream_id=dream_id,
+                    fix_tokens=fix_usage.total_tokens,
+                    fix_tool_calls=fix_tool_calls,
+                    issues_sent=len(issues),
+                )
+                await append_vault_log(
+                    "update",
+                    f"Health fix: sent {len(issues)} issues to consolidation agent",
+                )
                 # Update file manifest after fixes
                 try:
                     await update_file_manifest(files_modified)
@@ -391,7 +413,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
                     pass
         except Exception as exc:
             log.warning(
-                "deep_dream.auto_fix.failed",
+                "deep_dream.health_fix.failed",
                 dream_id=dream_id,
                 error=str(exc),
             )

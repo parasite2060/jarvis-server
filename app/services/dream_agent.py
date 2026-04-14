@@ -789,7 +789,7 @@ DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_lim
 
 async def run_deep_dream_consolidation(
     deps: DeepDreamDeps,
-) -> tuple[ConsolidationOutput, RunUsage, int]:
+) -> tuple[ConsolidationOutput, RunUsage, int, list[Any]]:
     agent = _get_deep_dream_agent()
     result = await agent.run(
         "Consolidate memories using the available tools. "
@@ -797,7 +797,45 @@ async def run_deep_dream_consolidation(
         deps=deps,
         usage_limits=DEEP_DREAM_USAGE_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+    return (
+        result.output,
+        result.usage(),
+        _count_tool_calls(result.all_messages()),
+        result.all_messages(),
+    )
+
+
+HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=50)
+
+
+async def run_health_fix(
+    deps: DeepDreamDeps,
+    message_history: list[Any],
+    health_summary: str,
+) -> tuple[RunUsage, int]:
+    """Send health check results back to the consolidation agent to fix issues.
+
+    Uses message_history from the consolidation run so the agent has full
+    context of what was written. Token caching preserves the prefix.
+    """
+    agent = _get_deep_dream_agent()
+    result = await agent.run(
+        f"The health check found issues after your consolidation. "
+        f"Fix them using the file tools:\n\n{health_summary}\n\n"
+        f"For missing backlinks: read the target file, add a "
+        f"`- [[source/file]]` entry under `## Related` (create section "
+        f"if missing). "
+        f"For orphan notes: read the folder's _index.md and add the "
+        f"missing entry. "
+        f"For missing frontmatter: read the file and add a YAML "
+        f"frontmatter block at the top. "
+        f"Fix as many issues as you can, then return your consolidation "
+        f"output unchanged.",
+        deps=deps,
+        message_history=message_history,
+        usage_limits=HEALTH_FIX_LIMITS,
+    )
+    return result.usage(), _count_tool_calls(result.all_messages())
 
 
 def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:

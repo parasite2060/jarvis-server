@@ -242,7 +242,7 @@ def _pipeline_patches(
             side_effect=phase2_error,
         ),
         "app.tasks.deep_dream_task.run_deep_dream_consolidation": AsyncMock(
-            return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5)
+            return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
         ),
         "app.tasks.deep_dream_task.consolidation_to_dict": MagicMock(
             return_value=cons_dict
@@ -360,7 +360,7 @@ async def test_validation_failure_marks_failed() -> None:
     factory = FakeSessionFactory(dream)
     mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
     mock_consolidation = AsyncMock(
-        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5)
+        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
     )
     mock_to_dict = MagicMock(return_value={"memory_md": "", "daily_summary": ""})
     mock_validate = AsyncMock(side_effect=ValueError("memory_md is empty"))
@@ -388,7 +388,7 @@ async def test_file_write_failure_marks_failed() -> None:
     factory = FakeSessionFactory(dream)
     mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
     mock_consolidation = AsyncMock(
-        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5)
+        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
     )
     mock_to_dict = MagicMock(return_value=SAMPLE_CONSOLIDATION_DICT)
     mock_validate = AsyncMock(return_value=SAMPLE_VALIDATED)
