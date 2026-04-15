@@ -30,7 +30,13 @@ from app.services.dream_agent import (
     run_phase1_light_sleep,
     run_phase2_rem_sleep,
 )
-from app.services.dream_models import HealthReport, LightSleepOutput, REMSleepOutput
+from app.services.dream_models import (
+    HealthReport,
+    LightSleepOutput,
+    REMSleepOutput,
+    ScoredCandidate,
+)
+from app.services.dream_telemetry import store_phase_telemetry
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log, read_vault_file, write_vault_file
 from app.services.vault_updater import update_file_manifest, update_vault_folders
@@ -42,41 +48,154 @@ def _format_phase1_summary(
     phase1_output: LightSleepOutput,
     scores: dict[str, float],
 ) -> str:
-    lines: list[str] = ["## Phase 1: Light Sleep Candidates"]
-    lines.append(f"Total candidates: {len(phase1_output.candidates)}")
-    lines.append(f"Duplicates removed: {phase1_output.duplicates_removed}")
-    lines.append(f"Contradictions found: {phase1_output.contradictions_found}")
+    lines: list[str] = ["## Phase 1: Light Sleep Results"]
     lines.append("")
+    lines.append("### Intent")
+    lines.append("Inventory today's memories, deduplicate, flag contradictions.")
+    lines.append("")
+    lines.append("### Summary")
+    lines.append(
+        f"{len(phase1_output.candidates)} candidates after dedup "
+        f"({phase1_output.duplicates_removed} removed). "
+        f"{phase1_output.contradictions_found} contradictions."
+    )
+    lines.append("")
+
+    # Classify candidates into actionable decisions
+    promote: list[str] = []
+    prune: list[str] = []
+    contradiction: list[str] = []
     for c in phase1_output.candidates:
+        score = round(scores.get(c.content, 0.0), 3)
+        if c.contradiction_flag:
+            contradiction.append(
+                f"- CONTRADICTION: \"{c.content}\" ({c.category}, score={score})"
+            )
+        if score >= 0.7 and c.reinforcement_count >= 3:
+            promote.append(
+                f"- PROMOTE: \"{c.content}\" → Strong Patterns "
+                f"(score={score}, {c.reinforcement_count}x)"
+            )
+        elif score < 0.2:
+            prune.append(
+                f"- PRUNE CANDIDATE: \"{c.content}\" (score={score})"
+            )
+
+    lines.append("### Actionable Decisions")
+    if promote or prune or contradiction:
+        lines.extend(promote)
+        lines.extend(prune)
+        lines.extend(contradiction)
+    else:
+        lines.append("No actionable decisions.")
+    lines.append("")
+
+    lines.append("### Scoring Config")
+    lines.append(
+        "Weights: frequency=0.25, recency=0.25, relevance=0.20, "
+        "consistency=0.20, breadth=0.10"
+    )
+    lines.append(
+        "Thresholds: promote >= 0.7 (3+ reinforced), prune < 0.2, decay=0.03"
+    )
+    lines.append("")
+
+    # JSON reference with full candidate data
+    ref_data = [
+        {
+            **c.model_dump(),
+            "score": round(scores.get(c.content, 0.0), 3),
+        }
+        for c in phase1_output.candidates
+    ]
+    lines.append("### Reference Data")
+    lines.append("```json")
+    lines.append(json.dumps(ref_data, indent=2))
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def _format_phase1_for_phase2(
+    candidates: list[ScoredCandidate],
+    scores: dict[str, float],
+) -> str:
+    lines: list[str] = []
+    for i, c in enumerate(candidates, 1):
         score = scores.get(c.content, 0.0)
         flag = " [CONTRADICTION]" if c.contradiction_flag else ""
-        sessions = ", ".join(c.source_sessions) if c.source_sessions else "n/a"
         lines.append(
-            f"- ({c.category}) {c.content} "
-            f"[score={score:.2f}, reinforced={c.reinforcement_count}, "
-            f"sessions={sessions}]{flag}"
+            f"[{i}] ({c.category}) {c.content} "
+            f"[score={score:.2f}, reinforced={c.reinforcement_count}]{flag}"
         )
     return "\n".join(lines)
 
 
+def _format_vault_indexes(vault_indexes: dict[str, str]) -> str:
+    lines: list[str] = []
+    for folder, content in vault_indexes.items():
+        lines.append(f"### {folder}/")
+        lines.append(content)
+        lines.append("")
+    return "\n".join(lines)
+
+
 def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
-    lines: list[str] = ["## Phase 2: REM Sleep Analysis"]
+    lines: list[str] = ["## Phase 2: REM Sleep Results"]
+    lines.append("")
+    lines.append("### Intent")
+    lines.append("Cross-session pattern detection, connection discovery, gap analysis.")
+    lines.append("")
+
+    lines.append("### Themes")
     if phase2_output.themes:
-        lines.append("### Themes")
         for t in phase2_output.themes:
-            lines.append(f"- {t.topic} (seen in {t.session_count} sessions)")
+            evidence = ", ".join(t.evidence) if t.evidence else "n/a"
+            lines.append(
+                f"- \"{t.topic}\" — {t.session_count} sessions. Evidence: {evidence}"
+            )
+    else:
+        lines.append("No themes detected.")
+    lines.append("")
+
+    lines.append("### Connection Candidates")
     if phase2_output.new_connections:
-        lines.append("### New Connections")
         for c in phase2_output.new_connections:
-            lines.append(f"- {c.concept_a} <-> {c.concept_b}: {c.relationship}")
+            lines.append(
+                f"- {c.concept_a} <-[{c.relationship_type}]-> {c.concept_b}: "
+                f"{c.relationship}"
+            )
+    else:
+        lines.append("No new connections.")
+    lines.append("")
+
+    lines.append("### Promotion Candidates")
     if phase2_output.promotion_candidates:
-        lines.append("### Promotion Candidates")
         for p in phase2_output.promotion_candidates:
-            lines.append(f"- {p.source_file} -> {p.target_folder}: {p.reason}")
+            lines.append(f"- {p.source_file} → {p.target_folder}: {p.reason}")
+    else:
+        lines.append("No promotions.")
+    lines.append("")
+
+    lines.append("### Knowledge Gaps")
     if phase2_output.gaps:
-        lines.append("### Knowledge Gaps")
         for g in phase2_output.gaps:
-            lines.append(f"- {g.concept}")
+            files = ", ".join(g.mentioned_in_files) if g.mentioned_in_files else "n/a"
+            lines.append(f"- \"{g.concept}\" — mentioned in: {files}")
+    else:
+        lines.append("No gaps detected.")
+    lines.append("")
+
+    # JSON reference with full model data
+    ref_data = {
+        "themes": [t.model_dump() for t in phase2_output.themes],
+        "connections": [c.model_dump() for c in phase2_output.new_connections],
+        "promotions": [p.model_dump() for p in phase2_output.promotion_candidates],
+        "gaps": [g.model_dump() for g in phase2_output.gaps],
+    }
+    lines.append("### Reference Data")
+    lines.append("```json")
+    lines.append(json.dumps(ref_data, indent=2))
+    lines.append("```")
     return "\n".join(lines)
 
 
@@ -146,10 +265,19 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         daily_log=daily_log,
         soul_md=soul_md,
     )
+    phase1_run_prompt = (
+        "Inventory, deduplicate, and score today's memories.\n"
+        "Use query_memu_memories() for MemU data.\n\n"
+        f"## Current MEMORY.md\n{memory_md or '(empty)'}\n\n"
+        f"## Today's Daily Log\n{daily_log or '(empty)'}"
+    )
+    phase1_start = time.monotonic_ns() // 1_000_000
+    phase1_started_at = datetime.now(UTC)
     try:
-        phase1_output, phase1_usage, phase1_tool_calls = await run_phase1_light_sleep(
-            phase1_deps
+        phase1_output, phase1_usage, phase1_tool_calls, phase1_messages = (
+            await run_phase1_light_sleep(phase1_deps)
         )
+        phase1_duration_ms = time.monotonic_ns() // 1_000_000 - phase1_start
         log.info(
             "deep_dream.phase1.completed",
             dream_id=dream_id,
@@ -159,8 +287,29 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             total_tokens=phase1_usage.total_tokens,
             tool_calls=phase1_tool_calls,
         )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase1_light_sleep",
+            status="completed",
+            run_prompt=phase1_run_prompt,
+            output_json=phase1_output.model_dump(),
+            messages=phase1_messages,
+            usage=phase1_usage,
+            tool_calls=phase1_tool_calls,
+            duration_ms=phase1_duration_ms,
+            started_at=phase1_started_at,
+        )
     except Exception as exc:
+        phase1_duration_ms = time.monotonic_ns() // 1_000_000 - phase1_start
         log.error("deep_dream.phase1.failed", dream_id=dream_id, error=str(exc))
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase1_light_sleep",
+            status="failed",
+            run_prompt=phase1_run_prompt,
+            duration_ms=phase1_duration_ms,
+            error_message=str(exc),
+        )
         await _mark_failed(dream_id, f"Phase 1 failed: {exc}", start_ms)
         return
 
@@ -169,7 +318,20 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         await _mark_skipped(dream_id, start_ms)
         return
 
-    # Step 2d: Phase 2 — REM Sleep (cross-session pattern detection)
+    # Step 2d: Compute scores for Phase 1 candidates (deterministic Python)
+    candidate_scores: dict[str, float] = {}
+    for candidate in phase1_output.candidates:
+        candidate_scores[candidate.content] = calculate_candidate_score(
+            reinforcement_count=candidate.reinforcement_count,
+            days_since_reinforced=0,
+            in_active_project=True,
+            has_contradiction=candidate.contradiction_flag,
+            context_count=len(candidate.source_sessions),
+        )
+
+    # Step 2e: Phase 2 — REM Sleep (cross-session pattern detection)
+    phase2_start = time.monotonic_ns() // 1_000_000
+    phase2_started_at = datetime.now(UTC)
     try:
         daily_logs: dict[str, str] = {}
         for i in range(7):
@@ -187,15 +349,28 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             if content:
                 vault_indexes[folder] = content
 
+        phase1_for_phase2 = _format_phase1_for_phase2(
+            phase1_output.candidates, candidate_scores
+        )
+        vault_index_text = _format_vault_indexes(vault_indexes)
         phase2_deps = Phase2Deps(
             source_date=source_date,
             daily_logs=daily_logs,
             vault_indexes=vault_indexes,
             phase1_candidates=phase1_output.candidates,
+            phase1_text=phase1_for_phase2,
+            vault_index_text=vault_index_text,
         )
-        phase2_output, phase2_usage, phase2_tool_calls = await run_phase2_rem_sleep(
-            phase2_deps
+        phase2_run_prompt = (
+            "Analyze cross-session patterns and detect themes, connections, gaps.\n"
+            "Use read_daily_log(date_str) to read specific daily logs.\n\n"
+            f"## Phase 1 Candidates\n{phase1_for_phase2 or 'No Phase 1 candidates.'}\n\n"
+            f"## Vault Indexes\n{vault_index_text or 'No vault indexes available.'}"
         )
+        phase2_output, phase2_usage, phase2_tool_calls, phase2_messages = (
+            await run_phase2_rem_sleep(phase2_deps)
+        )
+        phase2_duration_ms = time.monotonic_ns() // 1_000_000 - phase2_start
         log.info(
             "deep_dream.phase2.completed",
             dream_id=dream_id,
@@ -206,27 +381,42 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             total_tokens=phase2_usage.total_tokens,
             tool_calls=phase2_tool_calls,
         )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase2_rem_sleep",
+            status="completed",
+            run_prompt=phase2_run_prompt,
+            output_json=phase2_output.model_dump(),
+            messages=phase2_messages,
+            usage=phase2_usage,
+            tool_calls=phase2_tool_calls,
+            duration_ms=phase2_duration_ms,
+            started_at=phase2_started_at,
+        )
         phase2_result: REMSleepOutput | None = phase2_output
     except Exception as exc:
+        phase2_duration_ms = time.monotonic_ns() // 1_000_000 - phase2_start
         phase2_result = None
         log.warning("deep_dream.phase2.failed", dream_id=dream_id, error=str(exc))
-
-    # Step 2e: Compute scores for Phase 1 candidates (deterministic Python)
-    candidate_scores: dict[str, float] = {}
-    for candidate in phase1_output.candidates:
-        candidate_scores[candidate.content] = calculate_candidate_score(
-            reinforcement_count=candidate.reinforcement_count,
-            days_since_reinforced=0,
-            in_active_project=True,
-            has_contradiction=candidate.contradiction_flag,
-            context_count=len(candidate.source_sessions),
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase2_rem_sleep",
+            status="failed",
+            duration_ms=phase2_duration_ms,
+            error_message=str(exc),
         )
 
-    # Step 2f: Format Phase 1+2 summaries for consolidation agent
+    # Step 2f: Format Phase 1+2 summaries for consolidation agent (Phase 3)
     phase1_text = _format_phase1_summary(phase1_output, candidate_scores)
     phase2_text = _format_phase2_summary(phase2_result) if phase2_result else ""
 
     # Step 3: PydanticAI consolidation agent (Phase 3 — Deep Sleep)
+    phase3_run_prompt = (
+        "Consolidate memories. Produce updated MEMORY.md, daily summary, and vault updates.\n\n"
+        f"{phase1_text}\n\n{phase2_text}\n\n"
+        f"## Current MEMORY.md\n{memory_md or '(empty)'}\n\n"
+        f"## Today's Daily Log\n{daily_log or '(empty)'}"
+    )
     consolidation_result: dict[str, Any] | None = None
     consolidation_messages: list[Any] = []
     is_partial = False
@@ -234,6 +424,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     usage_output_tokens: int | None = None
     usage_total_tokens: int | None = None
     usage_tool_calls: int | None = None
+    phase3_start = time.monotonic_ns() // 1_000_000
+    phase3_started_at = datetime.now(UTC)
     try:
         deps = DeepDreamDeps(
             source_date=source_date,
@@ -247,6 +439,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         output, usage, tool_call_count, consolidation_messages = (
             await run_deep_dream_consolidation(deps)
         )
+        phase3_duration_ms = time.monotonic_ns() // 1_000_000 - phase3_start
         consolidation_result = consolidation_to_dict(output)
         usage_input_tokens = usage.request_tokens
         usage_output_tokens = usage.response_tokens
@@ -260,15 +453,45 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             total_tokens=usage_total_tokens,
             tool_calls=usage_tool_calls,
         )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase3_deep_sleep",
+            status="completed",
+            run_prompt=phase3_run_prompt,
+            output_json=consolidation_result,
+            messages=consolidation_messages,
+            usage=usage,
+            tool_calls=tool_call_count,
+            duration_ms=phase3_duration_ms,
+            started_at=phase3_started_at,
+        )
     except UsageLimitExceeded as exc:
+        phase3_duration_ms = time.monotonic_ns() // 1_000_000 - phase3_start
         is_partial = True
         log.warning(
             "deep_dream.consolidation.partial",
             dream_id=dream_id,
             error=str(exc),
         )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase3_deep_sleep",
+            status="failed",
+            run_prompt=phase3_run_prompt,
+            duration_ms=phase3_duration_ms,
+            error_message=str(exc),
+        )
     except (DreamError, Exception) as exc:
+        phase3_duration_ms = time.monotonic_ns() // 1_000_000 - phase3_start
         log.error("deep_dream.consolidation.failed", dream_id=dream_id, error=str(exc))
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="phase3_deep_sleep",
+            status="failed",
+            run_prompt=phase3_run_prompt,
+            duration_ms=phase3_duration_ms,
+            error_message=str(exc),
+        )
         await _mark_failed(dream_id, str(exc), start_ms)
         return
 
@@ -392,15 +615,29 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
                     phase1_summary=phase1_text,
                     phase2_summary=phase2_text,
                 )
-                fix_usage, fix_tool_calls = await run_health_fix(
+                health_fix_start = time.monotonic_ns() // 1_000_000
+                health_fix_started_at = datetime.now(UTC)
+                fix_usage, fix_tool_calls, health_fix_messages = await run_health_fix(
                     deps_for_fix, consolidation_messages, health_summary
                 )
+                health_fix_duration_ms = time.monotonic_ns() // 1_000_000 - health_fix_start
                 log.info(
                     "deep_dream.health_fix.completed",
                     dream_id=dream_id,
                     fix_tokens=fix_usage.total_tokens,
                     fix_tool_calls=fix_tool_calls,
                     issues_sent=len(issues),
+                )
+                await store_phase_telemetry(
+                    dream_id=dream_id,
+                    phase="health_fix",
+                    status="completed",
+                    run_prompt=health_summary,
+                    messages=health_fix_messages,
+                    usage=fix_usage,
+                    tool_calls=fix_tool_calls,
+                    duration_ms=health_fix_duration_ms,
+                    started_at=health_fix_started_at,
                 )
                 await append_vault_log(
                     "update",

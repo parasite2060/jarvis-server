@@ -27,6 +27,7 @@ from app.services.dream_models import (
     SessionLogEntry,
     WeeklyReviewOutput,
 )
+from app.services.memory_files import read_vault_file as _read_vault_file
 
 log = get_logger("jarvis.services.dream_agent")
 
@@ -130,65 +131,92 @@ def _count_tool_calls(messages: list[Any]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Generic file tools (reused by both agents)
+# Vault path resolution (used by base tools)
 # ---------------------------------------------------------------------------
 
 
-def _register_file_tools(
-    agent: Agent[Any, Any],
-    *,
-    allow_write: bool = False,
-) -> None:
-    @agent.tool
-    async def read_file(
-        ctx: RunContext[Any], path: str, offset: int = 0, limit: int = 200
-    ) -> str:
-        """Read lines from a file with line numbers."""
-        workspace: Path = ctx.deps.workspace
-        resolved = _safe_resolve(workspace, path)
-        if not resolved.is_file():
-            return f"Error: {path} is not a file"
-        lines = resolved.read_text(encoding="utf-8").splitlines()
-        end = min(offset + limit, len(lines))
-        numbered = [f"{i + 1}\t{lines[i]}" for i in range(offset, end)]
-        header = f"[{path}] lines {offset + 1}-{end} of {len(lines)}"
-        return f"{header}\n" + "\n".join(numbered)
+def _vault_root() -> Path:
+    return Path(settings.jarvis_memory_path)
+
+
+def _resolve_vault_path(relative: str) -> Path | None:
+    root = _vault_root()
+    resolved = (root / relative).resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        return None  # path traversal blocked
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Standardized base tools (all agents get vault read + MemU)
+# ---------------------------------------------------------------------------
+
+
+def _register_base_tools(agent: Agent[Any, Any]) -> None:
+    """Register standard read-only tools on any agent.
+    All agents get readonly access to vault files + MemU.
+    Paths resolve relative to settings.jarvis_memory_path (vault root)."""
 
     @agent.tool
-    async def grep(ctx: RunContext[Any], pattern: str, path: str = ".") -> str:
-        """Search for a regex pattern in files. Returns matching lines as file:line:content."""
-        workspace: Path = ctx.deps.workspace
-        resolved = _safe_resolve(workspace, path)
+    async def read_file(
+        ctx: RunContext[Any], path: str, offset: int = 0, limit: int = 0
+    ) -> str:
+        """Read a vault file. Full content if limit=0, or line range with offset+limit."""
+        resolved = _resolve_vault_path(path)
+        if resolved is None or not resolved.is_file():
+            return f"File not found: {path}"
+        text = resolved.read_text(encoding="utf-8")
+        if limit > 0:
+            lines = text.splitlines()
+            end = min(offset + limit, len(lines))
+            numbered = [f"{i + 1}\t{lines[i]}" for i in range(offset, end)]
+            header = f"[{path}] lines {offset + 1}-{end} of {len(lines)}"
+            return f"{header}\n" + "\n".join(numbered)
+        return text
+
+    @agent.tool
+    async def grep(
+        ctx: RunContext[Any], pattern: str, path: str = "."
+    ) -> str:
+        """Search vault files for a regex pattern. Recursive through subdirectories."""
+        root = _vault_root()
+        resolved = _resolve_vault_path(path)
+        if resolved is None:
+            return f"Invalid path: {path}"
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
             return f"Invalid regex: {e}"
-
         matches: list[str] = []
         targets = [resolved] if resolved.is_file() else sorted(resolved.rglob("*"))
         for fp in targets:
-            if not fp.is_file():
+            if not fp.is_file() or fp.name.startswith("."):
                 continue
-            rel = fp.relative_to(workspace)
-            text = fp.read_text(encoding="utf-8", errors="replace")
-            for i, line in enumerate(text.splitlines(), 1):
-                if regex.search(line):
-                    matches.append(f"{rel}:{i}: {line}")
-                    if len(matches) >= 100:
-                        matches.append("... (truncated at 100 matches)")
-                        return "\n".join(matches)
+            try:
+                rel = fp.relative_to(root)
+                text = fp.read_text(encoding="utf-8", errors="replace")
+                for i, line in enumerate(text.splitlines(), 1):
+                    if regex.search(line):
+                        matches.append(f"{rel}:{i}: {line}")
+                        if len(matches) >= 100:
+                            matches.append("... (truncated at 100)")
+                            return "\n".join(matches)
+            except (UnicodeDecodeError, OSError):
+                continue
         return "\n".join(matches) if matches else "No matches found."
 
     @agent.tool
     async def list_files(ctx: RunContext[Any], path: str = ".") -> str:
-        """List files and directories in the workspace."""
-        workspace: Path = ctx.deps.workspace
-        resolved = _safe_resolve(workspace, path)
-        if not resolved.is_dir():
-            return f"Error: {path} is not a directory"
+        """List files and directories in the vault. Shows subdirectory contents."""
+        resolved = _resolve_vault_path(path)
+        if resolved is None or not resolved.is_dir():
+            return f"Not a directory: {path}"
+        root = _vault_root()
         entries: list[str] = []
         for entry in sorted(resolved.iterdir()):
-            rel = entry.relative_to(workspace)
+            if entry.name.startswith("."):
+                continue
+            rel = entry.relative_to(root)
             suffix = "/" if entry.is_dir() else f"  ({entry.stat().st_size} bytes)"
             entries.append(f"{rel}{suffix}")
         return "\n".join(entries) if entries else "(empty directory)"
@@ -196,26 +224,129 @@ def _register_file_tools(
     @agent.tool
     async def file_info(ctx: RunContext[Any], path: str) -> str:
         """Return file statistics: line count, char count, estimated tokens."""
-        workspace: Path = ctx.deps.workspace
-        resolved = _safe_resolve(workspace, path)
-        if not resolved.is_file():
-            return f"Error: {path} is not a file"
+        resolved = _resolve_vault_path(path)
+        if resolved is None or not resolved.is_file():
+            return f"File not found: {path}"
         text = resolved.read_text(encoding="utf-8")
         lines = text.count("\n") + 1
         chars = len(text)
         est_tokens = chars // 4
         return f"path={path} lines={lines} chars={chars} estimated_tokens={est_tokens}"
 
-    if allow_write:
+    @agent.tool
+    async def read_frontmatter(ctx: RunContext[Any], path: str) -> str:
+        """Read only YAML frontmatter of a vault file.
+        Returns metadata (type, status, reinforcement_count, confidence, etc.)."""
+        resolved = _resolve_vault_path(path)
+        if resolved is None or not resolved.is_file():
+            return f"File not found: {path}"
+        text = resolved.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return f"No frontmatter in {path}"
+        end = text.find("---", 3)
+        if end == -1:
+            return f"Malformed frontmatter in {path}"
+        return text[3:end].strip()
 
-        @agent.tool
-        async def write_file(ctx: RunContext[Any], path: str, content: str) -> str:
-            """Write content to a file (creates parent directories if needed)."""
-            workspace: Path = ctx.deps.workspace
-            resolved = _safe_resolve(workspace, path)
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(content, encoding="utf-8")
-            return f"Written {len(content)} chars to {path}"
+    @agent.tool
+    async def memu_search(
+        ctx: RunContext[Any], query: str, limit: int = 5
+    ) -> str:
+        """Semantic search across vault knowledge via MemU.
+        Returns the most similar entries to the query."""
+        from app.services.memu_client import memu_retrieve
+
+        try:
+            result = await memu_retrieve(query)
+            items = result.get("results", result.get("memories", []))
+            if not items:
+                return "No similar entries found."
+            lines = [
+                f"[{i}] {item.get('content', str(item))}"
+                for i, item in enumerate(items[:limit], 1)
+            ]
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"MemU search unavailable: {exc}"
+
+    @agent.tool
+    async def memu_categories(ctx: RunContext[Any]) -> str:
+        """List available MemU memory categories."""
+        from app.services.memu_client import memu_retrieve
+
+        try:
+            result = await memu_retrieve("list categories")
+            categories = result.get("categories", [])
+            if categories:
+                return "\n".join(f"- {c}" for c in categories)
+            return (
+                "Categories: decisions, preferences, patterns, "
+                "corrections, facts, concepts, connections, lessons"
+            )
+        except Exception:
+            return (
+                "Categories: decisions, preferences, patterns, "
+                "corrections, facts, concepts, connections, lessons"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Transcript tools (extraction agent only)
+# ---------------------------------------------------------------------------
+
+
+def _register_transcript_tools(agent: Agent[Any, Any]) -> None:
+    """Register workspace-based transcript reading tools.
+    Only for the extraction agent which reads from temp workspace."""
+
+    @agent.tool
+    async def read_transcript(
+        ctx: RunContext[DreamDeps], offset: int = 0, limit: int = 200
+    ) -> str:
+        """Read transcript lines from the workspace."""
+        workspace: Path = ctx.deps.workspace
+        transcript = workspace / "transcript.txt"
+        if not transcript.is_file():
+            return "Transcript not found"
+        lines = transcript.read_text(encoding="utf-8").splitlines()
+        end = min(offset + limit, len(lines))
+        numbered = [f"{i + 1}\t{lines[i]}" for i in range(offset, end)]
+        header = f"[transcript.txt] lines {offset + 1}-{end} of {len(lines)}"
+        return f"{header}\n" + "\n".join(numbered)
+
+    @agent.tool
+    async def grep_transcript(
+        ctx: RunContext[DreamDeps], pattern: str
+    ) -> str:
+        """Search the transcript for a regex pattern."""
+        workspace: Path = ctx.deps.workspace
+        transcript = workspace / "transcript.txt"
+        if not transcript.is_file():
+            return "Transcript not found"
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error as e:
+            return f"Invalid regex: {e}"
+        text = transcript.read_text(encoding="utf-8", errors="replace")
+        matches: list[str] = []
+        for i, line in enumerate(text.splitlines(), 1):
+            if regex.search(line):
+                matches.append(f"transcript.txt:{i}: {line}")
+                if len(matches) >= 100:
+                    break
+        return "\n".join(matches) if matches else "No matches found."
+
+    @agent.tool
+    async def transcript_info(ctx: RunContext[DreamDeps]) -> str:
+        """Return transcript statistics."""
+        workspace: Path = ctx.deps.workspace
+        transcript = workspace / "transcript.txt"
+        if not transcript.is_file():
+            return "Transcript not found"
+        text = transcript.read_text(encoding="utf-8")
+        lines = text.count("\n") + 1
+        chars = len(text)
+        return f"lines={lines} chars={chars} estimated_tokens={chars // 4}"
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +396,8 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         history_processors=[compact_history],
     )
 
-    _register_file_tools(agent, allow_write=False)
+    _register_base_tools(agent)        # vault access + MemU
+    _register_transcript_tools(agent)  # transcript access
 
     @agent.tool
     async def store_context(ctx: RunContext[DreamDeps], content: str) -> str:
@@ -420,7 +552,7 @@ def _count_user_messages(workspace: Path) -> int:
 
 async def run_dream_extraction(
     deps: DreamDeps,
-) -> tuple[ExtractionSummary, RunUsage, int]:
+) -> tuple[ExtractionSummary, RunUsage, int, list[Any]]:
     # Skip very short sessions
     user_msg_count = _count_user_messages(deps.workspace)
     if user_msg_count < MIN_USER_MESSAGES:
@@ -432,15 +564,33 @@ async def run_dream_extraction(
             ExtractionSummary(no_extract=True, summary="Session too short"),
             RunUsage(),
             0,
+            [],
         )
+
+    # Read MEMORY.md from vault for duplicate-aware extraction
+    memory_md = await _read_vault_file("MEMORY.md") or "(empty)"
+
+    sections = [
+        "Extract session insights from the transcript.",
+        "Use store_* tools for structured session log.",
+        "Use store_memory() only for general patterns, preferences, facts, corrections.",
+        "",
+        "## Session Metadata",
+        f"Session ID: {deps.session_id}",
+        f"Project: {deps.project or 'unknown'}",
+        f"Token count: {deps.token_count or 'unknown'}",
+        f"Transcript lines: {user_msg_count} user messages",
+        "",
+        "## Current MEMORY.md (what the vault already knows)",
+        memory_md,
+        "",
+        "Skip extracting insights that are already in Strong Patterns above.",
+        "Focus on NEW decisions, lessons, and concepts not yet captured.",
+    ]
 
     agent = _get_extraction_agent()
     result = await agent.run(
-        "Extract session insights from the transcript using the available tools. "
-        "Use store_context(), store_key_exchange(), store_decision(), store_lesson(), "
-        "store_action_item(), store_concept(), store_connection() for structured "
-        "session log. Use store_memory() only for general patterns, preferences, "
-        "facts, or corrections.",
+        "\n".join(sections),
         deps=deps,
         usage_limits=EXTRACTION_LIMITS,
     )
@@ -478,7 +628,7 @@ async def run_dream_extraction(
         concepts=deps.session_concepts,
         connections=deps.session_connections,
     )
-    return output, result.usage(), _count_tool_calls(result.all_messages())
+    return output, result.usage(), _count_tool_calls(result.all_messages()), result.all_messages()
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +668,7 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
         history_processors=[compact_history],
     )
 
-    _register_file_tools(agent, allow_write=False)
+    _register_base_tools(agent)
 
     @agent.tool
     async def write_file(ctx: RunContext[RecordDeps], path: str, content: str) -> str:
@@ -533,55 +683,6 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_text(content, encoding="utf-8")
         return f"Written {len(content)} chars to {path}"
-
-    @agent.tool
-    async def get_extracted_memories(ctx: RunContext[RecordDeps]) -> str:
-        """Return all extracted memories from the extraction agent as formatted text."""
-        memories = ctx.deps.extracted_memories
-        if not memories:
-            return "No memories to record."
-        lines: list[str] = []
-        for i, m in enumerate(memories, 1):
-            reason = f" (reason: {m.reasoning})" if m.reasoning else ""
-            lines.append(f"[{i}] [{m.vault_target}] {m.source_date}: {m.content}{reason}")
-        return "\n".join(lines)
-
-    @agent.tool
-    async def get_session_log(ctx: RunContext[RecordDeps]) -> str:
-        """Return the structured session log for daily log recording."""
-        parts: list[str] = []
-        parts.append(f"Summary: {ctx.deps.summary}")
-        sl = ctx.deps.session_log
-        if sl.context:
-            parts.append(f"Context: {sl.context}")
-        if sl.decisions_made:
-            parts.append("Decisions Made:")
-            for item in sl.decisions_made:
-                parts.append(f"  - {item}")
-        if sl.key_exchanges:
-            parts.append("Key Exchanges:")
-            for item in sl.key_exchanges:
-                parts.append(f"  - {item}")
-        if sl.lessons_learned:
-            parts.append("Lessons Learned:")
-            for item in sl.lessons_learned:
-                parts.append(f"  - {item}")
-        if sl.action_items:
-            parts.append("Action Items:")
-            for item in sl.action_items:
-                parts.append(f"  - {item}")
-        if sl.concepts:
-            parts.append("Concepts:")
-            for item in sl.concepts:
-                parts.append(f"  - {item.get('name', '')}: {item.get('description', '')}")
-        if sl.connections:
-            parts.append("Connections:")
-            for item in sl.connections:
-                parts.append(
-                    f"  - {item.get('concept_a', '')} <-> {item.get('concept_b', '')}: "
-                    f"{item.get('relationship', '')}"
-                )
-        return "\n".join(parts) if parts else "No session log available."
 
     @agent.tool
     async def update_reinforcement(ctx: RunContext[RecordDeps], file_path: str) -> str:
@@ -654,24 +755,6 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
         return f"Contradiction flagged for {file_path}: {reason}"
 
     @agent.tool
-    async def memu_search(ctx: RunContext[RecordDeps], query: str, limit: int = 10) -> str:
-        """Search MemU for semantically similar memories. Use to check for duplicates."""
-        from app.services.memu_client import memu_retrieve
-
-        try:
-            result = await memu_retrieve(query)
-            items = result.get("results", result.get("memories", []))
-            if not items:
-                return "No matching memories found in MemU."
-            lines = [
-                f"[{i}] {item.get('content', str(item))}"
-                for i, item in enumerate(items[:limit], 1)
-            ]
-            return "\n".join(lines)
-        except Exception as exc:
-            return f"MemU search unavailable: {exc}"
-
-    @agent.tool
     async def memu_add(ctx: RunContext[RecordDeps], content: str, category: str) -> str:
         """Store a memory to MemU for semantic indexing."""
         from app.services.memu_client import memu_memorize
@@ -689,15 +772,80 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
 RECORD_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
 
-async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int]:
+def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
+    parts = [f"Summary: {summary}"]
+    if sl.context:
+        parts.append(f"Context: {sl.context}")
+    if sl.key_exchanges:
+        parts.append("Key Exchanges:")
+        for item in sl.key_exchanges:
+            parts.append(f"  - {item}")
+    if sl.decisions_made:
+        parts.append("Decisions Made:")
+        for item in sl.decisions_made:
+            parts.append(f"  - {item}")
+    if sl.lessons_learned:
+        parts.append("Lessons Learned:")
+        for item in sl.lessons_learned:
+            parts.append(f"  - {item}")
+    if sl.action_items:
+        parts.append("Action Items:")
+        for item in sl.action_items:
+            parts.append(f"  - {item}")
+    if sl.concepts:
+        parts.append("Concepts:")
+        for item in sl.concepts:
+            parts.append(f"  - {item.get('name', '')}: {item.get('description', '')}")
+    if sl.connections:
+        parts.append("Connections:")
+        for item in sl.connections:
+            parts.append(
+                f"  - {item.get('concept_a', '')} <-> {item.get('concept_b', '')}: "
+                f"{item.get('relationship', '')}"
+            )
+    return "\n".join(parts)
+
+
+def _format_extracted_memories(memories: list[MemoryItem]) -> str:
+    if not memories:
+        return "No memories extracted."
+    lines: list[str] = []
+    for i, m in enumerate(memories, 1):
+        reason = f" (reason: {m.reasoning})" if m.reasoning else ""
+        lines.append(f"[{i}] [{m.vault_target}] {m.source_date}: {m.content}{reason}")
+    return "\n".join(lines)
+
+
+async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, list[Any]]:
+    daily_log = await _read_vault_file(
+        f"dailys/{deps.source_date.isoformat()}.md"
+    ) or "(no daily log yet)"
+
+    sections = [
+        "Record the session to the daily log and track reinforcement signals.",
+        "",
+        "## Session Log",
+        _format_session_log(deps.session_log, deps.summary),
+        "",
+        "## Extracted Memories",
+        _format_extracted_memories(deps.extracted_memories),
+        "",
+        "## Today's Daily Log (current state)",
+        daily_log,
+        "",
+        "Write the session block to dailys/. Use read_frontmatter(path) for reinforcement checks.",
+        "Use memu_search(query) to find matching vault files for reinforcement.",
+        "Use read_file(path) to read full file content when needed.",
+    ]
+
     agent = _get_record_agent()
     result = await agent.run(
-        "Record the session to the daily log and track reinforcement signals. "
-        "Call get_session_log() first.",
+        "\n".join(sections),
         deps=deps,
         usage_limits=RECORD_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+    msgs = result.all_messages()
+    return result.output, result.usage(), _count_tool_calls(msgs), msgs
 
 
 # ---------------------------------------------------------------------------
@@ -740,15 +888,7 @@ def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
         history_processors=[compact_history],
     )
 
-    @agent.tool
-    async def read_memory_file(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return current MEMORY.md content."""
-        return ctx.deps.memory_md
-
-    @agent.tool
-    async def read_daily_log(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return today's daily log content."""
-        return ctx.deps.daily_log
+    _register_base_tools(agent)
 
     @agent.tool
     async def query_memu_memories(ctx: RunContext[DeepDreamDeps]) -> str:
@@ -766,34 +906,53 @@ def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
         return "\n".join(lines)
 
     @agent.tool
-    async def read_soul_file(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return SOUL.md alignment reference."""
-        return ctx.deps.soul_md
+    async def read_daily_log(ctx: RunContext[DeepDreamDeps], date_str: str) -> str:
+        """Read a specific day's daily log (YYYY-MM-DD)."""
+        content = await _read_vault_file(f"dailys/{date_str}.md")
+        return content or f"No daily log for {date_str}"
 
     @agent.tool
-    async def read_phase1_candidates(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return Phase 1 scored candidates summary (if available)."""
-        return ctx.deps.phase1_summary or "No Phase 1 data available."
-
-    @agent.tool
-    async def read_phase2_analysis(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return Phase 2 themes, connections, and promotion candidates (if available)."""
-        return ctx.deps.phase2_summary or "No Phase 2 data available."
+    async def read_vault_index(ctx: RunContext[DeepDreamDeps], folder: str) -> str:
+        """Read a vault folder's _index.md."""
+        content = await _read_vault_file(f"{folder}/_index.md")
+        return content or f"No _index.md for {folder}"
 
     _deep_dream_agent = agent
     return _deep_dream_agent
 
 
-DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
+DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=500_000, tool_calls_limit=50)
 
 
 async def run_deep_dream_consolidation(
     deps: DeepDreamDeps,
 ) -> tuple[ConsolidationOutput, RunUsage, int, list[Any]]:
     agent = _get_deep_dream_agent()
+    sections = [
+        "Consolidate memories. Produce updated MEMORY.md, daily summary, and vault updates.",
+        "",
+        # 1. Phase 1 — actionable decisions (primacy zone)
+        deps.phase1_summary or "## Phase 1\nNo data.",
+        "",
+        # 2. Phase 2 — new knowledge (high)
+        deps.phase2_summary or "## Phase 2\nNo data.",
+        "",
+        # 3. MEMORY.md — merge target (middle)
+        "## Current MEMORY.md",
+        deps.memory_md or "(empty)",
+        "",
+        # 4. Daily log — rewrite target (middle)
+        "## Today's Daily Log",
+        deps.daily_log or "(empty)",
+        "",
+        # 5. SOUL.md — alignment (recency zone)
+        "## SOUL.md (alignment — do NOT modify)",
+        deps.soul_md or "(empty)",
+        "",
+        "Tools: query_memu_memories(), read_daily_log(date), read_vault_index(folder)",
+    ]
     result = await agent.run(
-        "Consolidate memories using the available tools. "
-        "Read all inputs via tools before producing output.",
+        "\n".join(sections),
         deps=deps,
         usage_limits=DEEP_DREAM_USAGE_LIMITS,
     )
@@ -805,14 +964,14 @@ async def run_deep_dream_consolidation(
     )
 
 
-HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=50)
+HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=50)
 
 
 async def run_health_fix(
     deps: DeepDreamDeps,
     message_history: list[Any],
     health_summary: str,
-) -> tuple[RunUsage, int]:
+) -> tuple[RunUsage, int, list[Any]]:
     """Send health check results back to the consolidation agent to fix issues.
 
     Uses message_history from the consolidation run so the agent has full
@@ -835,7 +994,7 @@ async def run_health_fix(
         message_history=message_history,
         usage_limits=HEALTH_FIX_LIMITS,
     )
-    return result.usage(), _count_tool_calls(result.all_messages())
+    return result.usage(), _count_tool_calls(result.all_messages()), result.all_messages()
 
 
 def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
@@ -880,15 +1039,7 @@ def _get_phase1_agent() -> Agent[DeepDreamDeps, LightSleepOutput]:
         history_processors=[compact_history],
     )
 
-    @agent.tool
-    async def read_memory_file(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return current MEMORY.md content."""
-        return ctx.deps.memory_md
-
-    @agent.tool
-    async def read_daily_log(ctx: RunContext[DeepDreamDeps]) -> str:
-        """Return today's daily log content."""
-        return ctx.deps.daily_log
+    _register_base_tools(agent)
 
     @agent.tool
     async def query_memu_memories(ctx: RunContext[DeepDreamDeps]) -> str:
@@ -909,20 +1060,30 @@ def _get_phase1_agent() -> Agent[DeepDreamDeps, LightSleepOutput]:
     return _phase1_agent
 
 
-PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=50_000, tool_calls_limit=10)
+PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
 
 
 async def run_phase1_light_sleep(
     deps: DeepDreamDeps,
-) -> tuple[LightSleepOutput, RunUsage, int]:
+) -> tuple[LightSleepOutput, RunUsage, int, list[Any]]:
     agent = _get_phase1_agent()
+    sections = [
+        "Inventory, deduplicate, and score today's memories.",
+        "Use query_memu_memories() for MemU data.",
+        "",
+        "## Current MEMORY.md",
+        deps.memory_md or "(empty)",
+        "",
+        "## Today's Daily Log",
+        deps.daily_log or "(empty)",
+    ]
     result = await agent.run(
-        "Inventory, deduplicate, and score all memories using the available tools. "
-        "Read all inputs via tools before producing output.",
+        "\n".join(sections),
         deps=deps,
         usage_limits=PHASE1_USAGE_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+    msgs = result.all_messages()
+    return result.output, result.usage(), _count_tool_calls(msgs), msgs
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +1097,8 @@ class Phase2Deps:
     daily_logs: dict[str, str]  # date string → content
     vault_indexes: dict[str, str]  # folder name → _index.md content
     phase1_candidates: list[ScoredCandidate]
+    phase1_text: str = ""
+    vault_index_text: str = ""
 
 
 def _load_phase2_prompt() -> str:
@@ -960,6 +1123,8 @@ def _get_phase2_agent() -> Agent[Phase2Deps, REMSleepOutput]:
         history_processors=[compact_history],
     )
 
+    _register_base_tools(agent)
+
     @agent.tool
     async def read_daily_log(ctx: RunContext[Phase2Deps], date_str: str) -> str:
         """Return daily log content for a specific date (YYYY-MM-DD)."""
@@ -968,48 +1133,34 @@ def _get_phase2_agent() -> Agent[Phase2Deps, REMSleepOutput]:
             return f"No daily log found for {date_str}"
         return content
 
-    @agent.tool
-    async def read_vault_index(ctx: RunContext[Phase2Deps], folder: str) -> str:
-        """Return _index.md content for a vault folder."""
-        content = ctx.deps.vault_indexes.get(folder)
-        if content is None:
-            return f"No _index.md found for folder '{folder}'"
-        return content
-
-    @agent.tool
-    async def get_phase1_candidates(ctx: RunContext[Phase2Deps]) -> str:
-        """Return formatted Phase 1 scored candidates."""
-        candidates = ctx.deps.phase1_candidates
-        if not candidates:
-            return "No Phase 1 candidates available."
-        lines: list[str] = []
-        for i, c in enumerate(candidates, 1):
-            flag = " [CONTRADICTION]" if c.contradiction_flag else ""
-            sessions = ", ".join(c.source_sessions) if c.source_sessions else "n/a"
-            lines.append(
-                f"[{i}] ({c.category}) {c.content} "
-                f"[reinforced={c.reinforcement_count}, sessions={sessions}]{flag}"
-            )
-        return "\n".join(lines)
-
     _phase2_agent = agent
     return _phase2_agent
 
 
-PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=80_000, tool_calls_limit=20)
+PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
 
 
 async def run_phase2_rem_sleep(
     deps: Phase2Deps,
-) -> tuple[REMSleepOutput, RunUsage, int]:
+) -> tuple[REMSleepOutput, RunUsage, int, list[Any]]:
     agent = _get_phase2_agent()
+    sections = [
+        "Analyze cross-session patterns and detect themes, connections, gaps.",
+        "Use read_daily_log(date_str) to read specific daily logs.",
+        "",
+        "## Phase 1 Candidates",
+        deps.phase1_text or "No Phase 1 candidates.",
+        "",
+        "## Vault Indexes",
+        deps.vault_index_text or "No vault indexes available.",
+    ]
     result = await agent.run(
-        "Analyze cross-session patterns using the available tools. "
-        "Read daily logs, vault indexes, and Phase 1 candidates before producing output.",
+        "\n".join(sections),
         deps=deps,
         usage_limits=PHASE2_USAGE_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+    msgs = result.all_messages()
+    return result.output, result.usage(), _count_tool_calls(msgs), msgs
 
 
 # ---------------------------------------------------------------------------
@@ -1047,20 +1198,14 @@ def _get_weekly_review_agent() -> Agent[WeeklyReviewDeps, WeeklyReviewOutput]:
         history_processors=[compact_history],
     )
 
+    _register_base_tools(agent)
+
     @agent.tool
     async def read_daily_log(ctx: RunContext[WeeklyReviewDeps], date_str: str) -> str:
         """Return daily log content for a specific date (YYYY-MM-DD)."""
         content = ctx.deps.daily_logs.get(date_str)
         if content is None:
             return f"No daily log found for {date_str}"
-        return content
-
-    @agent.tool
-    async def read_vault_index(ctx: RunContext[WeeklyReviewDeps], folder: str) -> str:
-        """Return _index.md content for a vault folder."""
-        content = ctx.deps.vault_indexes.get(folder)
-        if content is None:
-            return f"No _index.md found for folder '{folder}'"
         return content
 
     _weekly_review_agent = agent

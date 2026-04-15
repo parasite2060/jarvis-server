@@ -18,6 +18,14 @@ from app.services.dream_models import (
     VaultUpdates,
 )
 
+_TELEMETRY_PATCH = "app.tasks.deep_dream_task.store_phase_telemetry"
+
+
+@pytest.fixture(autouse=True)
+def _mock_telemetry() -> Any:
+    with patch(_TELEMETRY_PATCH, new_callable=AsyncMock, return_value=1):
+        yield
+
 SAMPLE_INPUTS: dict[str, Any] = {
     "memu_memories": [
         {"content": "Use FastAPI", "type": "decision"},
@@ -229,6 +237,7 @@ def _pipeline_patches(
                 phase1_output or SAMPLE_PHASE1_OUTPUT,
                 SAMPLE_PHASE1_USAGE,
                 3,
+                [],
             ),
             side_effect=phase1_error,
         ),
@@ -238,6 +247,7 @@ def _pipeline_patches(
                 phase2_output or SAMPLE_PHASE2_OUTPUT,
                 SAMPLE_PHASE2_USAGE,
                 5,
+                [],
             ),
             side_effect=phase2_error,
         ),
@@ -272,6 +282,7 @@ def _pipeline_patches(
             side_effect=health_check_error,
         ),
         "app.tasks.deep_dream_task.calculate_candidate_score": MagicMock(return_value=0.75),
+        "app.tasks.deep_dream_task.store_phase_telemetry": AsyncMock(return_value=1),
     }
     return patches
 
@@ -890,7 +901,7 @@ async def test_phase1_summary_passed_to_consolidation_deps() -> None:
     consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
     consolidation_mock.assert_called_once()
     deps = consolidation_mock.call_args[0][0]
-    assert "Phase 1: Light Sleep Candidates" in deps.phase1_summary
+    assert "Phase 1: Light Sleep Results" in deps.phase1_summary
 
 
 @pytest.mark.asyncio
@@ -902,7 +913,7 @@ async def test_phase2_summary_passed_to_consolidation_deps() -> None:
 
     consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
     deps = consolidation_mock.call_args[0][0]
-    assert "Phase 2: REM Sleep Analysis" in deps.phase2_summary
+    assert "Phase 2: REM Sleep Results" in deps.phase2_summary
 
 
 @pytest.mark.asyncio
@@ -915,3 +926,73 @@ async def test_phase2_failure_gives_empty_phase2_summary() -> None:
     consolidation_mock = patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"]
     deps = consolidation_mock.call_args[0][0]
     assert deps.phase2_summary == ""
+
+
+# ---------------------------------------------------------------------------
+# Story 9.16: Phase 2 formatter tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatPhase1ForPhase2:
+    def test_basic_formatting(self) -> None:
+        from app.tasks.deep_dream_task import _format_phase1_for_phase2
+
+        candidates = [
+            ScoredCandidate(
+                content="Use weighted scoring",
+                category="decision",
+                reinforcement_count=2,
+            ),
+            ScoredCandidate(
+                content="Always use async/await",
+                category="pattern",
+                reinforcement_count=5,
+                contradiction_flag=True,
+            ),
+        ]
+        scores = {
+            "Use weighted scoring": 0.85,
+            "Always use async/await": 0.72,
+        }
+        result = _format_phase1_for_phase2(candidates, scores)
+        assert "[1] (decision) Use weighted scoring [score=0.85, reinforced=2]" in result
+        assert (
+            "[2] (pattern) Always use async/await "
+            "[score=0.72, reinforced=5] [CONTRADICTION]"
+        ) in result
+
+    def test_empty_candidates(self) -> None:
+        from app.tasks.deep_dream_task import _format_phase1_for_phase2
+
+        result = _format_phase1_for_phase2([], {})
+        assert result == ""
+
+    def test_missing_score_defaults_zero(self) -> None:
+        from app.tasks.deep_dream_task import _format_phase1_for_phase2
+
+        candidates = [
+            ScoredCandidate(content="Unknown", category="fact"),
+        ]
+        result = _format_phase1_for_phase2(candidates, {})
+        assert "[score=0.00" in result
+
+
+class TestFormatVaultIndexes:
+    def test_basic_formatting(self) -> None:
+        from app.tasks.deep_dream_task import _format_vault_indexes
+
+        indexes = {
+            "decisions": "- scoring-strategy.md -- Chose weighted scoring",
+            "patterns": "- async-patterns.md -- Always use async/await",
+        }
+        result = _format_vault_indexes(indexes)
+        assert "### decisions/" in result
+        assert "- scoring-strategy.md -- Chose weighted scoring" in result
+        assert "### patterns/" in result
+        assert "- async-patterns.md -- Always use async/await" in result
+
+    def test_empty_indexes(self) -> None:
+        from app.tasks.deep_dream_task import _format_vault_indexes
+
+        result = _format_vault_indexes({})
+        assert result == ""
