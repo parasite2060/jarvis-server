@@ -15,6 +15,7 @@ from app.models.tables import Dream, ExtractedMemory, Transcript
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import DreamDeps, RecordDeps, run_dream_extraction, run_record
 from app.services.dream_models import SessionLogEntry
+from app.services.dream_telemetry import store_phase_telemetry
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log
 
@@ -96,8 +97,16 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             created_at=getattr(transcript, "created_at", None),
         )
 
+        extraction_run_prompt = (
+            f"Extract session insights from transcript.\n"
+            f"Session ID: {deps.session_id}, Project: {deps.project or 'unknown'}, "
+            f"Token count: {deps.token_count or 'unknown'}"
+        )
+        extraction_start = time.monotonic_ns() // 1_000_000
+        extraction_started_at = datetime.now(UTC)
         try:
-            summary, usage, tool_calls = await run_dream_extraction(deps)
+            summary, usage, tool_calls, extraction_messages = await run_dream_extraction(deps)
+            extraction_duration_ms = time.monotonic_ns() // 1_000_000 - extraction_start
             usage_input_tokens = getattr(usage, "request_tokens", None)
             usage_output_tokens = getattr(usage, "response_tokens", None)
             usage_total_tokens = getattr(usage, "total_tokens", None)
@@ -116,7 +125,20 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 total_tokens=usage_total_tokens,
                 tool_calls=usage_tool_calls,
             )
+            await store_phase_telemetry(
+                dream_id=dream_id,
+                phase="extraction",
+                status="completed",
+                run_prompt=extraction_run_prompt,
+                output_json=summary.model_dump() if summary else None,
+                messages=extraction_messages,
+                usage=usage,
+                tool_calls=tool_calls,
+                duration_ms=extraction_duration_ms,
+                started_at=extraction_started_at,
+            )
         except UsageLimitExceeded as exc:
+            extraction_duration_ms = time.monotonic_ns() // 1_000_000 - extraction_start
             is_partial = True
             error_message = str(exc)
             log.warning(
@@ -125,7 +147,16 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 dream_id=dream_id,
                 error=error_message,
             )
+            await store_phase_telemetry(
+                dream_id=dream_id,
+                phase="extraction",
+                status="failed",
+                run_prompt=extraction_run_prompt,
+                duration_ms=extraction_duration_ms,
+                error_message=error_message,
+            )
         except (DreamError, Exception) as exc:
+            extraction_duration_ms = time.monotonic_ns() // 1_000_000 - extraction_start
             extraction_failed = True
             error_message = str(exc)
             log.error(
@@ -133,6 +164,14 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 transcript_id=transcript_id,
                 dream_id=dream_id,
                 error=error_message,
+            )
+            await store_phase_telemetry(
+                dream_id=dream_id,
+                phase="extraction",
+                status="failed",
+                run_prompt=extraction_run_prompt,
+                duration_ms=extraction_duration_ms,
+                error_message=error_message,
             )
 
         # Step 6: Store extracted memories to DB
@@ -183,7 +222,17 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     summary=summary.summary if hasattr(summary, "summary") else "",
                     session_log=getattr(summary, "session_log", SessionLogEntry()),
                 )
-                record_result, record_usage, record_tool_calls = await run_record(record_deps)
+                record_run_prompt = (
+                    f"Record session to daily log. Session: {deps.session_id}, "
+                    f"Date: {source_date_for_git.isoformat()}, "
+                    f"Memories: {memories_count}"
+                )
+                record_start = time.monotonic_ns() // 1_000_000
+                record_started_at = datetime.now(UTC)
+                record_result, record_usage, record_tool_calls, record_messages = (
+                    await run_record(record_deps)
+                )
+                record_duration_ms = time.monotonic_ns() // 1_000_000 - record_start
                 files_modified = [{"path": f.path, "action": f.action} for f in record_result.files]
                 log.info(
                     "light_dream.record.completed",
@@ -191,6 +240,21 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     dream_id=dream_id,
                     files_count=len(files_modified),
                     record_summary=record_result.summary,
+                )
+                await store_phase_telemetry(
+                    dream_id=dream_id,
+                    phase="record",
+                    status="completed",
+                    run_prompt=record_run_prompt,
+                    output_json={
+                        "files": [f.model_dump() for f in record_result.files],
+                        "summary": record_result.summary,
+                    },
+                    messages=record_messages,
+                    usage=record_usage,
+                    tool_calls=record_tool_calls,
+                    duration_ms=record_duration_ms,
+                    started_at=record_started_at,
                 )
                 try:
                     summary_title = (record_deps.summary[:60] if record_deps.summary else "session")

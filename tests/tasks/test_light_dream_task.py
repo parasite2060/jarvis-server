@@ -15,6 +15,14 @@ from app.services.dream_models import (
     SessionLogEntry,
 )
 
+_TELEMETRY_PATCH = "app.tasks.light_dream_task.store_phase_telemetry"
+
+
+@pytest.fixture(autouse=True)
+def _mock_telemetry() -> Any:
+    with patch(_TELEMETRY_PATCH, new_callable=AsyncMock, return_value=1):
+        yield
+
 SAMPLE_MEMORIES: list[MemoryItem] = [
     MemoryItem(
         content="Use FastAPI because async-first",
@@ -151,7 +159,7 @@ def _make_extraction_mock(
         if side_effect:
             raise side_effect
         deps.extracted_memories.extend(mems)
-        return (summ, usg, 3)
+        return (summ, usg, 3, [])
 
     return AsyncMock(side_effect=_fake_extraction)
 
@@ -160,7 +168,7 @@ def _make_no_extract_mock() -> AsyncMock:
     """Extraction that returns no_extract=True with no memories."""
 
     async def _fake_extraction(deps: Any) -> tuple:
-        return (NO_EXTRACT_SUMMARY, SAMPLE_USAGE, 0)
+        return (NO_EXTRACT_SUMMARY, SAMPLE_USAGE, 0, [])
 
     return AsyncMock(side_effect=_fake_extraction)
 
@@ -171,7 +179,7 @@ async def test_full_pipeline_success() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -317,7 +325,7 @@ async def test_duration_ms_is_recorded() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -382,7 +390,7 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock(memories=all_memories)
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -437,7 +445,7 @@ async def test_full_pipeline_with_merge_and_files() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -495,7 +503,7 @@ async def test_full_pipeline_with_git_pr() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-143000",
@@ -536,7 +544,7 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(side_effect=RuntimeError("git push failed"))
     mock_cleanup = AsyncMock()
     mock_invalidate = AsyncMock()
@@ -598,7 +606,7 @@ async def test_context_cache_invalidated_after_pr() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(transcript, dream)
     mock_extract = _make_extraction_mock()
-    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2))
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
     mock_create_pr = AsyncMock(
         return_value={
             "git_branch": "dream/light-2026-03-31-100000",

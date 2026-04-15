@@ -19,6 +19,41 @@ from app.models.db import Base
 SCHEMA = "jarvis"
 
 
+class DreamPhase(Base):
+    __tablename__ = "dream_phases"
+    __table_args__ = (
+        Index("ix_dream_phases_dream_id", "dream_id"),
+        Index("ix_dream_phases_phase", "phase"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dream_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey(f"{SCHEMA}.dreams.id"), nullable=False
+    )
+    phase: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="processing")
+
+    run_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    conversation_history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tool_calls: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Transcript(Base):
     __tablename__ = "transcripts"
     __table_args__ = (

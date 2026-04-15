@@ -13,6 +13,8 @@ from app.services.dream_agent import (
     RecordDeps,
     WeeklyReviewDeps,
     _count_tool_calls,
+    _format_extracted_memories,
+    _format_session_log,
     consolidation_to_dict,
 )
 from app.services.dream_models import (
@@ -480,6 +482,176 @@ class TestPhase1LightSleepAgent:
         assert deep_dream_deps.soul_md != ""
 
 
+class TestPhase1PromptInjection:
+    """Tests for Story 9.15: Phase 1 prompt injection of MEMORY.md and daily log."""
+
+    def _clear_phase1(self) -> None:
+        import app.services.dream_agent as module
+
+        module._phase1_agent = None
+
+    def _tool_names(self, agent: Agent) -> set[str]:  # type: ignore[type-arg]
+        return {t.name for t in agent._function_toolset.tools.values()}
+
+    def test_phase1_agent_has_query_memu_memories(self) -> None:
+        self._clear_phase1()
+        from app.services.dream_agent import _get_phase1_agent
+
+        agent = _get_phase1_agent()
+        assert "query_memu_memories" in self._tool_names(agent)
+
+    def test_phase1_agent_no_read_memory_file(self) -> None:
+        self._clear_phase1()
+        from app.services.dream_agent import _get_phase1_agent
+
+        agent = _get_phase1_agent()
+        assert "read_memory_file" not in self._tool_names(agent)
+
+    def test_phase1_agent_no_read_daily_log(self) -> None:
+        self._clear_phase1()
+        from app.services.dream_agent import _get_phase1_agent
+
+        agent = _get_phase1_agent()
+        assert "read_daily_log" not in self._tool_names(agent)
+
+    def test_phase1_usage_limits(self) -> None:
+        from app.services.dream_agent import PHASE1_USAGE_LIMITS
+
+        assert PHASE1_USAGE_LIMITS.total_tokens_limit == 200_000
+        assert PHASE1_USAGE_LIMITS.tool_calls_limit == 25
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_memory_md(
+        self, deep_dream_deps: DeepDreamDeps
+    ) -> None:
+        self._clear_phase1()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase1_light_sleep
+
+        mock_result = MagicMock()
+        mock_result.output = LightSleepOutput(
+            candidates=[], duplicates_removed=0, contradictions_found=0
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase1_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase1_light_sleep(deep_dream_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "## Current MEMORY.md" in prompt
+            assert "# Memory" in prompt
+            assert "existing memory entry" in prompt
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_daily_log(
+        self, deep_dream_deps: DeepDreamDeps
+    ) -> None:
+        self._clear_phase1()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase1_light_sleep
+
+        mock_result = MagicMock()
+        mock_result.output = LightSleepOutput(
+            candidates=[], duplicates_removed=0, contradictions_found=0
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase1_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase1_light_sleep(deep_dream_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "## Today's Daily Log" in prompt
+            assert "worked on feature X" in prompt
+
+    @pytest.mark.asyncio
+    async def test_empty_memory_md_shows_placeholder(self) -> None:
+        self._clear_phase1()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase1_light_sleep
+
+        deps = DeepDreamDeps(
+            source_date=date(2026, 4, 5),
+            memu_memories=[],
+            memory_md="",
+            daily_log="some log",
+            soul_md="# Soul",
+        )
+
+        mock_result = MagicMock()
+        mock_result.output = LightSleepOutput(
+            candidates=[], duplicates_removed=0, contradictions_found=0
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase1_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase1_light_sleep(deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            lines = prompt.split("\n")
+            memory_idx = lines.index("## Current MEMORY.md")
+            assert lines[memory_idx + 1] == "(empty)"
+
+    @pytest.mark.asyncio
+    async def test_empty_daily_log_shows_placeholder(self) -> None:
+        self._clear_phase1()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase1_light_sleep
+
+        deps = DeepDreamDeps(
+            source_date=date(2026, 4, 5),
+            memu_memories=[],
+            memory_md="some memory",
+            daily_log="",
+            soul_md="# Soul",
+        )
+
+        mock_result = MagicMock()
+        mock_result.output = LightSleepOutput(
+            candidates=[], duplicates_removed=0, contradictions_found=0
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase1_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase1_light_sleep(deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            lines = prompt.split("\n")
+            log_idx = lines.index("## Today's Daily Log")
+            assert lines[log_idx + 1] == "(empty)"
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: REM Sleep Agent Tests
 # ---------------------------------------------------------------------------
@@ -558,6 +730,141 @@ class TestPhase2REMSleepAgent:
         assert isinstance(result.output, REMSleepOutput)
         assert usage is not None
         assert isinstance(tool_call_count, int)
+
+
+class TestPhase2PromptInjection:
+    """Tests for Story 9.16: Phase 2 prompt injection of candidates + vault indexes."""
+
+    def _clear_phase2(self) -> None:
+        import app.services.dream_agent as module
+
+        module._phase2_agent = None
+
+    def _tool_names(self, agent: Agent) -> set[str]:  # type: ignore[type-arg]
+        return {t.name for t in agent._function_toolset.tools.values()}
+
+    def test_phase2_agent_has_read_daily_log(self) -> None:
+        self._clear_phase2()
+        from app.services.dream_agent import _get_phase2_agent
+
+        agent = _get_phase2_agent()
+        assert "read_daily_log" in self._tool_names(agent)
+
+    def test_phase2_agent_no_get_phase1_candidates(self) -> None:
+        self._clear_phase2()
+        from app.services.dream_agent import _get_phase2_agent
+
+        agent = _get_phase2_agent()
+        assert "get_phase1_candidates" not in self._tool_names(agent)
+
+    def test_phase2_agent_no_read_vault_index(self) -> None:
+        self._clear_phase2()
+        from app.services.dream_agent import _get_phase2_agent
+
+        agent = _get_phase2_agent()
+        assert "read_vault_index" not in self._tool_names(agent)
+
+    def test_phase2_deps_has_injection_fields(self) -> None:
+        deps = Phase2Deps(
+            source_date=date(2026, 4, 5),
+            daily_logs={},
+            vault_indexes={},
+            phase1_candidates=[],
+            phase1_text="some candidates",
+            vault_index_text="some indexes",
+        )
+        assert deps.phase1_text == "some candidates"
+        assert deps.vault_index_text == "some indexes"
+
+    def test_phase2_deps_injection_defaults_empty(self) -> None:
+        deps = Phase2Deps(
+            source_date=date(2026, 4, 5),
+            daily_logs={},
+            vault_indexes={},
+            phase1_candidates=[],
+        )
+        assert deps.phase1_text == ""
+        assert deps.vault_index_text == ""
+
+    def test_phase2_usage_limits(self) -> None:
+        from app.services.dream_agent import PHASE2_USAGE_LIMITS
+
+        assert PHASE2_USAGE_LIMITS.total_tokens_limit == 200_000
+        assert PHASE2_USAGE_LIMITS.tool_calls_limit == 25
+
+    @pytest.mark.asyncio
+    async def test_run_phase2_prompt_contains_candidates(self) -> None:
+        self._clear_phase2()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase2_rem_sleep
+
+        deps = Phase2Deps(
+            source_date=date(2026, 4, 5),
+            daily_logs={},
+            vault_indexes={},
+            phase1_candidates=[],
+            phase1_text="[1] (decision) Use scoring [score=0.85, reinforced=2]",
+            vault_index_text="### decisions/\n- scoring.md",
+        )
+
+        mock_result = MagicMock()
+        mock_result.output = REMSleepOutput(
+            themes=[], new_connections=[], promotion_candidates=[], gaps=[]
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase2_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase2_rem_sleep(deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "## Phase 1 Candidates" in prompt
+            assert "[1] (decision) Use scoring [score=0.85, reinforced=2]" in prompt
+            assert "## Vault Indexes" in prompt
+            assert "### decisions/" in prompt
+
+    @pytest.mark.asyncio
+    async def test_run_phase2_empty_candidates_placeholder(self) -> None:
+        self._clear_phase2()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_phase2_rem_sleep
+
+        deps = Phase2Deps(
+            source_date=date(2026, 4, 5),
+            daily_logs={},
+            vault_indexes={},
+            phase1_candidates=[],
+            phase1_text="",
+            vault_index_text="",
+        )
+
+        mock_result = MagicMock()
+        mock_result.output = REMSleepOutput(
+            themes=[], new_connections=[], promotion_candidates=[], gaps=[]
+        )
+        mock_result.usage.return_value = MagicMock()
+        mock_result.all_messages.return_value = []
+
+        with patch(
+            "app.services.dream_agent._get_phase2_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=mock_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_phase2_rem_sleep(deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "No Phase 1 candidates." in prompt
+            assert "No vault indexes available." in prompt
 
 
 class TestConsolidationToDict:
@@ -836,6 +1143,158 @@ class TestReinforcementTracking:
         assert f"last_reinforced: {date.today().isoformat()}" in updated
 
 
+class TestRecordPromptInjection:
+    """Tests for record agent prompt injection (Story 9.23)."""
+
+    def test_record_agent_no_get_session_log_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "get_session_log" not in tool_names
+
+    def test_record_agent_no_get_extracted_memories_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "get_extracted_memories" not in tool_names
+
+    def test_record_agent_has_read_file_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "read_file" in tool_names
+
+    def test_record_agent_has_read_frontmatter_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "read_frontmatter" in tool_names
+
+    def test_record_agent_has_memu_search_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "memu_search" in tool_names
+
+    def test_run_record_prompt_contains_session_log(
+        self, record_deps: RecordDeps
+    ) -> None:
+        record_deps.summary = "Fix Jarvis plugin"
+        record_deps.session_log = SessionLogEntry(
+            context="Investigated plugin config",
+            decisions_made=["Use env vars for hooks"],
+        )
+
+        prompt = _format_session_log(record_deps.session_log, record_deps.summary)
+        assert "Summary: Fix Jarvis plugin" in prompt
+        assert "Context: Investigated plugin config" in prompt
+        assert "Use env vars for hooks" in prompt
+
+    def test_run_record_prompt_contains_extracted_memories(
+        self, record_deps: RecordDeps
+    ) -> None:
+        from app.services.dream_models import MemoryItem
+
+        record_deps.extracted_memories = [
+            MemoryItem(
+                content="Use env vars for hooks",
+                reasoning="macOS Keychain",
+                vault_target="decisions",
+                source_date="2026-04-14",
+            ),
+        ]
+
+        prompt = _format_extracted_memories(record_deps.extracted_memories)
+        assert "[decisions]" in prompt
+        assert "Use env vars for hooks" in prompt
+        assert "macOS Keychain" in prompt
+
+    def test_run_record_prompt_contains_daily_log(
+        self, record_deps: RecordDeps
+    ) -> None:
+        daily_path = f"dailys/{record_deps.source_date.isoformat()}.md"
+        (record_deps.workspace / "dailys").mkdir(exist_ok=True)
+        (record_deps.workspace / daily_path).write_text(
+            "# Daily Log: 2026-04-05\n\n## Sessions\n\n### Session 1\nEarlier session\n",
+            encoding="utf-8",
+        )
+
+        daily_content = (record_deps.workspace / daily_path).read_text()
+        assert "Session 1" in daily_content
+        assert "Earlier session" in daily_content
+
+
+class TestFormatSessionLog:
+    def test_minimal_session_log(self) -> None:
+        sl = SessionLogEntry()
+        result = _format_session_log(sl, "Test summary")
+        assert result == "Summary: Test summary"
+
+    def test_full_session_log(self) -> None:
+        sl = SessionLogEntry(
+            context="Working on feature",
+            key_exchanges=["Discussed API design"],
+            decisions_made=["Use REST over GraphQL"],
+            lessons_learned=["Mock tests can hide bugs"],
+            action_items=["Write integration tests"],
+            concepts=[{"name": "REST", "description": "RESTful API design"}],
+            connections=[
+                {
+                    "concept_a": "REST",
+                    "concept_b": "HTTP",
+                    "relationship": "uses",
+                }
+            ],
+        )
+        result = _format_session_log(sl, "Feature work")
+        assert "Summary: Feature work" in result
+        assert "Context: Working on feature" in result
+        assert "Discussed API design" in result
+        assert "Use REST over GraphQL" in result
+        assert "Mock tests can hide bugs" in result
+        assert "Write integration tests" in result
+        assert "REST: RESTful API design" in result
+        assert "REST <-> HTTP: uses" in result
+
+
+class TestFormatExtractedMemories:
+    def test_no_memories(self) -> None:
+        result = _format_extracted_memories([])
+        assert result == "No memories extracted."
+
+    def test_with_memories(self) -> None:
+        from app.services.dream_models import MemoryItem
+
+        memories = [
+            MemoryItem(
+                content="Use env vars",
+                reasoning="Keychain issue",
+                vault_target="decisions",
+                source_date="2026-04-14",
+            ),
+            MemoryItem(
+                content="Exit hook 0 on errors",
+                reasoning=None,
+                vault_target="patterns",
+                source_date="2026-04-14",
+            ),
+        ]
+        result = _format_extracted_memories(memories)
+        assert "[1] [decisions] 2026-04-14: Use env vars (reason: Keychain issue)" in result
+        assert "[2] [patterns] 2026-04-14: Exit hook 0 on errors" in result
+        assert "(reason:" not in result.split("\n")[1]
+
+
 class TestCountToolCalls:
     def test_empty_messages(self) -> None:
         assert _count_tool_calls([]) == 0
@@ -933,3 +1392,134 @@ class TestWeeklyReviewAgent:
         assert isinstance(result.output, WeeklyReviewOutput)
         assert usage is not None
         assert isinstance(tool_call_count, int)
+
+
+# ---------------------------------------------------------------------------
+# Story 9.22: Extraction Vault-Aware Tests
+# ---------------------------------------------------------------------------
+
+
+class TestExtractionVaultAware:
+    """Tests for Story 9.22: vault-aware extraction with MEMORY.md context."""
+
+    def _clear_extraction_agent(self) -> None:
+        import app.services.dream_agent as module
+
+        module._extraction_agent = None
+
+    def _tool_names(self, agent: Agent) -> set[str]:  # type: ignore[type-arg]
+        return {t.name for t in agent._function_toolset.tools.values()}
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_memory_md(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        self._clear_extraction_agent()
+
+        mock_memory = "## Strong Patterns\n- Always use async/await for I/O (5x)"
+
+        with patch(
+            "app.services.dream_agent._read_vault_file",
+            new_callable=AsyncMock,
+            return_value=mock_memory,
+        ) as mock_read, patch(
+            "app.services.dream_agent._get_extraction_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = ExtractionSummary(
+                summary="Test session", no_extract=False
+            )
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            call_args = mock_agent.run.call_args
+            prompt = call_args[0][0]
+
+            mock_read.assert_awaited_once_with("MEMORY.md")
+            assert "## Current MEMORY.md" in prompt
+            assert "Always use async/await for I/O" in prompt
+            assert "Skip extracting insights" in prompt
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_session_metadata(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        self._clear_extraction_agent()
+
+        with patch(
+            "app.services.dream_agent._read_vault_file",
+            new_callable=AsyncMock,
+            return_value="(empty)",
+        ), patch(
+            "app.services.dream_agent._get_extraction_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = ExtractionSummary(
+                summary="Test session", no_extract=False
+            )
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            call_args = mock_agent.run.call_args
+            prompt = call_args[0][0]
+
+            assert "## Session Metadata" in prompt
+            assert f"Session ID: {dream_deps.session_id}" in prompt
+            assert f"Project: {dream_deps.project}" in prompt
+            assert f"Token count: {dream_deps.token_count}" in prompt
+            assert "user messages" in prompt
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_handles_empty_memory_md(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        self._clear_extraction_agent()
+
+        with patch(
+            "app.services.dream_agent._read_vault_file",
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch(
+            "app.services.dream_agent._get_extraction_agent"
+        ) as mock_get_agent:
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = ExtractionSummary(
+                summary="Test session", no_extract=False
+            )
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            call_args = mock_agent.run.call_args
+            prompt = call_args[0][0]
+
+            assert "(empty)" in prompt
