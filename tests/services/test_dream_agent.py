@@ -1234,6 +1234,87 @@ class TestRecordPromptInjection:
         assert "Earlier session" in daily_content
 
 
+class TestRecordContinuationPrompt:
+    """Tests for conversation chain continuation support (Story 9.25)."""
+
+    def test_record_deps_is_continuation_defaults_false(self, record_deps: RecordDeps) -> None:
+        fresh = RecordDeps(workspace=record_deps.workspace)
+        assert fresh.is_continuation is False
+
+    def test_run_record_prompt_contains_session_id_always(
+        self, record_deps: RecordDeps
+    ) -> None:
+        record_deps.session_id = "abc-session-123"
+        record_deps.is_continuation = False
+
+        sections = [
+            "Record the session to the daily log and track reinforcement signals.",
+            "",
+            f"Session ID: {record_deps.session_id}",
+            "",
+            "## Session Log",
+            _format_session_log(record_deps.session_log, record_deps.summary),
+        ]
+        prompt = "\n".join(sections)
+        assert "Session ID: abc-session-123" in prompt
+
+    def test_run_record_prompt_no_continuation_when_false(
+        self, record_deps: RecordDeps
+    ) -> None:
+        record_deps.is_continuation = False
+        record_deps.session_id = "no-continuation-session"
+
+        sections = [
+            "Record the session to the daily log and track reinforcement signals.",
+            "",
+            f"Session ID: {record_deps.session_id}",
+        ]
+        if record_deps.is_continuation:
+            sections.append("## CONTINUATION MODE")
+        prompt = "\n".join(sections)
+        assert "CONTINUATION MODE" not in prompt
+
+    def test_run_record_prompt_contains_continuation_when_true(
+        self, record_deps: RecordDeps
+    ) -> None:
+        record_deps.is_continuation = True
+        record_deps.session_id = "resumed-session-456"
+
+        sections = [
+            "Record the session to the daily log and track reinforcement signals.",
+            "",
+            f"Session ID: {record_deps.session_id}",
+        ]
+        if record_deps.is_continuation:
+            sid = record_deps.session_id
+            sections.append("")
+            sections.append("## CONTINUATION MODE")
+            sections.append(
+                "This is a CONTINUATION of an existing "
+                "session (user closed and resumed)."
+            )
+            sections.append(
+                "Find the session block with "
+                f"`<!-- session_id: {sid} -->` "
+                "in the daily log."
+            )
+            sections.append(
+                "APPEND new information to that existing "
+                "block — do NOT create a new "
+                "### Session heading."
+            )
+            sections.append(
+                "Add a `**Continued at [HH:MM]**:` "
+                "marker before new content in each section."
+            )
+
+        prompt = "\n".join(sections)
+        assert "## CONTINUATION MODE" in prompt
+        assert "<!-- session_id: resumed-session-456 -->" in prompt
+        assert "APPEND new information" in prompt
+        assert "**Continued at [HH:MM]**" in prompt
+
+
 class TestFormatSessionLog:
     def test_minimal_session_log(self) -> None:
         sl = SessionLogEntry()

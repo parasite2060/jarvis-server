@@ -76,6 +76,9 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
         if content:
             vault_indexes[folder] = content
 
+    # Step 3b: Read vault guide for review format reference
+    vault_guide = await read_vault_file("_guide.md") or ""
+
     # Step 4: Run weekly review agent
     usage_input_tokens: int | None = None
     usage_output_tokens: int | None = None
@@ -87,6 +90,7 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
             week_number=week_num,
             daily_logs=daily_logs,
             vault_indexes=vault_indexes,
+            vault_guide=vault_guide,
         )
         output, usage, tool_call_count = await run_weekly_review(deps)
         usage_input_tokens = usage.request_tokens

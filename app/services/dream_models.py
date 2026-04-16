@@ -109,6 +109,7 @@ class VaultUpdates(BaseModel):
     concepts: list[VaultFileEntry] = Field(default_factory=list)
     connections: list[VaultFileEntry] = Field(default_factory=list)
     lessons: list[VaultFileEntry] = Field(default_factory=list)
+    topics: list[VaultFileEntry] = Field(default_factory=list)
 
 
 class ConsolidationOutput(BaseModel):

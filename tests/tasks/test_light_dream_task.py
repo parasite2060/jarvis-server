@@ -80,6 +80,9 @@ def _make_transcript(
     )
     t.id = transcript_id  # type: ignore[assignment]
     t.light_dream_id = None
+    t.segment_start_line = 0  # type: ignore[assignment]
+    t.segment_end_line = 0  # type: ignore[assignment]
+    t.last_processed_line = 0  # type: ignore[assignment]
     return t
 
 
@@ -632,3 +635,192 @@ async def test_context_cache_invalidated_after_pr() -> None:
         await light_dream_task({}, 1)
 
     mock_invalidate.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_last_processed_line_set_on_success() -> None:
+    transcript = _make_transcript()
+    transcript.segment_end_line = 900  # type: ignore[assignment]
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert transcript.status == "processed"
+    assert transcript.last_processed_line == 900
+
+
+@pytest.mark.asyncio
+async def test_last_processed_line_not_set_on_failure() -> None:
+    transcript = _make_transcript()
+    transcript.segment_end_line = 900  # type: ignore[assignment]
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock(side_effect=DreamError("API timeout"))
+    mock_merge = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert transcript.status == "failed"
+    assert transcript.last_processed_line != 900
+
+
+@pytest.mark.asyncio
+async def test_segment_position_update_with_is_continuation() -> None:
+    """Verify last_processed_line is updated even for continuation transcripts."""
+    transcript = _make_transcript()
+    transcript.segment_end_line = 1200  # type: ignore[assignment]
+    transcript.is_continuation = True  # type: ignore[assignment]
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert transcript.status == "processed"
+    assert transcript.last_processed_line == 1200
+    assert transcript.is_continuation is True
+
+
+@pytest.mark.asyncio
+async def test_segment_position_preserved_across_chain() -> None:
+    """First transcript sets position=450, second starts from 450 and goes to 900."""
+    transcript1 = _make_transcript(transcript_id=1)
+    transcript1.segment_start_line = 0  # type: ignore[assignment]
+    transcript1.segment_end_line = 450  # type: ignore[assignment]
+    dream1 = _make_dream(dream_id=1)
+    factory1 = FakeSessionFactory(transcript1, dream1)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-143000",
+            "git_pr_url": "https://github.com/owner/repo/pull/42",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory1),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert transcript1.last_processed_line == 450
+
+    transcript2 = _make_transcript(transcript_id=2)
+    transcript2.segment_start_line = 430  # type: ignore[assignment]
+    transcript2.segment_end_line = 900  # type: ignore[assignment]
+    transcript2.is_continuation = True  # type: ignore[assignment]
+    dream2 = _make_dream(dream_id=2)
+    factory2 = FakeSessionFactory(transcript2, dream2)
+    mock_extract2 = _make_extraction_mock()
+    mock_merge2 = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr2 = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-03-31-144000",
+            "git_pr_url": "https://github.com/owner/repo/pull/43",
+            "git_pr_status": "merged",
+        }
+    )
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory2),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract2),
+        patch("app.tasks.light_dream_task.run_record", mock_merge2),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr2),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 2)
+
+    assert transcript2.last_processed_line == 900
+    assert transcript2.segment_start_line == 430
+
+
+@pytest.mark.asyncio
+async def test_last_processed_line_not_set_when_segment_end_line_zero() -> None:
+    transcript = _make_transcript()
+    transcript.segment_end_line = 0  # type: ignore[assignment]
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+    ):
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert transcript.status == "processed"
+    assert transcript.last_processed_line != 900

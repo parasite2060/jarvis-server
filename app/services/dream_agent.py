@@ -644,6 +644,7 @@ class RecordDeps:
     session_id: str = ""
     summary: str = ""
     session_log: SessionLogEntry = field(default_factory=SessionLogEntry)
+    is_continuation: bool = False
 
 
 def _load_record_prompt() -> str:
@@ -821,8 +822,36 @@ async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, lis
         f"dailys/{deps.source_date.isoformat()}.md"
     ) or "(no daily log yet)"
 
+    vault_guide = await _read_vault_file("_guide.md") or ""
+
     sections = [
         "Record the session to the daily log and track reinforcement signals.",
+        "",
+        f"Session ID: {deps.session_id}",
+    ]
+
+    if deps.is_continuation:
+        sections.append("")
+        sections.append("## CONTINUATION MODE")
+        sections.append(
+            "This is a CONTINUATION of an existing session "
+            "(user closed and resumed)."
+        )
+        sections.append(
+            f"Find the session block with "
+            f"`<!-- session_id: {deps.session_id} -->` "
+            f"in the daily log."
+        )
+        sections.append(
+            "APPEND new information to that existing block "
+            "— do NOT create a new ### Session heading."
+        )
+        sections.append(
+            "Add a `**Continued at [HH:MM]**:` marker "
+            "before new content in each section."
+        )
+
+    sections.extend([
         "",
         "## Session Log",
         _format_session_log(deps.session_log, deps.summary),
@@ -836,7 +865,12 @@ async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, lis
         "Write the session block to dailys/. Use read_frontmatter(path) for reinforcement checks.",
         "Use memu_search(query) to find matching vault files for reinforcement.",
         "Use read_file(path) to read full file content when needed.",
-    ]
+    ])
+
+    if vault_guide:
+        sections.append("")
+        sections.append("## Vault Guide (daily log format)")
+        sections.append(vault_guide)
 
     agent = _get_record_agent()
     result = await agent.run(
@@ -1174,6 +1208,7 @@ class WeeklyReviewDeps:
     week_number: str  # YYYY-WW format
     daily_logs: dict[str, str]  # date string -> content
     vault_indexes: dict[str, str]  # folder name -> _index.md content
+    vault_guide: str = ""  # _guide.md content for review format reference
 
 
 def _load_weekly_review_prompt() -> str:
@@ -1219,9 +1254,18 @@ async def run_weekly_review(
     deps: WeeklyReviewDeps,
 ) -> tuple[WeeklyReviewOutput, RunUsage, int]:
     agent = _get_weekly_review_agent()
-    result = await agent.run(
+
+    sections = [
         "Synthesize the past 7 days of daily logs into a weekly review. "
         "Read all daily logs and vault indexes before producing output.",
+    ]
+    if deps.vault_guide:
+        sections.append("")
+        sections.append("## Vault Guide (review format)")
+        sections.append(deps.vault_guide)
+
+    result = await agent.run(
+        "\n".join(sections),
         deps=deps,
         usage_limits=WEEKLY_REVIEW_USAGE_LIMITS,
     )

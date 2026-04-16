@@ -24,6 +24,7 @@ VAULT_FOLDERS = (
     "connections",
     "lessons",
     "references",
+    "topics",
 )
 
 FOLDER_TYPE_MAP: dict[str, str] = {
@@ -35,6 +36,7 @@ FOLDER_TYPE_MAP: dict[str, str] = {
     "connections": "connection",
     "lessons": "lesson",
     "references": "reference",
+    "topics": "topic",
 }
 
 
