@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -291,65 +292,6 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Transcript tools (extraction agent only)
-# ---------------------------------------------------------------------------
-
-
-def _register_transcript_tools(agent: Agent[Any, Any]) -> None:
-    """Register workspace-based transcript reading tools.
-    Only for the extraction agent which reads from temp workspace."""
-
-    @agent.tool
-    async def read_transcript(
-        ctx: RunContext[DreamDeps], offset: int = 0, limit: int = 200
-    ) -> str:
-        """Read transcript lines from the workspace."""
-        workspace: Path = ctx.deps.workspace
-        transcript = workspace / "transcript.txt"
-        if not transcript.is_file():
-            return "Transcript not found"
-        lines = transcript.read_text(encoding="utf-8").splitlines()
-        end = min(offset + limit, len(lines))
-        numbered = [f"{i + 1}\t{lines[i]}" for i in range(offset, end)]
-        header = f"[transcript.txt] lines {offset + 1}-{end} of {len(lines)}"
-        return f"{header}\n" + "\n".join(numbered)
-
-    @agent.tool
-    async def grep_transcript(
-        ctx: RunContext[DreamDeps], pattern: str
-    ) -> str:
-        """Search the transcript for a regex pattern."""
-        workspace: Path = ctx.deps.workspace
-        transcript = workspace / "transcript.txt"
-        if not transcript.is_file():
-            return "Transcript not found"
-        try:
-            regex = re.compile(pattern, re.IGNORECASE)
-        except re.error as e:
-            return f"Invalid regex: {e}"
-        text = transcript.read_text(encoding="utf-8", errors="replace")
-        matches: list[str] = []
-        for i, line in enumerate(text.splitlines(), 1):
-            if regex.search(line):
-                matches.append(f"transcript.txt:{i}: {line}")
-                if len(matches) >= 100:
-                    break
-        return "\n".join(matches) if matches else "No matches found."
-
-    @agent.tool
-    async def transcript_info(ctx: RunContext[DreamDeps]) -> str:
-        """Return transcript statistics."""
-        workspace: Path = ctx.deps.workspace
-        transcript = workspace / "transcript.txt"
-        if not transcript.is_file():
-            return "Transcript not found"
-        text = transcript.read_text(encoding="utf-8")
-        lines = text.count("\n") + 1
-        chars = len(text)
-        return f"lines={lines} chars={chars} estimated_tokens={chars // 4}"
-
-
-# ---------------------------------------------------------------------------
 # Extraction Agent
 # ---------------------------------------------------------------------------
 
@@ -358,11 +300,12 @@ def _register_transcript_tools(agent: Agent[Any, Any]) -> None:
 class DreamDeps:
     transcript_id: int
     workspace: Path
-    extracted_memories: list[MemoryItem] = field(default_factory=list)
+    session_memories: list[MemoryItem] = field(default_factory=list)
     session_id: str = ""
     project: str | None = None
     token_count: int | None = None
     created_at: datetime | None = None
+    transcript_file: str = ""
     # Session log sections (populated by store tools)
     session_context: str = ""
     session_key_exchanges: list[str] = field(default_factory=list)
@@ -372,6 +315,7 @@ class DreamDeps:
     session_action_items: list[str] = field(default_factory=list)
     session_concepts: list[dict[str, str]] = field(default_factory=list)
     session_connections: list[dict[str, str]] = field(default_factory=list)
+    session_memories_log: list[str] = field(default_factory=list)
 
 
 def _load_extraction_prompt() -> str:
@@ -397,7 +341,6 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
     )
 
     _register_base_tools(agent)        # vault access + MemU
-    _register_transcript_tools(agent)  # transcript access
 
     @agent.tool
     async def store_context(ctx: RunContext[DreamDeps], content: str) -> str:
@@ -413,7 +356,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         entry = f"{decision} — {reasoning}"
         ctx.deps.session_decisions.append(entry)
         # Also store as MemoryItem for knowledge base
-        ctx.deps.extracted_memories.append(
+        ctx.deps.session_memories.append(
             MemoryItem(
                 content=decision,
                 reasoning=reasoning,
@@ -460,7 +403,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
     ) -> str:
         """Store a concept discussed in the session. Creates a knowledge base entry."""
         ctx.deps.session_concepts.append({"name": name, "description": description})
-        ctx.deps.extracted_memories.append(
+        ctx.deps.session_memories.append(
             MemoryItem(
                 content=f"{name}: {description}",
                 reasoning=None,
@@ -495,7 +438,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
                 "relationship_type": relationship_type,
             }
         )
-        ctx.deps.extracted_memories.append(
+        ctx.deps.session_memories.append(
             MemoryItem(
                 content=f"{concept_a} <-> {concept_b}: {relationship} ({relationship_type})",
                 reasoning=None,
@@ -506,7 +449,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         return f"Connection stored: {concept_a} <-> {concept_b} [{relationship_type}]"
 
     @agent.tool
-    async def store_memory(
+    async def store_session_memory(
         ctx: RunContext[DreamDeps],
         category: str,
         content: str,
@@ -514,9 +457,8 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         source_date: str,
         reasoning: str | None = None,
     ) -> str:
-        """Store a general memory (pattern, preference, fact, correction).
-
-        Use store_decision/store_lesson/store_action_item for those types instead.
+        """Store a session memory — general observations, preferences,
+        facts, corrections that don't fit other store tools.
         """
         if category not in MEMORY_CATEGORIES:
             return f"Invalid category '{category}'. Must be one of: {', '.join(MEMORY_CATEGORIES)}"
@@ -529,7 +471,8 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
             vault_target=vault_target,  # type: ignore[arg-type]
             source_date=source_date,
         )
-        ctx.deps.extracted_memories.append(item)
+        ctx.deps.session_memories.append(item)
+        ctx.deps.session_memories_log.append(content)
         return f"Stored {category}: {content[:80]}..."
 
     _extraction_agent = agent
@@ -573,13 +516,14 @@ async def run_dream_extraction(
     sections = [
         "Extract session insights from the transcript.",
         "Use store_* tools for structured session log.",
-        "Use store_memory() only for general patterns, preferences, facts, corrections.",
+        "Use store_session_memory() only for general patterns, preferences, facts, corrections.",
         "",
         "## Session Metadata",
         f"Session ID: {deps.session_id}",
         f"Project: {deps.project or 'unknown'}",
         f"Token count: {deps.token_count or 'unknown'}",
         f"Transcript lines: {user_msg_count} user messages",
+        f"Transcript file: {deps.transcript_file}",
         "",
         "## Current MEMORY.md (what the vault already knows)",
         memory_md,
@@ -627,6 +571,7 @@ async def run_dream_extraction(
         action_items=deps.session_action_items,
         concepts=deps.session_concepts,
         connections=deps.session_connections,
+        session_memories=deps.session_memories_log,
     )
     return output, result.usage(), _count_tool_calls(result.all_messages()), result.all_messages()
 
@@ -639,7 +584,7 @@ async def run_dream_extraction(
 @dataclass
 class RecordDeps:
     workspace: Path
-    extracted_memories: list[MemoryItem] = field(default_factory=list)
+    session_memories: list[MemoryItem] = field(default_factory=list)
     source_date: date = field(default_factory=date.today)
     session_id: str = ""
     summary: str = ""
@@ -653,11 +598,21 @@ def _load_record_prompt() -> str:
 
 _record_agent: Agent[RecordDeps, RecordResult] | None = None
 
+_DEFAULT_WRITE_PATTERNS: list[str] = ["dailys/*.md"]
 
-def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
+
+def _get_record_agent(
+    allowed_write_patterns: list[str] | None = None,
+) -> Agent[RecordDeps, RecordResult]:
     global _record_agent
     if _record_agent is not None:
         return _record_agent
+
+    patterns = (
+        allowed_write_patterns
+        if allowed_write_patterns is not None
+        else _DEFAULT_WRITE_PATTERNS
+    )
 
     agent: Agent[RecordDeps, RecordResult] = Agent(
         _build_model(),
@@ -673,11 +628,12 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
 
     @agent.tool
     async def write_file(ctx: RunContext[RecordDeps], path: str, content: str) -> str:
-        """Write content to a file. Only dailys/ paths are allowed."""
-        if not path.startswith("dailys/"):
+        """Write content to a vault file. Restricted to allowed path patterns."""
+        normalized = os.path.normpath(path)
+        if not any(fnmatch(normalized, p) for p in patterns):
             return (
-                "Error: Record agent can only write to dailys/. "
-                "Knowledge writes are handled by deep dream."
+                f"Error: path '{path}' not allowed. "
+                f"Allowed patterns: {patterns}"
             )
         workspace: Path = ctx.deps.workspace
         resolved = _safe_resolve(workspace, path)
@@ -755,17 +711,6 @@ def _get_record_agent() -> Agent[RecordDeps, RecordResult]:
         resolved.write_text(f"---\n{frontmatter}---\n{body}", encoding="utf-8")
         return f"Contradiction flagged for {file_path}: {reason}"
 
-    @agent.tool
-    async def memu_add(ctx: RunContext[RecordDeps], content: str, category: str) -> str:
-        """Store a memory to MemU for semantic indexing."""
-        from app.services.memu_client import memu_memorize
-
-        try:
-            await memu_memorize([{"role": "user", "content": content}])
-            return f"Indexed to MemU: {content[:80]}..."
-        except Exception as exc:
-            return f"MemU add failed: {exc}"
-
     _record_agent = agent
     return _record_agent
 
@@ -789,6 +734,10 @@ def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
         parts.append("Lessons Learned:")
         for item in sl.lessons_learned:
             parts.append(f"  - {item}")
+    if sl.session_memories:
+        parts.append("Memory:")
+        for item in sl.session_memories:
+            parts.append(f"  - {item}")
     if sl.action_items:
         parts.append("Action Items:")
         for item in sl.action_items:
@@ -807,7 +756,7 @@ def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
     return "\n".join(parts)
 
 
-def _format_extracted_memories(memories: list[MemoryItem]) -> str:
+def _format_session_memories(memories: list[MemoryItem]) -> str:
     if not memories:
         return "No memories extracted."
     lines: list[str] = []
@@ -817,7 +766,10 @@ def _format_extracted_memories(memories: list[MemoryItem]) -> str:
     return "\n".join(lines)
 
 
-async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, list[Any]]:
+async def run_record(
+    deps: RecordDeps,
+    allowed_write_patterns: list[str] | None = None,
+) -> tuple[RecordResult, RunUsage, int, list[Any]]:
     daily_log = await _read_vault_file(
         f"dailys/{deps.source_date.isoformat()}.md"
     ) or "(no daily log yet)"
@@ -856,8 +808,8 @@ async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, lis
         "## Session Log",
         _format_session_log(deps.session_log, deps.summary),
         "",
-        "## Extracted Memories",
-        _format_extracted_memories(deps.extracted_memories),
+        "## Session Memories",
+        _format_session_memories(deps.session_memories),
         "",
         "## Today's Daily Log (current state)",
         daily_log,
@@ -872,7 +824,7 @@ async def run_record(deps: RecordDeps) -> tuple[RecordResult, RunUsage, int, lis
         sections.append("## Vault Guide (daily log format)")
         sections.append(vault_guide)
 
-    agent = _get_record_agent()
+    agent = _get_record_agent(allowed_write_patterns=allowed_write_patterns)
     result = await agent.run(
         "\n".join(sections),
         deps=deps,

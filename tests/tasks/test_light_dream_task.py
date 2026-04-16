@@ -153,7 +153,7 @@ def _make_extraction_mock(
     usage: RunUsage | None = None,
     side_effect: Exception | None = None,
 ) -> AsyncMock:
-    """Create a mock for run_dream_extraction that populates deps.extracted_memories."""
+    """Create a mock for run_dream_extraction that populates deps.session_memories."""
     mems = memories if memories is not None else SAMPLE_MEMORIES
     summ = summary or SAMPLE_SUMMARY
     usg = usage or SAMPLE_USAGE
@@ -161,7 +161,7 @@ def _make_extraction_mock(
     async def _fake_extraction(deps: Any) -> tuple:
         if side_effect:
             raise side_effect
-        deps.extracted_memories.extend(mems)
+        deps.session_memories.extend(mems)
         return (summ, usg, 3, [])
 
     return AsyncMock(side_effect=_fake_extraction)
@@ -240,7 +240,9 @@ async def test_no_extract_pipeline() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
         patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -265,7 +267,9 @@ async def test_extraction_failure_marks_dream_failed() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
         patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -491,7 +495,9 @@ async def test_no_extract_skips_merge() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
         patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -592,7 +598,9 @@ async def test_no_files_modified_skips_git_ops() -> None:
         patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
         patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
         patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -686,7 +694,9 @@ async def test_last_processed_line_not_set_on_failure() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
         patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)
@@ -817,7 +827,9 @@ async def test_last_processed_line_not_set_when_segment_end_line_zero() -> None:
         patch("app.tasks.light_dream_task.async_session_factory", factory),
         patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
         patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
     ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
         from app.tasks.light_dream_task import light_dream_task
 
         await light_dream_task({}, 1)

@@ -14,7 +14,6 @@ Session log, extracted memories, and today's daily log are provided in your prom
    b. Use `read_frontmatter(path)` to check reinforcement_count and status.
    c. If a memory confirms existing vault knowledge, call `update_reinforcement(file_path)` to increment the reinforcement count.
    d. If a memory contradicts existing vault knowledge, call `flag_contradiction(file_path, reason)` to flag it for deep dream review.
-5. **MemU indexing**: Call `memu_add(content, category)` for each extracted memory for semantic search indexing.
 
 ## What You Do NOT Do
 
@@ -37,10 +36,9 @@ Knowledge base modifications are handled exclusively by the deep dream agent.
 - `memu_categories()` — list available memory categories
 
 ### Specialized Tools
-- `write_file(path, content)` — write files **only to `dailys/` paths**
+- `write_file(path, content)` — write files matching allowed patterns (configured at agent creation)
 - `update_reinforcement(file_path)` — increment reinforcement count
 - `flag_contradiction(file_path, reason)` — flag contradictions
-- `memu_add(content, category)` — index to MemU
 
 ## Daily Log Format
 
@@ -63,6 +61,8 @@ The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Session
 **Decisions Made**: Describe each decision in a full sentence including the rationale. For example: "Chose PydanticAI over LangChain because it offers native structured output validation without additional parsing layers."
 
 **Lessons Learned**: State each lesson as a narrative sentence explaining what was learned and why it matters. For example: "Discovered that mock-based database tests can silently pass when the real migration has a breaking column rename."
+
+**Memory**: General observations, patterns, preferences, and facts noted during the session.
 
 **Action Items**:
 - [From session log action items -- these remain as bullet points]
