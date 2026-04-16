@@ -411,12 +411,25 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     phase2_text = _format_phase2_summary(phase2_result) if phase2_result else ""
 
     # Step 3: PydanticAI consolidation agent (Phase 3 — Deep Sleep)
-    phase3_run_prompt = (
-        "Consolidate memories. Produce updated MEMORY.md, daily summary, and vault updates.\n\n"
-        f"{phase1_text}\n\n{phase2_text}\n\n"
-        f"## Current MEMORY.md\n{memory_md or '(empty)'}\n\n"
-        f"## Today's Daily Log\n{daily_log or '(empty)'}"
-    )
+    vault_guide = await read_vault_file("_guide.md") or ""
+
+    phase3_sections = [
+        "Consolidate memories. Produce updated MEMORY.md, daily summary, and vault updates.",
+        "",
+        phase1_text,
+        "",
+        phase2_text,
+        "",
+        f"## Current MEMORY.md\n{memory_md or '(empty)'}",
+        "",
+        f"## Today's Daily Log\n{daily_log or '(empty)'}",
+    ]
+    if vault_guide:
+        phase3_sections.append("")
+        phase3_sections.append("## Vault Guide (file templates & structure)")
+        phase3_sections.append(vault_guide)
+
+    phase3_run_prompt = "\n".join(phase3_sections)
     consolidation_result: dict[str, Any] | None = None
     consolidation_messages: list[Any] = []
     is_partial = False
@@ -525,7 +538,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         vault_updates.get(f)
         for f in (
             "decisions", "projects", "patterns", "templates",
-            "concepts", "connections", "lessons",
+            "concepts", "connections", "lessons", "topics",
         )
     )
     if has_vault_content and vault_updates is not None:

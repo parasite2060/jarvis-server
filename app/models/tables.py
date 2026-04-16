@@ -75,6 +75,10 @@ class Transcript(Base):
     light_dream_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey(f"{SCHEMA}.dreams.id"), nullable=True
     )
+    is_continuation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    segment_start_line: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    segment_end_line: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_processed_line: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

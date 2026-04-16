@@ -1,7 +1,8 @@
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, verify_api_key
@@ -20,6 +21,24 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 
+DEDUP_WINDOW_SECONDS = 60
+
+
+@router.get("/conversations/position")
+async def get_transcript_position(
+    session_id: str,
+    db: DbSession,
+) -> dict:
+    stmt = (
+        select(Transcript.last_processed_line)
+        .where(Transcript.session_id == session_id, Transcript.last_processed_line > 0)
+        .order_by(Transcript.last_processed_line.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    last_line = result.scalar_one_or_none() or 0
+    return {"session_id": session_id, "last_line": last_line}
+
 
 @router.post("/conversations", response_model=ConversationResponse)
 async def ingest_conversation(
@@ -28,9 +47,11 @@ async def ingest_conversation(
     response: Response,
     db: DbSession,
 ) -> ConversationResponse:
+    dedup_cutoff = datetime.now(UTC) - timedelta(seconds=DEDUP_WINDOW_SECONDS)
     stmt = select(Transcript).where(
         Transcript.session_id == body.session_id,
         Transcript.source == body.source,
+        Transcript.created_at >= dedup_cutoff,
     )
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
@@ -48,6 +69,14 @@ async def ingest_conversation(
             data=ConversationData(transcript_id=existing.id, duplicate=True),
         )
 
+    chain_stmt = (
+        select(func.count())
+        .select_from(Transcript)
+        .where(Transcript.session_id == body.session_id)
+    )
+    chain_result = await db.execute(chain_stmt)
+    chain_count = chain_result.scalar() or 0
+
     parsed_text = parse_transcript(body.transcript)
     token_count = count_tokens_approximate(parsed_text)
 
@@ -58,6 +87,9 @@ async def ingest_conversation(
         token_count=token_count,
         source=body.source,
         status="received",
+        is_continuation=chain_count > 0,
+        segment_start_line=body.segment_start_line,
+        segment_end_line=body.segment_end_line,
     )
     db.add(transcript)
     await db.commit()

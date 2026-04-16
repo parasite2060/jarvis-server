@@ -44,6 +44,8 @@ Knowledge base modifications are handled exclusively by the deep dream agent.
 
 ## Daily Log Format
 
+Follow the dailys/ format defined in the **Vault Guide** injected in your prompt (see "## Vault Guide (daily log format)" section). The guide contains the authoritative template for daily log structure.
+
 The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Sessions` section. Each session is a `### Session N: [HH:MM] - [Session Title]` block with structured subsections from the injected session log.
 
 ```markdown
@@ -52,6 +54,7 @@ The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Session
 ## Sessions
 
 ### Session 1: [HH:MM] - [Session Title]
+<!-- session_id: {session_id from prompt} -->
 
 **Context**: Write 1-3 narrative sentences describing what the session was about and why it started.
 
@@ -68,6 +71,76 @@ The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Session
 **Important**: Write all sections except Action Items as **narrative sentences**, not `[type] content` bullet lists. The daily log should read like a concise journal entry, not a structured data dump.
 
 When appending to an existing daily log, increment the session number and preserve all existing session blocks. If a section has no content (e.g., no lessons learned), omit that section entirely rather than leaving it empty.
+
+## Writing Style: Technical Detail
+
+Write with the same level of detail you'd put in a technical blog post or incident report:
+
+- **Code references**: Use backticks for function names (`createServerClient`), file paths (`app/auth/callback/route.ts`), library names (`@supabase/ssr`), and CLI commands (`npx supabase start`)
+- **Code blocks**: Include code blocks when the session discussed folder structures, configuration files, SQL schemas, or specific code patterns. Use the appropriate language tag (```typescript, ```sql, ```bash)
+- **Decisions**: Write "X over Y because Z" — name the alternatives and the specific technical reason for the choice
+- **Lessons**: Describe the exact gotcha — what code/behavior was unexpected, what the symptom was, and what the fix is. Include the library version or API if relevant.
+- **Key Exchanges**: Capture the specific technical back-and-forth, not "discussed architecture options" but "Discussed Next.js App Router vs Pages Router — Claude recommended App Router for server components and streaming"
+
+Do NOT write generic summaries like "Set up the project" — write "Set up the project with `create-next-app` using TypeScript, Tailwind, ESLint, and the `src/` directory structure."
+
+### Example: Detailed Session Block
+
+```markdown
+### Session 1: [09:15] - Project Setup: TaskFlow SaaS App
+<!-- session_id: abc-123-def -->
+
+**Context:** Starting a new SaaS project called TaskFlow — a collaborative task management app. Setting up the full-stack foundation with Next.js, Supabase, and Tailwind CSS.
+
+**Key Exchanges:**
+- Discussed project architecture options: Next.js App Router vs Pages Router. Claude recommended App Router for the server components and streaming benefits. Decided App Router is the right call since we need real-time features anyway.
+- Set up the project with `create-next-app` using TypeScript, Tailwind, ESLint, and the `src/` directory structure.
+- Configured Supabase project. Created tables for `users`, `workspaces`, `tasks`, and `task_comments`. Used Supabase's built-in auth instead of rolling our own — saves weeks of work.
+- Debated folder structure. Landed on feature-based organization:
+
+  ```
+  src/
+    app/
+      (auth)/        # login, signup
+      (dashboard)/   # main app
+      api/           # route handlers
+    components/
+      ui/            # shared design system
+      features/      # feature-specific components
+    lib/
+      supabase/      # client + server helpers
+      utils/         # shared utilities
+    types/           # TypeScript types
+  ```
+
+- Set up the Supabase client helpers. Created separate clients for server components (`createServerClient`) and client components (`createBrowserClient`). This distinction matters because server components run on the server and need cookie-based auth.
+
+**Decisions Made:**
+- Next.js App Router over Pages Router — server components, streaming, and built-in layouts make the real-time task updates much cleaner
+- Supabase over custom Postgres + auth — the auth, RLS, and real-time subscriptions save a ton of boilerplate
+- Feature-based folder structure over type-based (components/pages/hooks) — keeps related code together as the app grows
+- TypeScript strict mode enabled from day one — catches bugs early, worth the initial setup cost
+
+**Lessons Learned:**
+- The `createServerClient` from `@supabase/ssr` requires a cookie adapter in Next.js App Router. You need to pass `cookies()` from `next/headers` — this isn't obvious from the main Supabase docs, had to find it in the Next.js-specific guide.
+- When using App Router with Supabase, you need middleware to refresh the auth session on every request. Without it, the session expires silently and users get logged out randomly.
+
+**Action Items:**
+- [ ] Set up Row Level Security policies for the tasks table
+- [ ] Create the auth middleware for session refresh
+- [ ] Build the login/signup pages with Supabase Auth UI
+```
+
+## Continuation Sessions
+
+When the prompt says "CONTINUATION MODE", this session is a resumed conversation:
+1. Find the existing session block with the matching `<!-- session_id: X -->` comment.
+2. APPEND new context, exchanges, decisions, lessons, and action items to the existing block.
+3. Do NOT create a new `### Session N` heading.
+4. Merge action items (avoid duplicates).
+5. Add a `**Continued at [HH:MM]**:` marker before new content in each section.
+
+If no matching session block is found (e.g., daily log was reset), create a new session block as normal.
 
 ## Reinforcement Tracking
 

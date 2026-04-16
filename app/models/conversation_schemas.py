@@ -8,6 +8,8 @@ class ConversationRequest(BaseModel):
     session_id: str
     transcript: str
     source: str
+    segment_start_line: int = 0
+    segment_end_line: int = 0
 
 
 class ConversationData(BaseModel):

@@ -193,107 +193,396 @@ All other folders (decisions/, patterns/, concepts/, connections/, lessons/, pro
 
 ## Content Templates
 
-### Decision Files (ADR Format)
+Use the templates below when creating or updating vault files. Each template defines the required sections and detail level. Do NOT omit sections — leave a section body as "None yet" if no content applies.
 
-```markdown
+### decisions/ — ADR Format
+
+Decision records capture the full reasoning chain: what was decided, what the situation was, what alternatives were evaluated and why they were rejected, and what the real-world consequences are. Each decision should be detailed enough that someone reading it 6 months later understands not just *what* but *why*.
+
+````markdown
 # [Decision Title]
 
 ## Decision
-[What was decided]
+[What was decided — one clear sentence]
 
 ## Context
-[Why this decision was needed]
+[Why this decision was needed — the situation, constraints, and requirements that prompted it]
 
 ## Alternatives Considered
-- [Alternative 1]: [Why rejected]
-- [Alternative 2]: [Why rejected]
+
+### Option A: [Name]
+- **Pros**: [Benefits]
+- **Rejected because**: [Specific reason with technical detail]
+
+### Option B: [Name]
+- **Pros**: [Benefits]
+- **Rejected because**: [Specific reason with technical detail]
 
 ## Consequences
-- [Positive consequence]
-- [Negative consequence or trade-off]
+
+### Positive
+- [Concrete benefit with technical detail]
+
+### Negative
+- [Concrete drawback or limitation]
+
+### Trade-offs Accepted
+- [What you knowingly gave up and why it's acceptable]
 
 ## Related
-- [[patterns/...]] or [[concepts/...]]
-```
+- [[patterns/...]]
+- [[lessons/...]]
+- [[concepts/...]]
+````
 
-### Pattern Files
+### patterns/ — Rule + Code Pattern + Evidence
 
-```markdown
+Pattern files capture recurring practices with specific code patterns, exact configurations, and real examples. The "Evidence" section references actual sessions where the pattern was observed or reinforced.
+
+````markdown
 # [Pattern Name]
 
 ## Rule
-[The pattern or rule, stated imperatively]
+[The pattern or rule, stated imperatively — what to always/never do]
 
 ## Why
-[Reasoning and evidence for the pattern]
+[Reasoning: why this pattern exists, what goes wrong without it]
 
-## Evidence
-- [Session/date where pattern was observed] (reinforced Nx)
+## Code Pattern
 
-## Apply When
-[Conditions under which this pattern applies]
-
-## Related
-- [[decisions/...]] or [[concepts/...]]
+### [Context 1]
+```typescript
+// concrete code example showing the pattern in use
 ```
 
-### Lesson Files
+### [Context 2]
+```typescript
+// another usage context if applicable
+```
 
-```markdown
+## Evidence
+- YYYY-MM-DD: [Where/how the pattern was observed or applied] (reinforced)
+- YYYY-MM-DD: [Another observation] (reinforced)
+
+## Apply When
+- [Specific conditions under which this pattern applies]
+- [Especially critical in: specific situation]
+
+## Related
+- [[decisions/...]]
+- [[lessons/...]]
+- [[concepts/...]]
+````
+
+### lessons/ — Incident Report with Root Cause
+
+Lessons capture specific technical gotchas with the exact error, root cause, fix, and when to watch for it. Failed lessons (`outcome: failed`) are NEVER pruned — they serve as anti-repetition memory.
+
+````markdown
 # [Lesson Title]
 
 ## Lesson
 [The key takeaway, stated imperatively]
 
 ## What Happened
-[Description of the incident or mistake]
+[Narrative description of the incident or mistake. Include:]
+- What was observed (symptoms, errors)
+- What was misleading or confusing
+
+**Root cause**: [Specific technical explanation of why it happened]
+1. [Step-by-step chain of causation]
+2. [Why it appeared to work in some contexts]
 
 ## Fix
-[How it was resolved]
+[How it was resolved, with concrete code:]
 
-## Apply When
-[Conditions to watch for to prevent recurrence]
-
-## Related
-- [[patterns/...]] or [[decisions/...]]
+```typescript
+// The fix — working code that resolves the issue
 ```
 
-### Concept Files
+The key: [One-sentence explanation of why this fix works]
 
-```markdown
+## Apply When
+- [Specific conditions to watch for to prevent recurrence]
+- [Symptom to watch for: "specific observable behavior"]
+
+## Related
+- [[patterns/...]]
+- [[decisions/...]]
+````
+
+### concepts/ — Definition + How It Works + Gotchas
+
+Concept files define core ideas with enough technical depth to serve as reference material. Include concrete code examples, SQL snippets, or architecture diagrams showing how the concept is applied in practice.
+
+````markdown
 # [Concept Name]
 
 ## What It Is
-[Definition and explanation]
+[Definition and explanation — enough depth to serve as reference material. Explain what the concept does and why it matters.]
 
-## How Used
-[How this concept is applied in practice]
+## How It Works
 
-## Related
-- [[connections/...]] or [[patterns/...]]
+### [Aspect 1]
+```sql
+-- or typescript, python, etc. — concrete code showing the concept in action
 ```
 
-### Connection Files
+### [Aspect 2]
+```sql
+-- another usage pattern or variation
+```
 
-Connection files have `relationship_type` in their frontmatter (see Relationship Types). The type drives consolidation behavior.
+## Gotchas
+1. [Specific gotcha with technical detail] — `code reference if applicable`
+2. [Another gotcha] — explain why this is non-obvious
+3. [Third gotcha] — what symptom to watch for
+
+## Related
+- [[connections/...]]
+- [[patterns/...]]
+- [[decisions/...]]
+````
+
+### connections/ — Cross-Domain Relationship + Mapping Table
+
+Connection files map how two concepts from different domains relate to each other, with concrete examples and a mapping table showing the correspondence. The `relationship_type` in frontmatter (extends, contradicts, supports, inspired_by, supersedes, derived_from, addresses_gap) drives consolidation behavior.
 
 ```markdown
 # [Connection Title]
 
 ## Relationship
-[Description of the cross-domain relationship]
+[Description of the cross-domain relationship — how concept A maps to concept B]
 
 ## Mapping
-[How concepts from domain A map to domain B]
+
+| [Domain A Pattern] | [Domain B Equivalent] | Example |
+|---|---|---|
+| [Concept from domain A] | [Corresponding concept in domain B] | [Concrete example] |
+| [Another concept] | [Its equivalent] | [Another example] |
 
 ## Evidence
-- [Observations supporting this connection]
+- YYYY-MM-DD: [Observation supporting this connection with specific detail]
+- YYYY-MM-DD: [Another observation]
 
 ## Implications
-[What this connection means for practice]
+- [What this connection means for practice — actionable guidance]
+- [When reviewing X, ask: "Could this be Y instead?"]
 
 ## Related
 - [[concepts/...]]
+- [[decisions/...]]
+- [[patterns/...]]
+```
+
+### projects/ — Active Project Context
+
+Project files capture per-project technical context: the stack, architecture decisions, current state, active concerns, and environment setup. They serve as the "project brief" that an AI assistant reads at session start.
+
+````markdown
+# [Project Name] — [One-Line Description]
+
+## Overview
+[2-3 sentences: what the project is, who it's for, what it does]
+
+## Tech Stack
+
+| Layer | Technology | Version | Notes |
+|---|---|---|---|
+| [Layer] | [Tech] | [Version] | [Key detail] |
+
+## Project Structure
+
+```
+src/
+  [folder tree showing key directories and files with inline comments]
+```
+
+## Database Schema
+- `table_name` — [key columns and purpose]
+
+## Current Phase & Active Concerns
+
+**Phase**: [Current phase and timeline]
+
+**Completed**: [Key milestones]
+
+**In Progress**: [Active work items]
+
+**Blocked/Watching**: [Concerns, limits, deferred decisions]
+
+## Environment Setup
+
+```bash
+# Clone and install
+git clone [repo] && cd [project]
+[install command]
+
+# Environment variables (.env)
+KEY=value
+```
+
+## Related
+- [[decisions/...]]
+- [[patterns/...]]
+- [[concepts/...]]
+````
+
+### templates/ — Reusable Steps + Gotchas
+
+Template files store reusable code patterns, prompt templates, configuration boilerplate, or workflow scripts that are applied across multiple projects or sessions.
+
+````markdown
+# [Template Name]
+
+## When to Use
+[Specific conditions under which this template applies]
+
+## Step 1: [Action]
+
+```bash
+# or typescript, etc. — concrete commands or code
+```
+
+## Step 2: [Action]
+
+```typescript
+// concrete code for this step
+```
+
+## Step N: [Final Action]
+
+```typescript
+// concrete code
+```
+
+## Gotchas to Remember
+- [Specific gotcha with wiki-link to related lesson or pattern] — [[lessons/...]]
+- [Another gotcha with technical detail]
+- [Third gotcha — what to watch for]
+
+## Related
+- [[decisions/...]]
+- [[patterns/...]]
+````
+
+### topics/ — Deep Dives (MEMORY.md Overflow)
+
+Topic files capture detailed knowledge that doesn't fit in MEMORY.md's 200-line cap. When a concept grows beyond a single line in MEMORY.md, it graduates to a topic file with full technical depth.
+
+````markdown
+# [Topic Name]: [Subtitle]
+
+## How It Works
+[Architecture or mechanism overview — how the system/concept operates]
+
+```
+[Diagram or flow showing the data/control path]
+```
+
+[Code example showing primary usage pattern:]
+
+```typescript
+// concrete code demonstrating the topic
+```
+
+## [Subtopic 1]
+[Detailed explanation of a specific aspect, with code if applicable]
+
+## [Subtopic 2]
+[Another aspect — tables, limits, configuration, etc.]
+
+| [Column] | [Column] | [Column] |
+|---|---|---|
+| [Data] | [Data] | [Data] |
+
+## Gotchas
+
+### 1. [Gotcha Title]
+[Explanation of the non-obvious behavior]
+
+```typescript
+// code showing the workaround or correct approach
+```
+
+### 2. [Gotcha Title]
+[Another gotcha with technical detail]
+
+### 3. [Gotcha Title]
+[Third gotcha — what symptom to watch for]
+
+## Related
+- [[concepts/...]]
+- [[projects/...]]
+- [[decisions/...]]
+````
+
+### dailys/ — Session Log Format
+
+Each daily log captures rich, technical detail — not summaries. The record agent writes narrative prose with specific code references, architectural reasoning, and concrete lessons.
+
+```markdown
+# Daily Log: YYYY-MM-DD
+
+## Sessions
+
+### Session 1 (HH:MM) - [Session Title]
+<!-- session_id: {id} -->
+
+**Context:** [1-3 narrative sentences describing what the session was about and why]
+
+**Key Exchanges:**
+[Narrative prose summarizing the most important discussions, questions, and answers. Include specific code references, folder structures, and architectural discussions — not vague summaries.]
+
+**Decisions Made:**
+[Full sentences including rationale: "Chose X over Y because Z"]
+
+**Lessons Learned:**
+[Specific gotchas with exact code patterns, library behaviors, and workarounds — the kind of thing you'd forget and hit again]
+
+**Action Items:**
+- [ ] [Concrete checkbox items]
+```
+
+#### Daily Log Writing Rules
+
+- Session blocks use `<!-- session_id: {id} -->` HTML comments for continuation tracking
+- **Key Exchanges** capture back-and-forth with specific technical details, code snippets, and architectural discussions — not vague summaries
+- **Decisions Made** include rationale and comparison with alternatives ("X over Y because Z")
+- **Lessons Learned** are specific gotchas with exact code patterns — the kind of thing you'd forget
+- Code references use backticks: `createServerClient`, `app/auth/callback/route.ts`
+- Include code blocks for folder structures, config snippets, or command examples when they add clarity
+- If a section has no content, omit it entirely
+- Continuation sessions append to the matching `<!-- session_id -->` block
+- Each session is a self-contained record
+
+### reviews/ — Weekly Review Format
+
+Weekly reviews synthesize a week of daily logs into themes, reinforced patterns, new knowledge, lifecycle transitions, and carried-forward action items.
+
+```markdown
+# Weekly Review: YYYY-WNN
+
+## Week Summary
+[3-5 sentences summarizing the week's focus, accomplishments, and key technical areas]
+
+## Patterns Reinforced
+- **[Pattern Name]** reinforced to Nx — [what confirmed it and in what context]. -> [[patterns/...]]
+
+## New Knowledge
+- **[Type]**: [Name] — [what was learned and why it matters]. -> [[folder/file]]
+
+## Lifecycle Transitions
+- `folder/file.md`: [old status] -> **[new status]** ([reason])
+
+## Themes
+- **[Theme]** [days]: [brief description of the theme's scope]
+
+## Open Action Items (carried forward)
+- [ ] [Item] (from Session N, YYYY-MM-DD)
+
+## Stale Action Items (>7 days, no progress)
+- [ ] [Item] (from YYYY-MM-DD — [current disposition])
 ```
 
 ## File Naming Convention

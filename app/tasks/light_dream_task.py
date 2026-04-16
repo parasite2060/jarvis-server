@@ -221,6 +221,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     session_id=deps.session_id,
                     summary=summary.summary if hasattr(summary, "summary") else "",
                     session_log=getattr(summary, "session_log", SessionLogEntry()),
+                    is_continuation=getattr(transcript, "is_continuation", False),
                 )
                 record_run_prompt = (
                     f"Record session to daily log. Session: {deps.session_id}, "
@@ -344,6 +345,8 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             )
             t2: Transcript = t_result.scalar_one()
             t2.status = "failed" if extraction_failed else "processed"
+            if not extraction_failed and t2.segment_end_line > 0:
+                t2.last_processed_line = t2.segment_end_line
             await session.commit()
 
         if extraction_failed:
