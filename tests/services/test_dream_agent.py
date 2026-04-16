@@ -13,8 +13,8 @@ from app.services.dream_agent import (
     RecordDeps,
     WeeklyReviewDeps,
     _count_tool_calls,
-    _format_extracted_memories,
     _format_session_log,
+    _format_session_memories,
     consolidation_to_dict,
 )
 from app.services.dream_models import (
@@ -979,10 +979,10 @@ class TestRecordAgent:
 class TestWriteRestriction:
     @pytest.mark.asyncio
     async def test_write_to_memory_md_rejected(self, record_deps: RecordDeps) -> None:
-        from app.services.dream_agent import _get_record_agent
+        import app.services.dream_agent as mod
 
-        agent = _get_record_agent()
-        # Find the write_file tool and call it directly
+        mod._record_agent = None
+        agent = mod._get_record_agent()
         write_tool = None
         for tool in agent._function_toolset.tools.values():
             if tool.name == "write_file":
@@ -996,13 +996,15 @@ class TestWriteRestriction:
         ctx.deps = record_deps
 
         result = await write_tool.function(ctx, path="MEMORY.md", content="# Memory\ntest")
-        assert "Error: Record agent can only write to dailys/" in result
+        assert "Error: path 'MEMORY.md' not allowed" in result
+        assert "Allowed patterns" in result
 
     @pytest.mark.asyncio
     async def test_write_to_decisions_rejected(self, record_deps: RecordDeps) -> None:
-        from app.services.dream_agent import _get_record_agent
+        import app.services.dream_agent as mod
 
-        agent = _get_record_agent()
+        mod._record_agent = None
+        agent = mod._get_record_agent()
         write_tool = None
         for tool in agent._function_toolset.tools.values():
             if tool.name == "write_file":
@@ -1015,13 +1017,14 @@ class TestWriteRestriction:
         ctx.deps = record_deps
 
         result = await write_tool.function(ctx, path="decisions/new.md", content="test")
-        assert "Error: Record agent can only write to dailys/" in result
+        assert "Error: path 'decisions/new.md' not allowed" in result
 
     @pytest.mark.asyncio
     async def test_write_to_dailys_allowed(self, record_deps: RecordDeps) -> None:
-        from app.services.dream_agent import _get_record_agent
+        import app.services.dream_agent as mod
 
-        agent = _get_record_agent()
+        mod._record_agent = None
+        agent = mod._get_record_agent()
         write_tool = None
         for tool in agent._function_toolset.tools.values():
             if tool.name == "write_file":
@@ -1036,6 +1039,188 @@ class TestWriteRestriction:
         result = await write_tool.function(ctx, path="dailys/2026-04-05.md", content="# Daily Log")
         assert "Written" in result
         assert (record_deps.workspace / "dailys" / "2026-04-05.md").read_text() == "# Daily Log"
+
+
+class TestGlobRestrictedWrite:
+    """Tests for glob-restricted write_file (Story 9.31)."""
+
+    @pytest.mark.asyncio
+    async def test_write_matching_default_pattern(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="dailys/2026-04-16.md", content="# Log")
+        assert "Written" in result
+
+    @pytest.mark.asyncio
+    async def test_write_rejects_non_matching_path(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent(allowed_write_patterns=["dailys/*.md"])
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="decisions/test.md", content="test")
+        assert "Error: path 'decisions/test.md' not allowed" in result
+        assert "dailys/*.md" in result
+
+    @pytest.mark.asyncio
+    async def test_write_multiple_patterns(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent(
+            allowed_write_patterns=["dailys/*.md", "projects/*.md"]
+        )
+
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+        (record_deps.workspace / "projects").mkdir(exist_ok=True)
+
+        result1 = await write_tool.function(ctx, path="dailys/2026-04-16.md", content="daily")
+        assert "Written" in result1
+
+        result2 = await write_tool.function(ctx, path="projects/taskflow.md", content="project")
+        assert "Written" in result2
+
+        result3 = await write_tool.function(ctx, path="decisions/nope.md", content="bad")
+        assert "Error: path 'decisions/nope.md' not allowed" in result3
+
+    @pytest.mark.asyncio
+    async def test_write_glob_wildcard_extension(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent(allowed_write_patterns=["dailys/*.md"])
+
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="dailys/notes.txt", content="text")
+        assert "Error: path 'dailys/notes.txt' not allowed" in result
+
+    @pytest.mark.asyncio
+    async def test_write_glob_question_mark_wildcard(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent(allowed_write_patterns=["dailys/202?-*.md"])
+
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(ctx, path="dailys/2026-04-16.md", content="log")
+        assert "Written" in result
+
+    @pytest.mark.asyncio
+    async def test_write_path_traversal_rejected(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent(allowed_write_patterns=["dailys/*.md"])
+
+        write_tool = None
+        for tool in agent._function_toolset.tools.values():
+            if tool.name == "write_file":
+                write_tool = tool
+                break
+        assert write_tool is not None
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.deps = record_deps
+
+        result = await write_tool.function(
+            ctx, path="dailys/../secrets/foo.md", content="malicious"
+        )
+        assert "Error: path 'dailys/../secrets/foo.md' not allowed" in result
+
+
+class TestRecordAgentNoMemuAdd:
+    """Tests for memu_add removal (Story 9.31)."""
+
+    def test_record_agent_has_no_memu_add_tool(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "memu_add" not in tool_names
+
+    def test_record_agent_still_has_write_file(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "write_file" in tool_names
+
+    def test_record_agent_still_has_update_reinforcement(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "update_reinforcement" in tool_names
+
+    def test_record_agent_still_has_flag_contradiction(self, record_deps: RecordDeps) -> None:
+        import app.services.dream_agent as mod
+
+        mod._record_agent = None
+        agent = mod._get_record_agent()
+        tool_names = list(agent._function_toolset.tools.keys())
+        assert "flag_contradiction" in tool_names
 
 
 class TestReinforcementTracking:
@@ -1200,12 +1385,12 @@ class TestRecordPromptInjection:
         assert "Context: Investigated plugin config" in prompt
         assert "Use env vars for hooks" in prompt
 
-    def test_run_record_prompt_contains_extracted_memories(
+    def test_run_record_prompt_contains_session_memories(
         self, record_deps: RecordDeps
     ) -> None:
         from app.services.dream_models import MemoryItem
 
-        record_deps.extracted_memories = [
+        record_deps.session_memories = [
             MemoryItem(
                 content="Use env vars for hooks",
                 reasoning="macOS Keychain",
@@ -1214,7 +1399,7 @@ class TestRecordPromptInjection:
             ),
         ]
 
-        prompt = _format_extracted_memories(record_deps.extracted_memories)
+        prompt = _format_session_memories(record_deps.session_memories)
         assert "[decisions]" in prompt
         assert "Use env vars for hooks" in prompt
         assert "macOS Keychain" in prompt
@@ -1348,9 +1533,9 @@ class TestFormatSessionLog:
         assert "REST <-> HTTP: uses" in result
 
 
-class TestFormatExtractedMemories:
+class TestFormatSessionMemories:
     def test_no_memories(self) -> None:
-        result = _format_extracted_memories([])
+        result = _format_session_memories([])
         assert result == "No memories extracted."
 
     def test_with_memories(self) -> None:
@@ -1370,7 +1555,7 @@ class TestFormatExtractedMemories:
                 source_date="2026-04-14",
             ),
         ]
-        result = _format_extracted_memories(memories)
+        result = _format_session_memories(memories)
         assert "[1] [decisions] 2026-04-14: Use env vars (reason: Keychain issue)" in result
         assert "[2] [patterns] 2026-04-14: Exit hook 0 on errors" in result
         assert "(reason:" not in result.split("\n")[1]
@@ -1604,3 +1789,140 @@ class TestExtractionVaultAware:
             prompt = call_args[0][0]
 
             assert "(empty)" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Story 9.30: Simplify Extraction Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStory930SimplifyExtraction:
+    """Tests for Story 9.30: transcript tools removed, renamed fields, Memory section."""
+
+    def _clear_singletons(self) -> None:
+        import app.services.dream_agent as mod
+
+        mod._extraction_agent = None
+
+    def test_extraction_agent_no_transcript_tools(self) -> None:
+        self._clear_singletons()
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool_names = {t.name for t in agent._function_toolset.tools.values()}
+        assert "read_transcript" not in tool_names
+        assert "grep_transcript" not in tool_names
+        assert "transcript_info" not in tool_names
+
+    def test_dream_deps_has_session_memories_not_extracted(self) -> None:
+        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
+        assert hasattr(deps, "session_memories")
+        assert not hasattr(deps, "extracted_memories")
+
+    def test_dream_deps_has_transcript_file(self) -> None:
+        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
+        assert hasattr(deps, "transcript_file")
+        assert deps.transcript_file == ""
+
+    def test_dream_deps_has_session_memories_log(self) -> None:
+        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
+        assert hasattr(deps, "session_memories_log")
+        assert deps.session_memories_log == []
+
+    def test_store_session_memory_tool_exists(self) -> None:
+        self._clear_singletons()
+        from app.services.dream_agent import _get_extraction_agent
+
+        agent = _get_extraction_agent()
+        tool_names = {t.name for t in agent._function_toolset.tools.values()}
+        assert "store_session_memory" in tool_names
+        assert "store_memory" not in tool_names
+
+    def test_session_log_entry_has_session_memories(self) -> None:
+        entry = SessionLogEntry()
+        assert hasattr(entry, "session_memories")
+        assert entry.session_memories == []
+
+    def test_format_session_log_includes_memory_section(self) -> None:
+        sl = SessionLogEntry(
+            context="Test context",
+            lessons_learned=["Lesson 1"],
+            session_memories=["User prefers dark mode", "Project uses Python 3.12"],
+            action_items=["Write tests"],
+        )
+        result = _format_session_log(sl, "Test session")
+        assert "Memory:" in result
+        assert "User prefers dark mode" in result
+        assert "Project uses Python 3.12" in result
+        lines = result.split("\n")
+        memory_idx = next(
+            i for i, line in enumerate(lines) if "Memory:" in line
+        )
+        action_idx = next(
+            i for i, line in enumerate(lines) if "Action Items:" in line
+        )
+        lesson_idx = next(
+            i for i, line in enumerate(lines) if "Lessons Learned:" in line
+        )
+        assert lesson_idx < memory_idx < action_idx
+
+    def test_format_session_log_no_memory_when_empty(self) -> None:
+        sl = SessionLogEntry(
+            context="Test context",
+            lessons_learned=["Lesson 1"],
+            action_items=["Write tests"],
+        )
+        result = _format_session_log(sl, "Test session")
+        assert "Memory:" not in result
+
+    def test_record_deps_has_session_memories_not_extracted(self) -> None:
+        deps = RecordDeps(workspace=Path("/tmp"))
+        assert hasattr(deps, "session_memories")
+        assert not hasattr(deps, "extracted_memories")
+
+    @pytest.mark.asyncio
+    async def test_extraction_prompt_contains_transcript_file(self) -> None:
+        self._clear_singletons()
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        dream_deps = DreamDeps(
+            transcript_id=1,
+            workspace=Path("/tmp"),
+            session_id="test-123",
+            transcript_file="transcripts/test-123_abc12345.txt",
+        )
+
+        mock_agent = MagicMock()
+        mock_run_result = MagicMock()
+        mock_run_result.output = ExtractionSummary(
+            summary="Test", no_extract=False
+        )
+        mock_run_result.usage.return_value = MagicMock()
+        mock_run_result.all_messages.return_value = []
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
+
+        with (
+            patch(
+                "app.services.dream_agent._get_extraction_agent",
+                return_value=mock_agent,
+            ),
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="# MEMORY",
+            ),
+            patch(
+                "app.services.dream_agent._count_user_messages",
+                return_value=10,
+            ),
+        ):
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            call_args = mock_agent.run.call_args
+            prompt = call_args[0][0]
+
+            assert "transcripts/test-123_abc12345.txt" in prompt
+            assert "store_session_memory()" in prompt

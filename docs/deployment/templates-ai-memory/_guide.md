@@ -29,6 +29,7 @@ ai-memory/
 ├── log.md               # Append-only change log (not in session context)
 ├── topics/              # MEMORY.md overflow for deep entries
 ├── .backups/            # Consolidation snapshots (excluded from git)
+├── transcripts/         # Active transcript files (gitignored, used during extraction)
 ├── config.yml           # Dream configuration (non-secrets only)
 ├── _guide.md            # This file — vault documentation
 └── .gitignore           # OS, editor, and .backups/ exclusions
@@ -540,6 +541,9 @@ Each daily log captures rich, technical detail — not summaries. The record age
 **Lessons Learned:**
 [Specific gotchas with exact code patterns, library behaviors, and workarounds — the kind of thing you'd forget and hit again]
 
+**Memory:**
+[General observations, patterns, preferences, and facts noted during the session]
+
 **Action Items:**
 - [ ] [Concrete checkbox items]
 ```
@@ -550,6 +554,7 @@ Each daily log captures rich, technical detail — not summaries. The record age
 - **Key Exchanges** capture back-and-forth with specific technical details, code snippets, and architectural discussions — not vague summaries
 - **Decisions Made** include rationale and comparison with alternatives ("X over Y because Z")
 - **Lessons Learned** are specific gotchas with exact code patterns — the kind of thing you'd forget
+- **Memory** captures general observations, patterns, preferences, and facts from the session — the kind of thing worth remembering but not a decision, lesson, or key exchange
 - Code references use backticks: `createServerClient`, `app/auth/callback/route.ts`
 - Include code blocks for folder structures, config snippets, or command examples when they add clarity
 - If a section has no content, omit it entirely
@@ -626,14 +631,18 @@ Entry format:
 
 ### Light Dream (per-session, automatic)
 
-Triggered after each Claude Code session ends:
+Triggered after each Claude Code session ends. Runs two phases:
 
-1. Receives the session transcript from the plugin hook
-2. GPT-5.2 extracts decisions, preferences, patterns, corrections, and facts
-3. Appends extracted entries to MEMORY.md under `## Recent` with an absolute date header
-4. Creates or appends to `dailys/YYYY-MM-DD.md` with session extractions
-5. Tags content for vault routing (decisions/, patterns/, projects/, templates/, concepts/, connections/, lessons/)
-6. Creates a git branch `dream/light-YYYY-MM-DD-HHMMSS` and opens a PR
+**Phase 1: Extraction Agent** — reads the session transcript (via base file tools on `transcript.txt` in `transcripts/`) and extracts structured insights using `store_*` tools (`store_context`, `store_decision`, `store_lesson`, `store_action_item`, `store_key_exchange`, `store_concept`, `store_connection`, `store_session_memory`). Extracted data is stored to the `session_memories` database table.
+
+**Phase 2: Record Agent** — receives the extracted session log and memories, then:
+1. Writes/appends a session block to `dailys/YYYY-MM-DD.md` (glob-restricted to `dailys/*.md`)
+2. Tracks reinforcement signals on existing vault files (`update_reinforcement`, `flag_contradiction`)
+3. Returns a `RecordResult` summary
+
+The record agent's `write_file` tool is restricted to paths matching the configured glob patterns (default: `dailys/*.md`). Writes to any other path are rejected.
+
+After both phases complete, a git branch `dream/light-YYYY-MM-DD-HHMMSS` is created and a PR is opened.
 
 ### Deep Dream (nightly at 3AM GMT+7, or manual via /dream)
 

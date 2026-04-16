@@ -1,7 +1,7 @@
 """Tests for Story 9.24: Standardized Base Tools.
 
-Tests _register_base_tools, _register_transcript_tools, path traversal
-blocking, and tool registration for all 6 agents.
+Tests _register_base_tools, path traversal blocking, and tool registration
+for all 6 agents.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import pytest
 from app.services.dream_agent import (
     DreamDeps,
     _register_base_tools,
-    _register_transcript_tools,
     _resolve_vault_path,
 )
 
@@ -33,13 +32,6 @@ BASE_TOOL_NAMES = {
     "memu_search",
     "memu_categories",
 }
-
-TRANSCRIPT_TOOL_NAMES = {
-    "read_transcript",
-    "grep_transcript",
-    "transcript_info",
-}
-
 
 def _tool_names(agent: Any) -> set[str]:
     return {t.name for t in agent._function_toolset.tools.values()}
@@ -435,101 +427,6 @@ class TestRegisterBaseTools:
 
 
 # ---------------------------------------------------------------------------
-# _register_transcript_tools tests
-# ---------------------------------------------------------------------------
-
-
-class TestRegisterTranscriptTools:
-    def test_registers_all_3_tools(self) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-        registered = _tool_names(agent)
-        assert TRANSCRIPT_TOOL_NAMES.issubset(registered)
-
-    @pytest.mark.asyncio
-    async def test_read_transcript(self, dream_deps: DreamDeps) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-
-        tool = _get_tool(agent, "read_transcript")
-        ctx = MagicMock()
-        ctx.deps = dream_deps
-        result = await tool.function(ctx, offset=0, limit=200)
-        assert "transcript.txt" in result
-        assert "User: hello" in result
-
-    @pytest.mark.asyncio
-    async def test_read_transcript_not_found(self, tmp_path: Path) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-
-        deps = DreamDeps(
-            transcript_id=1,
-            workspace=tmp_path,
-            session_id="test",
-        )
-        tool = _get_tool(agent, "read_transcript")
-        ctx = MagicMock()
-        ctx.deps = deps
-        result = await tool.function(ctx)
-        assert "Transcript not found" in result
-
-    @pytest.mark.asyncio
-    async def test_grep_transcript(self, dream_deps: DreamDeps) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-
-        tool = _get_tool(agent, "grep_transcript")
-        ctx = MagicMock()
-        ctx.deps = dream_deps
-        result = await tool.function(ctx, pattern="hello")
-        assert "transcript.txt:1:" in result
-        assert "hello" in result
-
-    @pytest.mark.asyncio
-    async def test_grep_transcript_no_matches(self, dream_deps: DreamDeps) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-
-        tool = _get_tool(agent, "grep_transcript")
-        ctx = MagicMock()
-        ctx.deps = dream_deps
-        result = await tool.function(ctx, pattern="nonexistentxyz")
-        assert "No matches found" in result
-
-    @pytest.mark.asyncio
-    async def test_transcript_info(self, dream_deps: DreamDeps) -> None:
-        from pydantic_ai import Agent
-        from pydantic_ai.models.test import TestModel
-
-        agent: Agent[MagicMock, str] = Agent(TestModel(), output_type=str)
-        _register_transcript_tools(agent)
-
-        tool = _get_tool(agent, "transcript_info")
-        ctx = MagicMock()
-        ctx.deps = dream_deps
-        result = await tool.function(ctx)
-        assert "lines=" in result
-        assert "chars=" in result
-        assert "estimated_tokens=" in result
-
-
-# ---------------------------------------------------------------------------
 # Agent tool registration verification
 # ---------------------------------------------------------------------------
 
@@ -556,13 +453,16 @@ class TestAgentToolRegistration:
         registered = _tool_names(agent)
         assert BASE_TOOL_NAMES.issubset(registered), f"Missing: {BASE_TOOL_NAMES - registered}"
 
-    def test_extraction_agent_has_transcript_tools(self) -> None:
+    def test_extraction_agent_does_not_have_transcript_tools(self) -> None:
         from app.services.dream_agent import _get_extraction_agent
 
         agent = _get_extraction_agent()
         registered = _tool_names(agent)
-        missing = TRANSCRIPT_TOOL_NAMES - registered
-        assert TRANSCRIPT_TOOL_NAMES.issubset(registered), f"Missing: {missing}"
+        transcript_tools = {
+            "read_transcript", "grep_transcript", "transcript_info",
+        }
+        overlap = transcript_tools & registered
+        assert transcript_tools.isdisjoint(registered), f"Should not have: {overlap}"
 
     def test_record_agent_has_base_tools(self) -> None:
         self._clear_agent_singletons()

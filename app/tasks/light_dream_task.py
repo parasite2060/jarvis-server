@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import time
+import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -68,9 +69,20 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         t.status = "processing"
         await session.commit()
 
-    # Step 4: Write transcript to temp workspace
+    # Step 4: Write transcript to temp workspace + vault transcripts/
     parsed_text = transcript.parsed_text or ""
     workspace = Path(tempfile.mkdtemp(prefix=f"dream-{dream_id}-", dir="/tmp/jarvis-dreams"))
+
+    # Write transcript to vault transcripts/ for base tool access
+    from app.config import settings as app_settings
+
+    vault_root = Path(app_settings.jarvis_memory_path)
+    transcripts_dir = vault_root / "transcripts"
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+
+    session_id_str = str(transcript.session_id) if hasattr(transcript, "session_id") else ""
+    transcript_filename = f"{session_id_str}_{uuid.uuid4().hex[:8]}.txt"
+    transcript_path = transcripts_dir / transcript_filename
 
     extraction_failed = False
     is_partial = False
@@ -85,16 +97,18 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
 
     try:
         (workspace / "transcript.txt").write_text(parsed_text, encoding="utf-8")
+        transcript_path.write_text(parsed_text, encoding="utf-8")
 
         # Step 5: Run extraction agent
         deps = DreamDeps(
             transcript_id=transcript_id,
             workspace=workspace,
-            extracted_memories=[],
-            session_id=str(transcript.session_id) if hasattr(transcript, "session_id") else "",
+            session_memories=[],
+            session_id=session_id_str,
             project=getattr(transcript, "project", None),
             token_count=getattr(transcript, "token_count", None),
             created_at=getattr(transcript, "created_at", None),
+            transcript_file=f"transcripts/{transcript_filename}",
         )
 
         extraction_run_prompt = (
@@ -115,7 +129,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 "light_dream.extraction.completed",
                 transcript_id=transcript_id,
                 dream_id=dream_id,
-                memories_count=len(deps.extracted_memories),
+                memories_count=len(deps.session_memories),
             )
             log.info(
                 "light_dream.usage",
@@ -175,7 +189,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             )
 
         # Step 6: Store extracted memories to DB
-        memories = deps.extracted_memories
+        memories = deps.session_memories
         memories_count = len(memories)
         if memories_count > 0:
             async with async_session_factory() as session:
@@ -216,7 +230,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
 
                 record_deps = RecordDeps(
                     workspace=Path(app_settings.jarvis_memory_path),
-                    extracted_memories=memories,
+                    session_memories=memories,
                     source_date=source_date_for_git,
                     session_id=deps.session_id,
                     summary=summary.summary if hasattr(summary, "summary") else "",
@@ -231,7 +245,9 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 record_start = time.monotonic_ns() // 1_000_000
                 record_started_at = datetime.now(UTC)
                 record_result, record_usage, record_tool_calls, record_messages = (
-                    await run_record(record_deps)
+                    await run_record(
+                        record_deps, allowed_write_patterns=["dailys/*.md"]
+                    )
                 )
                 record_duration_ms = time.monotonic_ns() // 1_000_000 - record_start
                 files_modified = [{"path": f.path, "action": f.action} for f in record_result.files]
@@ -374,4 +390,6 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             )
 
     finally:
+        if transcript_path.exists():
+            transcript_path.unlink()
         shutil.rmtree(workspace, ignore_errors=True)
