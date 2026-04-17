@@ -46,7 +46,7 @@ class TestTechnicalDetailSection:
 
     def test_key_exchanges_specificity(self) -> None:
         prompt = _load_prompt()
-        assert "not \"discussed architecture options\"" in prompt or (
+        assert 'not "discussed architecture options"' in prompt or (
             "Discussed Next.js App Router vs Pages Router" in prompt
         )
 
@@ -136,3 +136,10 @@ class TestReasoningGuidance:
     def test_example_has_matters_because(self) -> None:
         prompt = _load_prompt()
         assert "**Matters because**:" in prompt
+
+
+class TestSecretHandlingRule:
+    def test_contains_secret_handling_rule(self) -> None:
+        prompt = _load_prompt()
+        assert "## Secret-Handling Rule (MANDATORY)" in prompt
+        assert "Never copy, quote, summarise, paraphrase, or store" in prompt

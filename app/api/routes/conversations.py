@@ -13,6 +13,7 @@ from app.models.conversation_schemas import (
     ConversationResponse,
 )
 from app.models.tables import Transcript
+from app.services.secret_scrubber import scrub
 from app.services.transcript_parser import count_tokens_approximate, parse_transcript
 
 log = get_logger("jarvis.api.conversations")
@@ -70,19 +71,25 @@ async def ingest_conversation(
         )
 
     chain_stmt = (
-        select(func.count())
-        .select_from(Transcript)
-        .where(Transcript.session_id == body.session_id)
+        select(func.count()).select_from(Transcript).where(Transcript.session_id == body.session_id)
     )
     chain_result = await db.execute(chain_stmt)
     chain_count = chain_result.scalar() or 0
 
-    parsed_text = parse_transcript(body.transcript)
+    scrubbed_transcript, redaction_counts = scrub(body.transcript)
+    if redaction_counts:
+        log.info(
+            "secret_scrubber.redactions",
+            session_id=body.session_id,
+            counts_by_type=redaction_counts,
+        )
+
+    parsed_text = parse_transcript(scrubbed_transcript)
     token_count = count_tokens_approximate(parsed_text)
 
     transcript = Transcript(
         session_id=body.session_id,
-        raw_content=body.transcript,
+        raw_content=scrubbed_transcript,
         parsed_text=parsed_text,
         token_count=token_count,
         source=body.source,
@@ -101,7 +108,7 @@ async def ingest_conversation(
         source=body.source,
         transcript_id=transcript.id,
         token_count=token_count,
-        transcript_length=len(body.transcript),
+        transcript_length=len(scrubbed_transcript),
     )
 
     try:

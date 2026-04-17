@@ -48,3 +48,10 @@ class TestExtractionReasoningGuidance:
     def test_file_info_first_instruction(self) -> None:
         content = _read_prompt()
         assert "file_info" in content
+
+
+class TestSecretHandlingRule:
+    def test_contains_secret_handling_rule(self) -> None:
+        content = _read_prompt()
+        assert "## Secret-Handling Rule (MANDATORY)" in content
+        assert "Never copy, quote, summarise, paraphrase, or store" in content
