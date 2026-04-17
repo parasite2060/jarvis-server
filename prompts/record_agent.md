@@ -84,6 +84,19 @@ Write with the same level of detail you'd put in a technical blog post or incide
 
 Do NOT write generic summaries like "Set up the project" — write "Set up the project with `create-next-app` using TypeScript, Tailwind, ESLint, and the `src/` directory structure."
 
+## Reasoning in Daily Log Entries
+
+Every extracted insight should answer: **"Why does this matter for future decisions?"**
+
+- **Decisions**: "X over Y because Z. **Revisit if**: [condition when this decision should be re-evaluated]"
+- **Lessons**: "Gotcha description. **Why this matters**: [future impact if ignored]. **Watch for**: [symptom/situation that should trigger recall of this lesson]"
+- **Memory**: "[category] Fact. **Matters because**: [how this fact affects future decisions or actions]"
+
+This reasoning transforms bare facts into actionable knowledge. An agent reading the daily log months later can:
+- Re-evaluate decisions when conditions change (via "Revisit if")
+- Recognize similar symptoms and surface relevant lessons (via "Watch for")
+- Connect facts to upcoming decisions (via "Matters because")
+
 ### Example: Detailed Session Block
 
 ```markdown
@@ -116,14 +129,17 @@ Do NOT write generic summaries like "Set up the project" — write "Set up the p
 - Set up the Supabase client helpers. Created separate clients for server components (`createServerClient`) and client components (`createBrowserClient`). This distinction matters because server components run on the server and need cookie-based auth.
 
 **Decisions Made:**
-- Next.js App Router over Pages Router — server components, streaming, and built-in layouts make the real-time task updates much cleaner
-- Supabase over custom Postgres + auth — the auth, RLS, and real-time subscriptions save a ton of boilerplate
-- Feature-based folder structure over type-based (components/pages/hooks) — keeps related code together as the app grows
-- TypeScript strict mode enabled from day one — catches bugs early, worth the initial setup cost
+- Next.js App Router over Pages Router — server components, streaming, and built-in layouts make the real-time task updates much cleaner. **Revisit if**: project needs full static export (App Router doesn't support all static generation patterns).
+- Supabase over custom Postgres + auth — the auth, RLS, and real-time subscriptions save a ton of boilerplate. **Revisit if**: migrating to a different database provider or need auth provider flexibility.
+- Feature-based folder structure over type-based (components/pages/hooks) — keeps related code together as the app grows. **Revisit if**: team grows beyond 5 devs and needs stricter layer separation.
 
 **Lessons Learned:**
-- The `createServerClient` from `@supabase/ssr` requires a cookie adapter in Next.js App Router. You need to pass `cookies()` from `next/headers` — this isn't obvious from the main Supabase docs, had to find it in the Next.js-specific guide.
-- When using App Router with Supabase, you need middleware to refresh the auth session on every request. Without it, the session expires silently and users get logged out randomly.
+- The `createServerClient` from `@supabase/ssr` requires a cookie adapter in Next.js App Router. You need to pass `cookies()` from `next/headers` — this isn't obvious from the main Supabase docs. **Why this matters**: without it, server components silently fail auth — no error, just unauthenticated requests. **Watch for**: any new server component that accesses Supabase data.
+- When using App Router with Supabase, you need middleware to refresh the auth session on every request. **Why this matters**: without refresh, sessions expire silently after ~1 hour in production. **Watch for**: "users logged out randomly in prod but not in dev."
+
+**Memory:**
+- [pattern] Feature-based folder structure scales better than type-based. **Matters because**: when creating new features, create a folder under `components/features/` rather than scattering files.
+- [fact] Supabase free plan has 200 concurrent Realtime connections. **Matters because**: need connection pooling or Pro plan before launch with 100+ users.
 
 **Action Items:**
 - [ ] Set up Row Level Security policies for the tasks table

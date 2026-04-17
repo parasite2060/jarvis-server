@@ -552,9 +552,9 @@ Each daily log captures rich, technical detail — not summaries. The record age
 
 - Session blocks use `<!-- session_id: {id} -->` HTML comments for continuation tracking
 - **Key Exchanges** capture back-and-forth with specific technical details, code snippets, and architectural discussions — not vague summaries
-- **Decisions Made** include rationale and comparison with alternatives ("X over Y because Z")
-- **Lessons Learned** are specific gotchas with exact code patterns — the kind of thing you'd forget
-- **Memory** captures general observations, patterns, preferences, and facts from the session — the kind of thing worth remembering but not a decision, lesson, or key exchange
+- **Decisions Made** include rationale ("X over Y because Z") AND a **"Revisit if"** condition — when should this decision be re-evaluated?
+- **Lessons Learned** include the specific gotcha AND **"Why this matters"** (future impact) AND **"Watch for"** (the symptom/trigger to recall this lesson)
+- **Memory** captures observations with **"Matters because"** reasoning — why this fact helps future decisions, not just what it is
 - Code references use backticks: `createServerClient`, `app/auth/callback/route.ts`
 - Include code blocks for folder structures, config snippets, or command examples when they add clarity
 - If a section has no content, omit it entirely

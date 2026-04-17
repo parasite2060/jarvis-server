@@ -54,20 +54,29 @@ Use these dedicated tools to extract structured session insights:
 Store the session context — a brief description of what the session was about. Call this once after reading enough of the transcript to understand the session scope. Keep it to 1-3 sentences covering main topics and key points.
 
 ### `store_decision(decision, reasoning)`
-Store a decision made during the session. Call for each significant decision. Always include the reasoning — "Chose X" is useless without "because Y". Examples:
-- decision: "Use FastAPI for the server", reasoning: "async-first design and built-in Pydantic validation"
-- decision: "Switch from mocks to real DB in tests", reasoning: "mock/prod divergence caused a broken migration to pass tests"
+Store a decision made during the session. Call for each significant decision. Always include the reasoning AND a "Revisit if" condition — when should this decision be re-evaluated?
+
+**Bad**: decision: "Use Supabase Auth", reasoning: "it's simpler"
+**Good**: decision: "Use Supabase Auth over NextAuth", reasoning: "JWTs include Supabase-compatible claims for RLS. No custom JWT callback needed. Revisit if: migrating away from Supabase for the database layer."
+
+More examples:
+- decision: "Use FastAPI for the server", reasoning: "async-first design and built-in Pydantic validation. Revisit if: need GraphQL — FastAPI's GraphQL support is less mature than dedicated frameworks."
+- decision: "Switch from mocks to real DB in tests", reasoning: "mock/prod divergence caused a broken migration to pass tests. Revisit if: test suite becomes too slow — may need to mock selectively for unit tests."
 
 ### `store_lesson(lesson, outcome?, failure_reason?)`
-Store a lesson learned — what went well, what could improve, or surprising findings. If the lesson is about something that FAILED or DIDN'T WORK, use:
+Store a lesson learned — what went well, what could improve, or surprising findings. Include **"Why this matters"** (future impact) and **"Watch for"** (the symptom/trigger to recall this lesson).
+
+If the lesson is about something that FAILED or DIDN'T WORK, use:
 - `outcome='failed'` and `failure_reason='why it failed'`
 This prevents the AI from suggesting the same approach again (anti-repetition memory).
 For successful or mixed-outcome lessons, `outcome` is optional (values: `success`, `failed`, `mixed`).
 
-Examples:
-- "Pydantic v2 properties can't be monkeypatched — need to patch the underlying field instead"
-- store_lesson(lesson="Tried using SQLite for concurrent writes", outcome="failed", failure_reason="SQLite locks entire DB on write, causing timeouts under load")
-- "Fire-and-forget worker spawning needs PID tracking to prevent duplicate processes"
+**Bad**: "Had issues with middleware auth"
+**Good**: "Never import shared Supabase client in middleware — create fresh per request. Why this matters: causes silent session expiration after ~1 hour in production. Watch for: users logged out randomly in prod but not in dev."
+
+More examples:
+- "Pydantic v2 properties can't be monkeypatched — need to patch the underlying field instead. Why this matters: test mocking strategy must use type() mock objects instead of monkeypatch. Watch for: any test that patches a Pydantic model @property."
+- store_lesson(lesson="Tried using SQLite for concurrent writes. Why this matters: any background worker writing to same DB will timeout. Watch for: task queue or cron jobs that write data.", outcome="failed", failure_reason="SQLite locks entire DB on write, causing timeouts under load")
 
 ### `store_action_item(action)`
 Store a follow-up task or next step identified during the session. Examples:
@@ -96,11 +105,15 @@ Examples:
 ### `store_session_memory(category, content, vault_target, source_date, reasoning?)`
 Store a session memory — general observations, preferences, facts, or corrections that don't fit the above categories. Use the dedicated tools above for decisions, lessons, and action items.
 
-Use `store_session_memory` for general observations that don't fit the other categories:
-- User preferences ("prefers TypeScript strict mode from day one")
-- Factual observations ("shadcn/ui components are copied, not installed as dependency")
-- Tool behaviors ("Supabase free plan has 200 concurrent Realtime connections")
-- Workflow patterns ("always run migrations before starting dev server")
+Use `store_session_memory` for general observations that don't fit the other categories. Always include **"Matters because"** — why this fact helps future decisions:
+
+**Bad**: content: "Supabase free plan has 200 connections"
+**Good**: content: "Supabase free plan has 200 concurrent Realtime connections. Matters because: need connection pooling or Pro plan upgrade before launch if expecting 100+ concurrent users."
+
+More examples:
+- content: "shadcn/ui components are copied into project, not installed as dependency. Matters because: you get full customization but are responsible for security patches — check advisories on radix-ui." (category: "facts")
+- content: "Always run migrations before starting dev server. Matters because: stale schema causes cryptic ORM errors that look like code bugs." (category: "patterns")
+- content: "User prefers TypeScript strict mode from day one. Matters because: enables better type inference and catches null issues early — worth the initial setup cost." (category: "preferences")
 
 If unsure whether something is a lesson or a memory: lessons describe what HAPPENED (incident + fix); memories describe what IS (facts, preferences, observations).
 
