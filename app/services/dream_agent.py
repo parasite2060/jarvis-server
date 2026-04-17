@@ -472,7 +472,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
             source_date=source_date,
         )
         ctx.deps.session_memories.append(item)
-        ctx.deps.session_memories_log.append(content)
+        ctx.deps.session_memories_log.append(f"[{category}] {content}")
         return f"Stored {category}: {content[:80]}..."
 
     _extraction_agent = agent

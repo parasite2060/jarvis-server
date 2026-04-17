@@ -1847,13 +1847,16 @@ class TestStory930SimplifyExtraction:
         sl = SessionLogEntry(
             context="Test context",
             lessons_learned=["Lesson 1"],
-            session_memories=["User prefers dark mode", "Project uses Python 3.12"],
+            session_memories=[
+                "[preference] User prefers dark mode",
+                "[fact] Project uses Python 3.12",
+            ],
             action_items=["Write tests"],
         )
         result = _format_session_log(sl, "Test session")
         assert "Memory:" in result
-        assert "User prefers dark mode" in result
-        assert "Project uses Python 3.12" in result
+        assert "[preference] User prefers dark mode" in result
+        assert "[fact] Project uses Python 3.12" in result
         lines = result.split("\n")
         memory_idx = next(
             i for i, line in enumerate(lines) if "Memory:" in line
@@ -1865,6 +1868,13 @@ class TestStory930SimplifyExtraction:
             i for i, line in enumerate(lines) if "Lessons Learned:" in line
         )
         assert lesson_idx < memory_idx < action_idx
+
+    def test_session_memory_log_includes_category_prefix(self) -> None:
+        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
+        deps.session_memories_log.append("[pattern] Always run migrations first")
+        deps.session_memories_log.append("[preference] Use strict mode")
+        assert deps.session_memories_log[0] == "[pattern] Always run migrations first"
+        assert deps.session_memories_log[1] == "[preference] Use strict mode"
 
     def test_format_session_log_no_memory_when_empty(self) -> None:
         sl = SessionLogEntry(
