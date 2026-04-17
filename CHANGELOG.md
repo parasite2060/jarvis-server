@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.0](https://github.com/parasite2060/jarvis-server/compare/v0.5.2...v0.6.0) (2026-04-17)
+
+
+### Features
+
+* auto-fix health check issues in deep dream pipeline ([080100c](https://github.com/parasite2060/jarvis-server/commit/080100c96292fd13125ce0d7316b557052ccb3d4))
+* **epic-9:** implement stories 9.10 + 9.11 — bidirectional links & typed edges ([e7bbfa5](https://github.com/parasite2060/jarvis-server/commit/e7bbfa59f45ee33ac03ceb707981b5294866c359))
+* **epic-9:** implement stories 9.12 + 9.13 — anti-repetition & vault log ([c1e5de8](https://github.com/parasite2060/jarvis-server/commit/c1e5de8e236ab32bc7c1dee8f43b70c61fe24823))
+* **epic-9:** implement stories 9.15-9.24 — prompt injection, telemetry, vault-aware agents ([f8c1d00](https://github.com/parasite2060/jarvis-server/commit/f8c1d0037a19015a92be746eac3ac6e1656a039a))
+* **epic-9:** implement stories 9.25-9.29 ([3cac8c6](https://github.com/parasite2060/jarvis-server/commit/3cac8c6db3ca27def51ec6f846d9fa75b1d36336))
+* **epic-9:** implement stories 9.30-9.32 ([ff22517](https://github.com/parasite2060/jarvis-server/commit/ff2251764a00b58994e4d24f06e7a958f83fe1dc))
+* **epic-9:** implement stories 9.8 + 9.9 — weekly review & health injection ([7d0b60e](https://github.com/parasite2060/jarvis-server/commit/7d0b60e48c2c4ff4d4f08a958752cf507b7f172e))
+* **epic-9:** implement story 9.1 — enhanced vault structure ([9585594](https://github.com/parasite2060/jarvis-server/commit/958559484c4037606ae4fc6e24c79e4bbd3a0f0f))
+* **epic-9:** implement story 9.14 — foundation/terminal nodes ([f46e954](https://github.com/parasite2060/jarvis-server/commit/f46e954a0df0bc6a2dd992dc7b84a74139e549eb))
+* **epic-9:** implement story 9.2 — enhanced document content structure ([eec2d26](https://github.com/parasite2060/jarvis-server/commit/eec2d267940e86b865dc15ad9ec016842189fc36))
+* **epic-9:** implement story 9.3 — extraction agent structured store tools ([8ba5ecf](https://github.com/parasite2060/jarvis-server/commit/8ba5ecf63560c01de00897fe66373cdc23f4d2dc))
+* **epic-9:** implement story 9.4 — light dream redesign (record only) ([514f59e](https://github.com/parasite2060/jarvis-server/commit/514f59ee5a3b1002b1e93bde2a52d57dfa1c084c))
+* **epic-9:** implement story 9.5 — deep dream phase 1 (light sleep) ([d378722](https://github.com/parasite2060/jarvis-server/commit/d3787221fa89bc2da16c0bbb2ff5147b1c4afa41))
+* **epic-9:** implement story 9.6 — deep dream phase 2 (REM sleep) ([b774e76](https://github.com/parasite2060/jarvis-server/commit/b774e7692699846630dbaa0e2d246c39f4fedb14))
+* **epic-9:** implement story 9.7 — deep dream phase 3 (deep sleep) ([8d662df](https://github.com/parasite2060/jarvis-server/commit/8d662dfa23237c8f57f809c08d1cfd32ca6bc576))
+* **epic-9:** story 9.34 — add reasoning to extracted memories ([5ac841f](https://github.com/parasite2060/jarvis-server/commit/5ac841f278c38ebbac5166de7965f5b6c7f401d8))
+
+
+### Bug Fixes
+
+* **epic-9:** align extraction + consolidation prompts with vault design ([9a6cef0](https://github.com/parasite2060/jarvis-server/commit/9a6cef0e0629ac60ce5e580319bee37ffce9a5a9))
+* **epic-9:** story 9.33 + prompt alignment fixes ([c1d19ac](https://github.com/parasite2060/jarvis-server/commit/c1d19acaeab019473d708c5a09e6558194fb236f))
+* **light-dream:** short-session count + unlimited memory content ([57e04ad](https://github.com/parasite2060/jarvis-server/commit/57e04add77da016a84e2fed23612e5436e0e5602))
+* make deep dream gather resilient to MemU failures ([b5f5dea](https://github.com/parasite2060/jarvis-server/commit/b5f5deae0414c8724cfc8510860a11a9b4bff032))
+* use same agent session for health fix (context + token caching) ([bec7163](https://github.com/parasite2060/jarvis-server/commit/bec716378d2fb34768247749f1e98b4094f6d152))
+
 ## [0.5.2](https://github.com/parasite2060/jarvis-server/compare/v0.5.1...v0.5.2) (2026-04-06)
 
 
