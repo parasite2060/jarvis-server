@@ -490,7 +490,10 @@ def _count_user_messages(workspace: Path) -> int:
     if not transcript.is_file():
         return 0
     text = transcript.read_text(encoding="utf-8")
-    return sum(1 for line in text.splitlines() if line.lstrip().startswith("User:"))
+    return sum(
+        1 for line in text.splitlines()
+        if "User:" in line and (line.lstrip().startswith("User:") or line.lstrip().startswith("["))
+    )
 
 
 async def run_dream_extraction(

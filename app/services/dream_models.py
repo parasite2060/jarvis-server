@@ -40,7 +40,7 @@ VaultTarget = Literal[
 
 
 class MemoryItem(BaseModel):
-    content: str = Field(max_length=200)
+    content: str
     reasoning: str | None = None
     vault_target: VaultTarget
     source_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
