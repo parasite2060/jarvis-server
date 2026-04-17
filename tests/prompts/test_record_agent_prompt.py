@@ -93,3 +93,46 @@ class TestRealisticExample:
     def test_example_has_file_path_references(self) -> None:
         prompt = _load_prompt()
         assert "`app/auth/callback/route.ts`" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Story 9.34: Reasoning in Daily Log Entries
+# ---------------------------------------------------------------------------
+
+
+class TestReasoningGuidance:
+    def test_reasoning_section_exists(self) -> None:
+        prompt = _load_prompt()
+        assert "## Reasoning in Daily Log Entries" in prompt
+
+    def test_decisions_revisit_if(self) -> None:
+        prompt = _load_prompt()
+        assert "Revisit if" in prompt
+
+    def test_lessons_why_this_matters(self) -> None:
+        prompt = _load_prompt()
+        assert "Why this matters" in prompt
+
+    def test_lessons_watch_for(self) -> None:
+        prompt = _load_prompt()
+        assert "Watch for" in prompt
+
+    def test_memory_matters_because(self) -> None:
+        prompt = _load_prompt()
+        assert "Matters because" in prompt
+
+    def test_example_has_revisit_if(self) -> None:
+        prompt = _load_prompt()
+        assert "**Revisit if**:" in prompt
+
+    def test_example_has_why_this_matters(self) -> None:
+        prompt = _load_prompt()
+        assert "**Why this matters**:" in prompt
+
+    def test_example_has_watch_for(self) -> None:
+        prompt = _load_prompt()
+        assert "**Watch for**:" in prompt
+
+    def test_example_has_matters_because(self) -> None:
+        prompt = _load_prompt()
+        assert "**Matters because**:" in prompt
