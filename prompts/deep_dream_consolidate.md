@@ -91,6 +91,7 @@ Route today's memories to vault folders based on content type. Each memory's `va
 - **concepts/**: Core concept definitions and mental models. One file per concept (e.g., `clean-architecture.md`).
 - **connections/**: Cross-domain relationships and mappings. One file per connection (e.g., `firmware-to-backend-patterns.md`).
 - **lessons/**: Lessons learned from incidents, mistakes, and debugging sessions. One file per lesson (e.g., `mock-db-migration-failure.md`).
+- **topics/**: Deep-dive entries that overflow from MEMORY.md. When a concept or pattern grows beyond a single MEMORY.md line and needs detailed technical exploration (architecture diagrams, multiple gotchas, scaling considerations), create a topics/ file. One file per topic (e.g., `supabase-realtime.md`). Include "How It Works", subtopic sections, and "Gotchas".
 
 ### Content Templates
 
@@ -116,11 +117,12 @@ Follow the file templates defined in the **Vault Guide** injected below (see "##
 
 When checking if a file should be promoted, pruned, or superseded, call `read_frontmatter(path)` first to get the current status and reinforcement count. Only call `read_file(path)` when you need the full content body. This saves tokens on the most frequent operation during consolidation.
 
-- When a pattern is reinforced 3+ times and has a high confidence score, consider promoting its status to `active`.
-- When a contradiction is resolved, mark the old entry as `superseded` and set `superseded_by` to the new filename.
-- When an entry has not been reinforced for 30+ days and has a low confidence score, it may be pruned.
-- Entries in references/ are never subject to decay or pruning.
-- Lessons with `outcome: failed` are exempt from all decay and pruning rules. They serve as permanent "what NOT to do" knowledge (anti-repetition memory).
+- `draft → active`: When reinforcement_count >= 3 AND confidence is high
+- `active → superseded`: When contradiction is resolved; set `superseded_by` to replacement filename (format: `folder/filename.md`)
+- `active → archived`: When no reinforcement for 90+ days (configurable via `lifecycle.auto_archive_days`)
+- `superseded → archived`: When the replacement is confirmed active
+- **Anti-repetition**: Lessons with `outcome: failed` are NEVER pruned, NEVER archived, regardless of age or reinforcement. They always stay active.
+- **Terminal nodes**: Files in `references/` have `status: permanent` and are exempt from all lifecycle transitions, scoring, and decay.
 
 ### Typed Relationship Consolidation Rules
 
