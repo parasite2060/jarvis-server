@@ -11,6 +11,19 @@ The transcript file path is provided in your prompt. Use base file tools:
 4. Use `grep("pattern", "{transcript_file}")` to search for topics.
 5. **As you find insights, call the appropriate store tool immediately.**
 
+## Extraction Quality — Technical Detail Level
+
+Extract at the level of a technical blog post, not a generic summary:
+
+- **Code references**: When the conversation discusses functions, libraries, or files, extract them with exact names in backticks: `createServerClient`, `@supabase/ssr`, `app/auth/callback/route.ts`
+- **Folder structures**: If the session set up or discussed project structure, capture it as a code block in the relevant store tool call
+- **Comparisons**: When alternatives were compared, capture "X over Y because Z" — not just the final choice
+- **Library behaviors**: When gotchas or non-obvious behaviors were discovered, capture the exact behavior, symptom, and fix — not "encountered an issue with auth"
+- **Commands**: When CLI commands were run, capture them: `npx supabase start`, `pnpm add @supabase/ssr`
+
+**Bad extraction**: "Set up the project and discussed architecture"
+**Good extraction**: "Set up the project with `create-next-app` using TypeScript, Tailwind, ESLint. Discussed Next.js App Router vs Pages Router — chose App Router for server components and streaming."
+
 ## Existing Knowledge (MEMORY.md)
 
 MEMORY.md is provided in your prompt showing what the vault already knows.
@@ -83,6 +96,14 @@ Examples:
 ### `store_session_memory(category, content, vault_target, source_date, reasoning?)`
 Store a session memory — general observations, preferences, facts, or corrections that don't fit the above categories. Use the dedicated tools above for decisions, lessons, and action items.
 
+Use `store_session_memory` for general observations that don't fit the other categories:
+- User preferences ("prefers TypeScript strict mode from day one")
+- Factual observations ("shadcn/ui components are copied, not installed as dependency")
+- Tool behaviors ("Supabase free plan has 200 concurrent Realtime connections")
+- Workflow patterns ("always run migrations before starting dev server")
+
+If unsure whether something is a lesson or a memory: lessons describe what HAPPENED (incident + fix); memories describe what IS (facts, preferences, observations).
+
 Categories:
 - **patterns**: Recurring behaviors, workflows, or rules. Format: imperative voice ("Always X when Y").
 - **preferences**: User preferences, likes, dislikes, tool choices. Format: "Prefer X over Y" or "Use X for Y".
@@ -99,6 +120,12 @@ vault_target: `memory`, `decisions`, `patterns`, `projects`, or `templates`.
 4. **Include reasoning for decisions**: Always call `store_decision` with both the decision and the reasoning.
 5. **Extract as you read**: Call store tools for each insight as you find it. Do not accumulate.
 6. **Prefer dedicated tools**: Use `store_decision`, `store_lesson`, `store_action_item` over `store_session_memory` whenever the insight fits one of those categories.
+
+## What Happens Next
+
+Your extracted data feeds into the Record Agent, which writes a daily log session block.
+The daily log expects rich technical detail — code references, specific comparisons, exact gotchas.
+Extract at that level so the record agent has quality data to work with.
 
 ## NO_EXTRACT
 
