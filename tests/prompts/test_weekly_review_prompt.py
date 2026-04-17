@@ -92,10 +92,7 @@ class TestLifecycleTransitionsSection:
 
     def test_status_change_guidance(self) -> None:
         prompt = _load_prompt()
-        has_guidance = (
-            "old_status" in prompt
-            or "changed lifecycle state" in prompt
-        )
+        has_guidance = "old_status" in prompt or "changed lifecycle state" in prompt
         assert has_guidance
 
 
@@ -183,3 +180,10 @@ class TestExampleOutput:
     def test_example_has_lifecycle_transitions(self) -> None:
         prompt = _load_prompt()
         assert "draft -> **active**" in prompt
+
+
+class TestSecretHandlingRule:
+    def test_contains_secret_handling_rule(self) -> None:
+        prompt = _load_prompt()
+        assert "## Secret-Handling Rule (MANDATORY)" in prompt
+        assert "Never copy, quote, summarise, paraphrase, or store" in prompt

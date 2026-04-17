@@ -42,6 +42,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: marks tests that require a real LLM (skip by default)",
+    "llm_dependent: marks tests that exercise real LLM behaviour; opt-in, non-deterministic, run manually with a majority-pass expectation",
 ]
 
 [tool.mypy]
