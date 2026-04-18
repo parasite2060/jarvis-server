@@ -306,16 +306,20 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     git_branch=git_branch,
                     git_pr_url=git_pr_url,
                 )
-                try:
-                    await invalidate_context_cache()
-                except Exception:
-                    log.warning("light_dream.cache_invalidation_failed", dream_id=dream_id)
             except Exception as exc:
                 log.warning("light_dream.git_ops_failed", dream_id=dream_id, error=str(exc))
             finally:
                 fallback = f"dream/light-{date.today().isoformat()}-{source_time}"
                 branch_to_clean = git_branch or fallback
                 await git_ops_service.cleanup_branch(branch_to_clean)
+
+            # Cache invalidation is decoupled from git outcome: vault writes have
+            # already happened, so cached context is stale whether or not the PR
+            # step succeeded.
+            try:
+                await invalidate_context_cache()
+            except Exception:
+                log.warning("light_dream.cache_invalidation_failed", dream_id=dream_id)
 
         # Step 9: Update dream row
         duration_ms = time.monotonic_ns() // 1_000_000 - start_ms

@@ -615,8 +615,68 @@ async def test_git_failure_doesnt_fail_dream() -> None:
     assert len(dream.session_log["memories"]) == 3
     assert dream.git_branch is None
     assert dream.git_pr_url is None
-    mock_invalidate.assert_not_called()
+    # Story 11.1: cache invalidation runs regardless of git outcome because
+    # the vault was written before the git step.
+    mock_invalidate.assert_called_once()
     mock_cleanup.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_light_dream_cache_invalidates_on_git_failure() -> None:
+    """Story 11.1 AC1: git failure does not skip cache invalidation."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr = AsyncMock(side_effect=RuntimeError("git failed"))
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_invalidate.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_light_dream_cache_not_invalidated_when_no_files_modified() -> None:
+    """Story 11.1 AC3: no-op dream (no_extract) skips cache invalidation."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
+    mock_create_pr = AsyncMock()
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    mock_invalidate.assert_not_called()
 
 
 @pytest.mark.asyncio
