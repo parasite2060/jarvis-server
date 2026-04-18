@@ -411,3 +411,30 @@ async def test_weekly_review_no_phase_row_when_no_daily_logs(_mock_telemetry: As
     phase_rows = _phase_rows_from_telemetry_mock(_mock_telemetry)
     assert len(phase_rows) == 0
     assert dream.status == "skipped"
+
+
+# ── Story 11.5: outcome enum tests ──
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_outcome_wrote_files() -> None:
+    """Happy path: review file written → outcome='wrote_files'."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.outcome == "wrote_files"
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_outcome_no_new_content() -> None:
+    """Skipped path (no daily logs) → outcome='no_new_content'."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, no_daily_logs=True)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "skipped"
+    assert dream.outcome == "no_new_content"

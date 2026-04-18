@@ -1114,3 +1114,39 @@ class TestFormatVaultIndexes:
 
         result = _format_vault_indexes({})
         assert result == ""
+
+
+# ── Story 11.5: outcome enum tests ──
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_outcome_wrote_files() -> None:
+    """Happy path: consolidation wrote files → outcome='wrote_files'."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.outcome == "wrote_files"
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_outcome_no_new_content() -> None:
+    """Skipped path (no inputs to consolidate) → outcome='no_new_content'."""
+    dream = _make_dream()
+    factory = FakeSessionFactory(dream)
+    mock_gather = AsyncMock(return_value=None)
+    mock_consolidation = AsyncMock()
+
+    with (
+        patch("app.tasks.deep_dream_task.async_session_factory", factory),
+        patch("app.tasks.deep_dream_task.gather_consolidation_inputs", mock_gather),
+        patch("app.tasks.deep_dream_task.run_deep_dream_consolidation", mock_consolidation),
+    ):
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+
+    assert dream.status == "skipped"
+    assert dream.outcome == "no_new_content"
