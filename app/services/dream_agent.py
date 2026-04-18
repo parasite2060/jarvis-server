@@ -1196,12 +1196,12 @@ def _get_weekly_review_agent() -> Agent[WeeklyReviewDeps, WeeklyReviewOutput]:
     return _weekly_review_agent
 
 
-WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=30)
+WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=80)
 
 
 async def run_weekly_review(
     deps: WeeklyReviewDeps,
-) -> tuple[WeeklyReviewOutput, RunUsage, int]:
+) -> tuple[WeeklyReviewOutput, RunUsage, int, list[Any]]:
     agent = _get_weekly_review_agent()
 
     sections = [
@@ -1218,7 +1218,8 @@ async def run_weekly_review(
         deps=deps,
         usage_limits=WEEKLY_REVIEW_USAGE_LIMITS,
     )
-    return result.output, result.usage(), _count_tool_calls(result.all_messages())
+    messages = result.all_messages()
+    return result.output, result.usage(), _count_tool_calls(messages), messages
 
 
 # Ensure temp dir parent exists
