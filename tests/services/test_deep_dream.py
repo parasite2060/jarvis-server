@@ -1187,3 +1187,85 @@ class TestAutoFixHealthIssues:
         report = HealthReport(total_issues=0)
         fixes = await auto_fix_health_issues(tmp_path, report)
         assert fixes["total_fixed"] == 0
+
+
+# ── validate_vault_post_fix tests ──
+
+
+@pytest.mark.asyncio
+async def test_validate_vault_post_fix_happy_path() -> None:
+    memory_md = "\n".join(f"- entry {i}" for i in range(50))
+    daily_md = "## Session 1\nNotes."
+
+    async def fake_read(path: str) -> str | None:
+        if path == "MEMORY.md":
+            return memory_md
+        if path == "dailys/2026-04-18.md":
+            return daily_md
+        return None
+
+    with patch("app.services.deep_dream.read_vault_file", side_effect=fake_read):
+        from app.services.deep_dream import validate_vault_post_fix
+
+        result = await validate_vault_post_fix(date(2026, 4, 18))
+
+    assert result["validation_failed"] is False
+    assert result["warnings"] == []
+
+
+@pytest.mark.asyncio
+async def test_validate_vault_post_fix_overflow() -> None:
+    memory_md = "\n".join(f"- entry {i}" for i in range(250))
+    daily_md = "## Session 1\nNotes."
+
+    async def fake_read(path: str) -> str | None:
+        if path == "MEMORY.md":
+            return memory_md
+        if path == "dailys/2026-04-18.md":
+            return daily_md
+        return None
+
+    with patch("app.services.deep_dream.read_vault_file", side_effect=fake_read):
+        from app.services.deep_dream import validate_vault_post_fix
+
+        result = await validate_vault_post_fix(date(2026, 4, 18))
+
+    assert result["validation_failed"] is True
+    assert any("250" in w for w in result["warnings"])
+    assert any("MEMORY.md" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_validate_vault_post_fix_missing_daily() -> None:
+    memory_md = "- entry 1\n- entry 2"
+
+    async def fake_read(path: str) -> str | None:
+        if path == "MEMORY.md":
+            return memory_md
+        return None
+
+    with patch("app.services.deep_dream.read_vault_file", side_effect=fake_read):
+        from app.services.deep_dream import validate_vault_post_fix
+
+        result = await validate_vault_post_fix(date(2026, 4, 18))
+
+    assert result["validation_failed"] is True
+    assert any("dailys/2026-04-18.md" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_validate_vault_post_fix_empty_memory() -> None:
+    async def fake_read(path: str) -> str | None:
+        if path == "MEMORY.md":
+            return "   \n  \n"
+        if path == "dailys/2026-04-18.md":
+            return "## Session 1"
+        return None
+
+    with patch("app.services.deep_dream.read_vault_file", side_effect=fake_read):
+        from app.services.deep_dream import validate_vault_post_fix
+
+        result = await validate_vault_post_fix(date(2026, 4, 18))
+
+    assert result["validation_failed"] is True
+    assert any("MEMORY.md" in w and "empty" in w for w in result["warnings"])
