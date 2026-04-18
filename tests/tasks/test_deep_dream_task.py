@@ -621,14 +621,19 @@ async def test_context_cache_invalidated_after_successful_pr() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_cache_not_invalidated_on_git_failure() -> None:
+async def test_deep_dream_cache_invalidates_on_git_failure() -> None:
+    """Story 11.1 AC5: git failure does not skip cache invalidation.
+
+    Previously this test asserted the opposite (cache NOT called on git
+    failure), encoding the bug fixed by Story 11.1.
+    """
     dream = _make_dream()
     patches = _pipeline_patches(dream, git_error=RuntimeError("git failed"))
 
     await _run_with_patches(patches, trigger="auto")
 
     cache_mock = patches["app.tasks.deep_dream_task.invalidate_context_cache"]
-    cache_mock.assert_not_called()
+    cache_mock.assert_called_once()
 
 
 @pytest.mark.asyncio

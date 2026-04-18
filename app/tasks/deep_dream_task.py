@@ -677,16 +677,19 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             stats,
         )
         branch_name = git_result.get("git_branch", "")
-        if git_result.get("git_pr_url"):
-            try:
-                await invalidate_context_cache()
-            except Exception as exc:
-                log.warning("deep_dream.cache_invalidate.failed", error=str(exc))
     except Exception as exc:
         log.error("deep_dream.git.failed", dream_id=dream_id, error=str(exc))
     finally:
         if branch_name:
             await git_ops_service.cleanup_branch(branch_name)
+
+    # Cache invalidation is decoupled from git outcome: Phase 3 already wrote
+    # consolidated files to the vault, so cached context is stale regardless
+    # of whether the PR step succeeded.
+    try:
+        await invalidate_context_cache()
+    except Exception as exc:
+        log.warning("deep_dream.cache_invalidate.failed", error=str(exc))
 
     # Step 8: MemU alignment
     memu_sync: dict[str, int] = {"items_synced": 0, "errors": 0}

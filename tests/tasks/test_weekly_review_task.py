@@ -238,6 +238,18 @@ async def test_context_cache_invalidated_after_pr() -> None:
 
 
 @pytest.mark.asyncio
+async def test_weekly_review_cache_invalidates_on_git_failure() -> None:
+    """Story 11.1 AC7a: git failure does not skip cache invalidation."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, git_error=RuntimeError("git failed"))
+
+    await _run_with_patches(patches, trigger="auto")
+
+    cache_mock = patches["app.tasks.weekly_review_task.invalidate_context_cache"]
+    cache_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_cleanup_branch_called() -> None:
     dream = _make_dream()
     patches = _pipeline_patches(dream)
