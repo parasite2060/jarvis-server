@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/parasite2060/jarvis-server/compare/v0.7.0...v0.8.0) (2026-04-18)
+
+
+### Features
+
+* **epic-11:** story 11.8 periodic vault sync ([574084e](https://github.com/parasite2060/jarvis-server/commit/574084e373766630588ba46db965d5cc5c2e2276))
+
 ## [0.7.0](https://github.com/parasite2060/jarvis-server/compare/v0.6.0...v0.7.0) (2026-04-18)
 
 
