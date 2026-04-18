@@ -26,6 +26,7 @@ def _mock_telemetry() -> Any:
     with patch(_TELEMETRY_PATCH, new_callable=AsyncMock, return_value=1):
         yield
 
+
 SAMPLE_INPUTS: dict[str, Any] = {
     "memu_memories": [
         {"content": "Use FastAPI", "type": "decision"},
@@ -254,9 +255,7 @@ def _pipeline_patches(
         "app.tasks.deep_dream_task.run_deep_dream_consolidation": AsyncMock(
             return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
         ),
-        "app.tasks.deep_dream_task.consolidation_to_dict": MagicMock(
-            return_value=cons_dict
-        ),
+        "app.tasks.deep_dream_task.consolidation_to_dict": MagicMock(return_value=cons_dict),
         "app.tasks.deep_dream_task.validate_consolidated_output": AsyncMock(
             return_value=validated or SAMPLE_VALIDATED
         ),
@@ -310,7 +309,9 @@ async def test_full_pipeline_success() -> None:
     await _run_with_patches(patches, trigger="auto")
 
     assert dream.status == "completed"
-    assert dream.memories_extracted == 10
+    # `memories_extracted` column dropped in Story 9.35; deep dream no longer
+    # sets a counter. The pipeline-internal total is still logged (see
+    # `deep_dream.completed memories_processed=…`) but not stored on the row.
     assert dream.duration_ms is not None
     assert dream.completed_at is not None
     assert dream.files_modified is not None
@@ -370,9 +371,7 @@ async def test_validation_failure_marks_failed() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(dream)
     mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
-    mock_consolidation = AsyncMock(
-        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
-    )
+    mock_consolidation = AsyncMock(return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, []))
     mock_to_dict = MagicMock(return_value={"memory_md": "", "daily_summary": ""})
     mock_validate = AsyncMock(side_effect=ValueError("memory_md is empty"))
     mock_write = AsyncMock()
@@ -398,9 +397,7 @@ async def test_file_write_failure_marks_failed() -> None:
     dream = _make_dream()
     factory = FakeSessionFactory(dream)
     mock_gather = AsyncMock(return_value=SAMPLE_INPUTS)
-    mock_consolidation = AsyncMock(
-        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, [])
-    )
+    mock_consolidation = AsyncMock(return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, []))
     mock_to_dict = MagicMock(return_value=SAMPLE_CONSOLIDATION_DICT)
     mock_validate = AsyncMock(return_value=SAMPLE_VALIDATED)
     mock_write = AsyncMock(side_effect=RuntimeError("disk full"))
@@ -860,9 +857,7 @@ async def test_health_checks_run_after_consolidation() -> None:
 @pytest.mark.asyncio
 async def test_health_check_failure_does_not_fail_pipeline() -> None:
     dream = _make_dream()
-    patches = _pipeline_patches(
-        dream, health_check_error=RuntimeError("scan failed")
-    )
+    patches = _pipeline_patches(dream, health_check_error=RuntimeError("scan failed"))
 
     await _run_with_patches(patches, trigger="auto")
 
@@ -957,8 +952,7 @@ class TestFormatPhase1ForPhase2:
         result = _format_phase1_for_phase2(candidates, scores)
         assert "[1] (decision) Use weighted scoring [score=0.85, reinforced=2]" in result
         assert (
-            "[2] (pattern) Always use async/await "
-            "[score=0.72, reinforced=5] [CONTRADICTION]"
+            "[2] (pattern) Always use async/await [score=0.72, reinforced=5] [CONTRADICTION]"
         ) in result
 
     def test_empty_candidates(self) -> None:

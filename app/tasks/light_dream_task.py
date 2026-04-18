@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.core.exceptions import DreamError
 from app.core.logging import get_logger
 from app.models.db import async_session_factory
-from app.models.tables import Dream, ExtractedMemory, Transcript
+from app.models.tables import Dream, Transcript
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import DreamDeps, RecordDeps, run_dream_extraction, run_record
 from app.services.dream_models import SessionLogEntry
@@ -21,8 +21,6 @@ from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log
 
 log = get_logger("jarvis.tasks.light_dream")
-
-MEMORY_CATEGORIES = ("decisions", "preferences", "patterns", "corrections", "facts")
 
 
 async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
@@ -94,6 +92,11 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
     usage_output_tokens: int | None = None
     usage_total_tokens: int | None = None
     usage_tool_calls: int | None = None
+    # Default extraction output — overwritten on success; left untouched (no_extract=True
+    # effective) when extraction raises or UsageLimitExceeded without a partial result.
+    from app.services.dream_models import ExtractionSummary
+
+    summary: ExtractionSummary = ExtractionSummary(no_extract=True)
 
     try:
         (workspace / "transcript.txt").write_text(parsed_text, encoding="utf-8")
@@ -103,7 +106,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
         deps = DreamDeps(
             transcript_id=transcript_id,
             workspace=workspace,
-            session_memories=[],
+            memories=[],
             session_id=session_id_str,
             project=getattr(transcript, "project", None),
             token_count=getattr(transcript, "token_count", None),
@@ -129,7 +132,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 "light_dream.extraction.completed",
                 transcript_id=transcript_id,
                 dream_id=dream_id,
-                memories_count=len(deps.session_memories),
+                memories_count=len(deps.memories),
             )
             log.info(
                 "light_dream.usage",
@@ -188,53 +191,45 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 error_message=error_message,
             )
 
-        # Step 6: Store extracted memories to DB
-        memories = deps.session_memories
-        memories_count = len(memories)
-        if memories_count > 0:
+        # Step 6: Persist session log to dreams.session_log JSONB (single write).
+        # This is the sole DB storage site for light-dream output. Memories live
+        # inside session_log as session_log.memories (a list of MemoryItem objects) —
+        # there is no separate per-memory table.
+        session_log: SessionLogEntry = getattr(summary, "session_log", SessionLogEntry())
+        memories_count = len(session_log.memories)
+        # Derive source_date for git PR from the most recent MemoryItem; fall back to today.
+        for item in session_log.memories:
+            try:
+                source_date_for_git = date.fromisoformat(item.source_date)
+            except (ValueError, TypeError):
+                continue
+
+        if not extraction_failed and not getattr(summary, "no_extract", False):
             async with async_session_factory() as session:
-                for item in memories:
-                    cat = item.vault_target
-                    category = cat if cat in MEMORY_CATEGORIES else "facts"
-                    try:
-                        source_date_val = date.fromisoformat(item.source_date)
-                    except (ValueError, TypeError):
-                        source_date_val = date.today()
-                    source_date_for_git = source_date_val
-
-                    memory = ExtractedMemory(
-                        dream_id=dream_id,
-                        type=category,
-                        content=item.content,
-                        reasoning=item.reasoning,
-                        vault_target=item.vault_target,
-                        source_date=source_date_val,
-                    )
-                    session.add(memory)
+                result_d = await session.execute(select(Dream).where(Dream.id == dream_id))
+                d_row = result_d.scalar_one()
+                d_row.session_log = session_log.model_dump()
                 await session.commit()
-
             log.info(
-                "light_dream.memories_stored",
+                "light_dream.session_log_persisted",
                 transcript_id=transcript_id,
                 dream_id=dream_id,
                 memories_count=memories_count,
             )
 
-        # Step 7: Run record agent (writes daily log, tracks reinforcement)
-        no_extract = extraction_failed or (
-            hasattr(summary, "no_extract") and summary.no_extract
-        )
+        # Step 7: Run record agent (writes daily log, tracks reinforcement).
+        # Record reads memories via deps.session_log.memories — no peer field.
+        no_extract = extraction_failed or (hasattr(summary, "no_extract") and summary.no_extract)
         if not no_extract and memories_count > 0:
             try:
                 from app.config import settings as app_settings
 
                 record_deps = RecordDeps(
                     workspace=Path(app_settings.jarvis_memory_path),
-                    session_memories=memories,
                     source_date=source_date_for_git,
                     session_id=deps.session_id,
                     summary=summary.summary if hasattr(summary, "summary") else "",
-                    session_log=getattr(summary, "session_log", SessionLogEntry()),
+                    session_log=session_log,
                     is_continuation=getattr(transcript, "is_continuation", False),
                 )
                 record_run_prompt = (
@@ -244,10 +239,8 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 )
                 record_start = time.monotonic_ns() // 1_000_000
                 record_started_at = datetime.now(UTC)
-                record_result, record_usage, record_tool_calls, record_messages = (
-                    await run_record(
-                        record_deps, allowed_write_patterns=["dailys/*.md"]
-                    )
+                record_result, record_usage, record_tool_calls, record_messages = await run_record(
+                    record_deps, allowed_write_patterns=["dailys/*.md"]
                 )
                 record_duration_ms = time.monotonic_ns() // 1_000_000 - record_start
                 files_modified = [{"path": f.path, "action": f.action} for f in record_result.files]
@@ -274,7 +267,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     started_at=record_started_at,
                 )
                 try:
-                    summary_title = (record_deps.summary[:60] if record_deps.summary else "session")
+                    summary_title = record_deps.summary[:60] if record_deps.summary else "session"
                     await append_vault_log(
                         "ingest",
                         f'Session "{summary_title}" -> dailys/{source_date_for_git.isoformat()}.md',
@@ -337,7 +330,6 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 d.error_message = error_message
             else:
                 d.status = "completed"
-            d.memories_extracted = memories_count
             d.duration_ms = duration_ms
             d.completed_at = datetime.now(UTC)
             if files_modified:

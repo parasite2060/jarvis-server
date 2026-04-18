@@ -71,7 +71,7 @@ app/
 │   └── logging.py              # Structlog configuration
 ├── models/
 │   ├── db.py                   # Async session factory
-│   ├── tables.py               # Transcript, Dream, ExtractedMemory ORM models
+│   ├── tables.py               # Transcript, Dream, DreamPhase ORM models (session log lives in Dream.session_log JSONB)
 │   └── conversation_schemas.py # Pydantic request/response models
 ├── services/
 │   ├── context_cache.py        # In-memory cache with 30-min TTL
@@ -180,8 +180,8 @@ Environment variables (via `.env`):
 | Table | Description |
 |-------|-------------|
 | `transcripts` | Raw and parsed conversation transcripts |
-| `dreams` | Dream pipeline execution records (light/deep) |
-| `extracted_memories` | Individual memories extracted by dreams |
+| `dreams` | Dream pipeline execution records (light/deep). `session_log` JSONB holds full SessionLogEntry including memories for light dreams. |
+| `dream_phases` | Per-phase telemetry (extraction, record, phase1/2/3, health_fix, weekly_review) |
 | `file_manifest` | Vault file hashes for sync |
 | `context_cache` | Persistent context cache metadata |
 

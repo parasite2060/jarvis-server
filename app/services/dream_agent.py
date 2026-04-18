@@ -159,9 +159,7 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
     Paths resolve relative to settings.jarvis_memory_path (vault root)."""
 
     @agent.tool
-    async def read_file(
-        ctx: RunContext[Any], path: str, offset: int = 0, limit: int = 0
-    ) -> str:
+    async def read_file(ctx: RunContext[Any], path: str, offset: int = 0, limit: int = 0) -> str:
         """Read a vault file. Full content if limit=0, or line range with offset+limit."""
         resolved = _resolve_vault_path(path)
         if resolved is None or not resolved.is_file():
@@ -176,9 +174,7 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
         return text
 
     @agent.tool
-    async def grep(
-        ctx: RunContext[Any], pattern: str, path: str = "."
-    ) -> str:
+    async def grep(ctx: RunContext[Any], pattern: str, path: str = ".") -> str:
         """Search vault files for a regex pattern. Recursive through subdirectories."""
         root = _vault_root()
         resolved = _resolve_vault_path(path)
@@ -250,9 +246,7 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
         return text[3:end].strip()
 
     @agent.tool
-    async def memu_search(
-        ctx: RunContext[Any], query: str, limit: int = 5
-    ) -> str:
+    async def memu_search(ctx: RunContext[Any], query: str, limit: int = 5) -> str:
         """Semantic search across vault knowledge via MemU.
         Returns the most similar entries to the query."""
         from app.services.memu_client import memu_retrieve
@@ -263,8 +257,7 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
             if not items:
                 return "No similar entries found."
             lines = [
-                f"[{i}] {item.get('content', str(item))}"
-                for i, item in enumerate(items[:limit], 1)
+                f"[{i}] {item.get('content', str(item))}" for i, item in enumerate(items[:limit], 1)
             ]
             return "\n".join(lines)
         except Exception as exc:
@@ -298,15 +291,22 @@ def _register_base_tools(agent: Agent[Any, Any]) -> None:
 
 @dataclass
 class DreamDeps:
+    """Extraction-agent scratch state.
+
+    `memories` accumulates MemoryItem objects from the store_* tools during the
+    agent run. At end-of-run it is assigned to ExtractionSummary.session_log.memories
+    — memories are a property of SessionLogEntry, not a standalone entity.
+    """
+
     transcript_id: int
     workspace: Path
-    session_memories: list[MemoryItem] = field(default_factory=list)
+    memories: list[MemoryItem] = field(default_factory=list)
     session_id: str = ""
     project: str | None = None
     token_count: int | None = None
     created_at: datetime | None = None
     transcript_file: str = ""
-    # Session log sections (populated by store tools)
+    # Session log sections (populated by store tools; collapsed into SessionLogEntry at end-of-run)
     session_context: str = ""
     session_key_exchanges: list[str] = field(default_factory=list)
     session_decisions: list[str] = field(default_factory=list)
@@ -315,7 +315,6 @@ class DreamDeps:
     session_action_items: list[str] = field(default_factory=list)
     session_concepts: list[dict[str, str]] = field(default_factory=list)
     session_connections: list[dict[str, str]] = field(default_factory=list)
-    session_memories_log: list[str] = field(default_factory=list)
 
 
 def _load_extraction_prompt() -> str:
@@ -340,7 +339,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         history_processors=[compact_history],
     )
 
-    _register_base_tools(agent)        # vault access + MemU
+    _register_base_tools(agent)  # vault access + MemU
 
     @agent.tool
     async def store_context(ctx: RunContext[DreamDeps], content: str) -> str:
@@ -349,14 +348,12 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         return f"Context stored: {content[:80]}..."
 
     @agent.tool
-    async def store_decision(
-        ctx: RunContext[DreamDeps], decision: str, reasoning: str
-    ) -> str:
+    async def store_decision(ctx: RunContext[DreamDeps], decision: str, reasoning: str) -> str:
         """Store a decision made during the session. Format: what was decided and why."""
         entry = f"{decision} — {reasoning}"
         ctx.deps.session_decisions.append(entry)
         # Also store as MemoryItem for knowledge base
-        ctx.deps.session_memories.append(
+        ctx.deps.memories.append(
             MemoryItem(
                 content=decision,
                 reasoning=reasoning,
@@ -398,12 +395,10 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
         return f"Key exchange stored: {exchange[:80]}..."
 
     @agent.tool
-    async def store_concept(
-        ctx: RunContext[DreamDeps], name: str, description: str
-    ) -> str:
+    async def store_concept(ctx: RunContext[DreamDeps], name: str, description: str) -> str:
         """Store a concept discussed in the session. Creates a knowledge base entry."""
         ctx.deps.session_concepts.append({"name": name, "description": description})
-        ctx.deps.session_memories.append(
+        ctx.deps.memories.append(
             MemoryItem(
                 content=f"{name}: {description}",
                 reasoning=None,
@@ -438,7 +433,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
                 "relationship_type": relationship_type,
             }
         )
-        ctx.deps.session_memories.append(
+        ctx.deps.memories.append(
             MemoryItem(
                 content=f"{concept_a} <-> {concept_b}: {relationship} ({relationship_type})",
                 reasoning=None,
@@ -471,8 +466,7 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
             vault_target=vault_target,  # type: ignore[arg-type]
             source_date=source_date,
         )
-        ctx.deps.session_memories.append(item)
-        ctx.deps.session_memories_log.append(f"[{category}] {content}")
+        ctx.deps.memories.append(item)
         return f"Stored {category}: {content[:80]}..."
 
     _extraction_agent = agent
@@ -491,7 +485,8 @@ def _count_user_messages(workspace: Path) -> int:
         return 0
     text = transcript.read_text(encoding="utf-8")
     return sum(
-        1 for line in text.splitlines()
+        1
+        for line in text.splitlines()
         if "User:" in line and (line.lstrip().startswith("User:") or line.lstrip().startswith("["))
     )
 
@@ -563,7 +558,9 @@ async def run_dream_extraction(
     if not deps.session_context:
         log.error("dream_extraction.context_missing.gave_up")
 
-    # Assemble session log from stored data
+    # Assemble session log from stored data.
+    # memories are a property of SessionLogEntry — assigned directly from deps.memories
+    # (structured MemoryItem objects, not display strings).
     output = result.output
     output.session_log = SessionLogEntry(
         context=deps.session_context,
@@ -574,7 +571,7 @@ async def run_dream_extraction(
         action_items=deps.session_action_items,
         concepts=deps.session_concepts,
         connections=deps.session_connections,
-        session_memories=deps.session_memories_log,
+        memories=deps.memories,
     )
     return output, result.usage(), _count_tool_calls(result.all_messages()), result.all_messages()
 
@@ -586,8 +583,15 @@ async def run_dream_extraction(
 
 @dataclass
 class RecordDeps:
+    """Record-agent handoff.
+
+    `session_log` is the single source of truth for session content — including
+    memories, which live at `session_log.memories` as a `list[MemoryItem]`.
+    There is NO peer `memories` field on RecordDeps; the record agent reaches
+    memories via `deps.session_log.memories`.
+    """
+
     workspace: Path
-    session_memories: list[MemoryItem] = field(default_factory=list)
     source_date: date = field(default_factory=date.today)
     session_id: str = ""
     summary: str = ""
@@ -612,9 +616,7 @@ def _get_record_agent(
         return _record_agent
 
     patterns = (
-        allowed_write_patterns
-        if allowed_write_patterns is not None
-        else _DEFAULT_WRITE_PATTERNS
+        allowed_write_patterns if allowed_write_patterns is not None else _DEFAULT_WRITE_PATTERNS
     )
 
     agent: Agent[RecordDeps, RecordResult] = Agent(
@@ -634,10 +636,7 @@ def _get_record_agent(
         """Write content to a vault file. Restricted to allowed path patterns."""
         normalized = os.path.normpath(path)
         if not any(fnmatch(normalized, p) for p in patterns):
-            return (
-                f"Error: path '{path}' not allowed. "
-                f"Allowed patterns: {patterns}"
-            )
+            return f"Error: path '{path}' not allowed. Allowed patterns: {patterns}"
         workspace: Path = ctx.deps.workspace
         resolved = _safe_resolve(workspace, path)
         resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -656,7 +655,7 @@ def _get_record_agent(
         if not fm_match:
             return f"Error: {file_path} has no YAML frontmatter"
         frontmatter = fm_match.group(1)
-        body = text[fm_match.end():]
+        body = text[fm_match.end() :]
 
         count_match = re.search(r"^reinforcement_count:\s*(\d+)", frontmatter, re.MULTILINE)
         if count_match:
@@ -680,9 +679,7 @@ def _get_record_agent(
         return f"Reinforcement updated for {file_path}"
 
     @agent.tool
-    async def flag_contradiction(
-        ctx: RunContext[RecordDeps], file_path: str, reason: str
-    ) -> str:
+    async def flag_contradiction(ctx: RunContext[RecordDeps], file_path: str, reason: str) -> str:
         """Flag a contradiction in a vault file's YAML frontmatter for deep dream review."""
         workspace: Path = ctx.deps.workspace
         resolved = _safe_resolve(workspace, file_path)
@@ -693,7 +690,7 @@ def _get_record_agent(
         if not fm_match:
             return f"Error: {file_path} has no YAML frontmatter"
         frontmatter = fm_match.group(1)
-        body = text[fm_match.end():]
+        body = text[fm_match.end() :]
 
         contradiction_match = re.search(r"^has_contradiction:\s*.*$", frontmatter, re.MULTILINE)
         if contradiction_match:
@@ -722,6 +719,11 @@ RECORD_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
 
 
 def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
+    """Render the full SessionLogEntry for the record-agent prompt.
+
+    Memories are a property of SessionLogEntry; they are rendered inline from
+    the `memories` list (list[MemoryItem]) — not a separate section.
+    """
     parts = [f"Summary: {summary}"]
     if sl.context:
         parts.append(f"Context: {sl.context}")
@@ -737,10 +739,11 @@ def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
         parts.append("Lessons Learned:")
         for item in sl.lessons_learned:
             parts.append(f"  - {item}")
-    if sl.session_memories:
+    if sl.memories:
         parts.append("Memory:")
-        for item in sl.session_memories:
-            parts.append(f"  - {item}")
+        for m in sl.memories:
+            reason = f" (reason: {m.reasoning})" if m.reasoning else ""
+            parts.append(f"  - [{m.vault_target}] {m.source_date}: {m.content}{reason}")
     if sl.action_items:
         parts.append("Action Items:")
         for item in sl.action_items:
@@ -759,23 +762,13 @@ def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
     return "\n".join(parts)
 
 
-def _format_session_memories(memories: list[MemoryItem]) -> str:
-    if not memories:
-        return "No memories extracted."
-    lines: list[str] = []
-    for i, m in enumerate(memories, 1):
-        reason = f" (reason: {m.reasoning})" if m.reasoning else ""
-        lines.append(f"[{i}] [{m.vault_target}] {m.source_date}: {m.content}{reason}")
-    return "\n".join(lines)
-
-
 async def run_record(
     deps: RecordDeps,
     allowed_write_patterns: list[str] | None = None,
 ) -> tuple[RecordResult, RunUsage, int, list[Any]]:
-    daily_log = await _read_vault_file(
-        f"dailys/{deps.source_date.isoformat()}.md"
-    ) or "(no daily log yet)"
+    daily_log = (
+        await _read_vault_file(f"dailys/{deps.source_date.isoformat()}.md") or "(no daily log yet)"
+    )
 
     vault_guide = await _read_vault_file("_guide.md") or ""
 
@@ -788,10 +781,7 @@ async def run_record(
     if deps.is_continuation:
         sections.append("")
         sections.append("## CONTINUATION MODE")
-        sections.append(
-            "This is a CONTINUATION of an existing session "
-            "(user closed and resumed)."
-        )
+        sections.append("This is a CONTINUATION of an existing session (user closed and resumed).")
         sections.append(
             f"Find the session block with "
             f"`<!-- session_id: {deps.session_id} -->` "
@@ -802,25 +792,24 @@ async def run_record(
             "— do NOT create a new ### Session heading."
         )
         sections.append(
-            "Add a `**Continued at [HH:MM]**:` marker "
-            "before new content in each section."
+            "Add a `**Continued at [HH:MM]**:` marker before new content in each section."
         )
 
-    sections.extend([
-        "",
-        "## Session Log",
-        _format_session_log(deps.session_log, deps.summary),
-        "",
-        "## Session Memories",
-        _format_session_memories(deps.session_memories),
-        "",
-        "## Today's Daily Log (current state)",
-        daily_log,
-        "",
-        "Write the session block to dailys/. Use read_frontmatter(path) for reinforcement checks.",
-        "Use memu_search(query) to find matching vault files for reinforcement.",
-        "Use read_file(path) to read full file content when needed.",
-    ])
+    sections.extend(
+        [
+            "",
+            "## Session Log",
+            _format_session_log(deps.session_log, deps.summary),
+            "",
+            "## Today's Daily Log (current state)",
+            daily_log,
+            "",
+            "Write the session block to dailys/. "
+            "Use read_frontmatter(path) for reinforcement checks.",
+            "Use memu_search(query) to find matching vault files for reinforcement.",
+            "Use read_file(path) to read full file content when needed.",
+        ]
+    )
 
     if vault_guide:
         sections.append("")
@@ -994,8 +983,13 @@ def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
         "vault_updates": {
             folder: [entry.model_dump() for entry in getattr(output.vault_updates, folder)]
             for folder in (
-                "decisions", "projects", "patterns", "templates",
-                "concepts", "connections", "lessons",
+                "decisions",
+                "projects",
+                "patterns",
+                "templates",
+                "concepts",
+                "connections",
+                "lessons",
             )
         },
     }

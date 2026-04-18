@@ -1,8 +1,7 @@
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
-    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -49,9 +48,7 @@ class DreamPhase(Base):
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Transcript(Base):
@@ -103,7 +100,9 @@ class Dream(Base):
     )
     input_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
-    memories_extracted: Mapped[int] = mapped_column(Integer, default=0)
+    # Full SessionLogEntry (9 keys, incl. memories=list[MemoryItem]) for light dreams.
+    # NULL for deep / weekly / failed / skipped / no_extract dreams.
+    session_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
     files_modified: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
     git_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     git_pr_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -116,29 +115,6 @@ class Dream(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class ExtractedMemory(Base):
-    __tablename__ = "extracted_memories"
-    __table_args__ = (
-        Index("ix_extracted_memories_type", "type"),
-        Index("ix_extracted_memories_vault_target", "vault_target"),
-        Index("ix_extracted_memories_source_date", "source_date"),
-        {"schema": SCHEMA},
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    dream_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey(f"{SCHEMA}.dreams.id"), nullable=False
-    )
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-    vault_target: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    reinforcement: Mapped[int] = mapped_column(Integer, default=1)
-    source_date: Mapped[date] = mapped_column(Date, nullable=False)
-    memu_synced: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

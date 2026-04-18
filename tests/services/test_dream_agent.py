@@ -14,7 +14,6 @@ from app.services.dream_agent import (
     WeeklyReviewDeps,
     _count_tool_calls,
     _format_session_log,
-    _format_session_memories,
     consolidation_to_dict,
 )
 from app.services.dream_models import (
@@ -126,17 +125,13 @@ class TestLightDreamAgent:
         assert usage is not None
         assert isinstance(tool_call_count, int)
 
-    def test_session_log_assembly_includes_new_fields(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    def test_session_log_assembly_includes_new_fields(self, dream_deps: DreamDeps) -> None:
         dream_deps.session_context = "Discussed architecture patterns"
         dream_deps.session_key_exchanges = ["User asked about DDD vs Clean Arch"]
         dream_deps.session_decisions = ["Use Clean Architecture"]
         dream_deps.session_lessons = ["Layered boundaries reduce coupling"]
         dream_deps.session_action_items = ["Document the architecture"]
-        dream_deps.session_concepts = [
-            {"name": "DDD", "description": "Domain-Driven Design"}
-        ]
+        dream_deps.session_concepts = [{"name": "DDD", "description": "Domain-Driven Design"}]
         dream_deps.session_connections = [
             {
                 "concept_a": "DDD",
@@ -170,9 +165,7 @@ class TestLightDreamAgent:
 
 class TestStoreConnectionTool:
     @pytest.mark.asyncio
-    async def test_store_connection_default_relationship_type(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_store_connection_default_relationship_type(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import MagicMock
 
         from app.services.dream_agent import _get_extraction_agent
@@ -188,17 +181,13 @@ class TestStoreConnectionTool:
         ctx = MagicMock()
         ctx.deps = dream_deps
 
-        result = await tool.function(
-            ctx, concept_a="A", concept_b="B", relationship="related"
-        )
+        result = await tool.function(ctx, concept_a="A", concept_b="B", relationship="related")
         assert "[supports]" in result
         assert len(dream_deps.session_connections) == 1
         assert dream_deps.session_connections[0]["relationship_type"] == "supports"
 
     @pytest.mark.asyncio
-    async def test_store_connection_valid_relationship_type(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_store_connection_valid_relationship_type(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import MagicMock
 
         from app.services.dream_agent import _get_extraction_agent
@@ -224,9 +213,7 @@ class TestStoreConnectionTool:
         assert dream_deps.session_connections[0]["relationship_type"] == "supersedes"
 
     @pytest.mark.asyncio
-    async def test_store_connection_invalid_relationship_type(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_store_connection_invalid_relationship_type(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import MagicMock
 
         from app.services.dream_agent import _get_extraction_agent
@@ -252,9 +239,7 @@ class TestStoreConnectionTool:
         assert len(dream_deps.session_connections) == 0
 
     @pytest.mark.asyncio
-    async def test_store_connection_all_valid_types(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_store_connection_all_valid_types(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import MagicMock
 
         from app.services.dream_agent import _get_extraction_agent
@@ -451,9 +436,7 @@ class TestPhase1LightSleepAgent:
         )
         assert agent.output_type is LightSleepOutput
 
-    async def test_run_phase1_returns_tuple(
-        self, deep_dream_deps: DeepDreamDeps
-    ) -> None:
+    async def test_run_phase1_returns_tuple(self, deep_dream_deps: DeepDreamDeps) -> None:
         test_model = TestModel()
         agent: Agent[DeepDreamDeps, LightSleepOutput] = Agent(
             test_model,
@@ -463,9 +446,7 @@ class TestPhase1LightSleepAgent:
             output_retries=3,
         )
 
-        result = await agent.run(
-            "Inventory and deduplicate memories.", deps=deep_dream_deps
-        )
+        result = await agent.run("Inventory and deduplicate memories.", deps=deep_dream_deps)
         usage = result.usage()
         tool_call_count = _count_tool_calls(result.all_messages())
 
@@ -473,9 +454,7 @@ class TestPhase1LightSleepAgent:
         assert usage is not None
         assert isinstance(tool_call_count, int)
 
-    def test_phase1_deps_reuses_deep_dream_deps(
-        self, deep_dream_deps: DeepDreamDeps
-    ) -> None:
+    def test_phase1_deps_reuses_deep_dream_deps(self, deep_dream_deps: DeepDreamDeps) -> None:
         assert deep_dream_deps.memory_md != ""
         assert deep_dream_deps.daily_log != ""
         assert len(deep_dream_deps.memu_memories) > 0
@@ -521,9 +500,7 @@ class TestPhase1PromptInjection:
         assert PHASE1_USAGE_LIMITS.tool_calls_limit == 25
 
     @pytest.mark.asyncio
-    async def test_run_prompt_contains_memory_md(
-        self, deep_dream_deps: DeepDreamDeps
-    ) -> None:
+    async def test_run_prompt_contains_memory_md(self, deep_dream_deps: DeepDreamDeps) -> None:
         self._clear_phase1()
         from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -536,9 +513,7 @@ class TestPhase1PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase1_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase1_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -551,9 +526,7 @@ class TestPhase1PromptInjection:
             assert "existing memory entry" in prompt
 
     @pytest.mark.asyncio
-    async def test_run_prompt_contains_daily_log(
-        self, deep_dream_deps: DeepDreamDeps
-    ) -> None:
+    async def test_run_prompt_contains_daily_log(self, deep_dream_deps: DeepDreamDeps) -> None:
         self._clear_phase1()
         from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -566,9 +539,7 @@ class TestPhase1PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase1_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase1_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -601,9 +572,7 @@ class TestPhase1PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase1_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase1_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -637,9 +606,7 @@ class TestPhase1PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase1_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase1_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -721,9 +688,7 @@ class TestPhase2REMSleepAgent:
             output_retries=3,
         )
 
-        result = await agent.run(
-            "Analyze cross-session patterns.", deps=phase2_deps
-        )
+        result = await agent.run("Analyze cross-session patterns.", deps=phase2_deps)
         usage = result.usage()
         tool_call_count = _count_tool_calls(result.all_messages())
 
@@ -815,9 +780,7 @@ class TestPhase2PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase2_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase2_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -853,9 +816,7 @@ class TestPhase2PromptInjection:
         mock_result.usage.return_value = MagicMock()
         mock_result.all_messages.return_value = []
 
-        with patch(
-            "app.services.dream_agent._get_phase2_agent"
-        ) as mock_get_agent:
+        with patch("app.services.dream_agent._get_phase2_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_agent.run = AsyncMock(return_value=mock_result)
             mock_get_agent.return_value = mock_agent
@@ -1092,9 +1053,7 @@ class TestGlobRestrictedWrite:
         import app.services.dream_agent as mod
 
         mod._record_agent = None
-        agent = mod._get_record_agent(
-            allowed_write_patterns=["dailys/*.md", "projects/*.md"]
-        )
+        agent = mod._get_record_agent(allowed_write_patterns=["dailys/*.md", "projects/*.md"])
 
         write_tool = None
         for tool in agent._function_toolset.tools.values():
@@ -1371,9 +1330,7 @@ class TestRecordPromptInjection:
         tool_names = list(agent._function_toolset.tools.keys())
         assert "memu_search" in tool_names
 
-    def test_run_record_prompt_contains_session_log(
-        self, record_deps: RecordDeps
-    ) -> None:
+    def test_run_record_prompt_contains_session_log(self, record_deps: RecordDeps) -> None:
         record_deps.summary = "Fix Jarvis plugin"
         record_deps.session_log = SessionLogEntry(
             context="Investigated plugin config",
@@ -1385,12 +1342,12 @@ class TestRecordPromptInjection:
         assert "Context: Investigated plugin config" in prompt
         assert "Use env vars for hooks" in prompt
 
-    def test_run_record_prompt_contains_session_memories(
-        self, record_deps: RecordDeps
-    ) -> None:
+    def test_run_record_prompt_contains_memories(self, record_deps: RecordDeps) -> None:
+        """Memories are a property of SessionLogEntry; they're rendered inline
+        by _format_session_log under the Memory: section."""
         from app.services.dream_models import MemoryItem
 
-        record_deps.session_memories = [
+        record_deps.session_log.memories = [
             MemoryItem(
                 content="Use env vars for hooks",
                 reasoning="macOS Keychain",
@@ -1399,14 +1356,13 @@ class TestRecordPromptInjection:
             ),
         ]
 
-        prompt = _format_session_memories(record_deps.session_memories)
+        prompt = _format_session_log(record_deps.session_log, record_deps.summary)
+        assert "Memory:" in prompt
         assert "[decisions]" in prompt
         assert "Use env vars for hooks" in prompt
         assert "macOS Keychain" in prompt
 
-    def test_run_record_prompt_contains_daily_log(
-        self, record_deps: RecordDeps
-    ) -> None:
+    def test_run_record_prompt_contains_daily_log(self, record_deps: RecordDeps) -> None:
         daily_path = f"dailys/{record_deps.source_date.isoformat()}.md"
         (record_deps.workspace / "dailys").mkdir(exist_ok=True)
         (record_deps.workspace / daily_path).write_text(
@@ -1426,9 +1382,7 @@ class TestRecordContinuationPrompt:
         fresh = RecordDeps(workspace=record_deps.workspace)
         assert fresh.is_continuation is False
 
-    def test_run_record_prompt_contains_session_id_always(
-        self, record_deps: RecordDeps
-    ) -> None:
+    def test_run_record_prompt_contains_session_id_always(self, record_deps: RecordDeps) -> None:
         record_deps.session_id = "abc-session-123"
         record_deps.is_continuation = False
 
@@ -1443,9 +1397,7 @@ class TestRecordContinuationPrompt:
         prompt = "\n".join(sections)
         assert "Session ID: abc-session-123" in prompt
 
-    def test_run_record_prompt_no_continuation_when_false(
-        self, record_deps: RecordDeps
-    ) -> None:
+    def test_run_record_prompt_no_continuation_when_false(self, record_deps: RecordDeps) -> None:
         record_deps.is_continuation = False
         record_deps.session_id = "no-continuation-session"
 
@@ -1475,13 +1427,10 @@ class TestRecordContinuationPrompt:
             sections.append("")
             sections.append("## CONTINUATION MODE")
             sections.append(
-                "This is a CONTINUATION of an existing "
-                "session (user closed and resumed)."
+                "This is a CONTINUATION of an existing session (user closed and resumed)."
             )
             sections.append(
-                "Find the session block with "
-                f"`<!-- session_id: {sid} -->` "
-                "in the daily log."
+                f"Find the session block with `<!-- session_id: {sid} -->` in the daily log."
             )
             sections.append(
                 "APPEND new information to that existing "
@@ -1489,8 +1438,7 @@ class TestRecordContinuationPrompt:
                 "### Session heading."
             )
             sections.append(
-                "Add a `**Continued at [HH:MM]**:` "
-                "marker before new content in each section."
+                "Add a `**Continued at [HH:MM]**:` marker before new content in each section."
             )
 
         prompt = "\n".join(sections)
@@ -1533,32 +1481,43 @@ class TestFormatSessionLog:
         assert "REST <-> HTTP: uses" in result
 
 
-class TestFormatSessionMemories:
-    def test_no_memories(self) -> None:
-        result = _format_session_memories([])
-        assert result == "No memories extracted."
+class TestFormatSessionLogMemories:
+    """Memories are rendered inline by _format_session_log from
+    SessionLogEntry.memories. Story 9.35 removed the standalone
+    _format_session_memories helper."""
 
-    def test_with_memories(self) -> None:
+    def test_no_memories_section_when_empty(self) -> None:
+        sl = SessionLogEntry(context="Test")
+        result = _format_session_log(sl, "Test session")
+        assert "Memory:" not in result
+
+    def test_memory_section_with_structured_items(self) -> None:
         from app.services.dream_models import MemoryItem
 
-        memories = [
-            MemoryItem(
-                content="Use env vars",
-                reasoning="Keychain issue",
-                vault_target="decisions",
-                source_date="2026-04-14",
-            ),
-            MemoryItem(
-                content="Exit hook 0 on errors",
-                reasoning=None,
-                vault_target="patterns",
-                source_date="2026-04-14",
-            ),
-        ]
-        result = _format_session_memories(memories)
-        assert "[1] [decisions] 2026-04-14: Use env vars (reason: Keychain issue)" in result
-        assert "[2] [patterns] 2026-04-14: Exit hook 0 on errors" in result
-        assert "(reason:" not in result.split("\n")[1]
+        sl = SessionLogEntry(
+            context="Test context",
+            memories=[
+                MemoryItem(
+                    content="Use env vars",
+                    reasoning="Keychain issue",
+                    vault_target="decisions",
+                    source_date="2026-04-14",
+                ),
+                MemoryItem(
+                    content="Exit hook 0 on errors",
+                    reasoning=None,
+                    vault_target="patterns",
+                    source_date="2026-04-14",
+                ),
+            ],
+        )
+        result = _format_session_log(sl, "Test session")
+        assert "Memory:" in result
+        assert "[decisions] 2026-04-14: Use env vars (reason: Keychain issue)" in result
+        assert "[patterns] 2026-04-14: Exit hook 0 on errors" in result
+        # Second line has no reasoning and no "(reason:" trailer.
+        lines = [ln for ln in result.split("\n") if "Exit hook 0" in ln]
+        assert lines and "(reason:" not in lines[0]
 
 
 class TestCountToolCalls:
@@ -1620,9 +1579,7 @@ class TestWeeklyReviewAgent:
         )
         assert agent.output_type is WeeklyReviewOutput
 
-    def test_weekly_review_deps_has_daily_logs(
-        self, weekly_review_deps: WeeklyReviewDeps
-    ) -> None:
+    def test_weekly_review_deps_has_daily_logs(self, weekly_review_deps: WeeklyReviewDeps) -> None:
         assert len(weekly_review_deps.daily_logs) == 3
         assert "2026-04-05" in weekly_review_deps.daily_logs
 
@@ -1632,9 +1589,7 @@ class TestWeeklyReviewAgent:
         assert len(weekly_review_deps.vault_indexes) == 2
         assert "decisions" in weekly_review_deps.vault_indexes
 
-    def test_weekly_review_deps_has_week_number(
-        self, weekly_review_deps: WeeklyReviewDeps
-    ) -> None:
+    def test_weekly_review_deps_has_week_number(self, weekly_review_deps: WeeklyReviewDeps) -> None:
         assert weekly_review_deps.week_number == "2026-W14"
 
     async def test_run_weekly_review_returns_tuple(
@@ -1649,9 +1604,7 @@ class TestWeeklyReviewAgent:
             output_retries=3,
         )
 
-        result = await agent.run(
-            "Synthesize weekly review.", deps=weekly_review_deps
-        )
+        result = await agent.run("Synthesize weekly review.", deps=weekly_review_deps)
         usage = result.usage()
         tool_call_count = _count_tool_calls(result.all_messages())
 
@@ -1677,9 +1630,7 @@ class TestExtractionVaultAware:
         return {t.name for t in agent._function_toolset.tools.values()}
 
     @pytest.mark.asyncio
-    async def test_run_prompt_contains_memory_md(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_run_prompt_contains_memory_md(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from app.services.dream_agent import run_dream_extraction
@@ -1688,18 +1639,17 @@ class TestExtractionVaultAware:
 
         mock_memory = "## Strong Patterns\n- Always use async/await for I/O (5x)"
 
-        with patch(
-            "app.services.dream_agent._read_vault_file",
-            new_callable=AsyncMock,
-            return_value=mock_memory,
-        ) as mock_read, patch(
-            "app.services.dream_agent._get_extraction_agent"
-        ) as mock_get_agent:
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value=mock_memory,
+            ) as mock_read,
+            patch("app.services.dream_agent._get_extraction_agent") as mock_get_agent,
+        ):
             mock_agent = MagicMock()
             mock_run_result = MagicMock()
-            mock_run_result.output = ExtractionSummary(
-                summary="Test session", no_extract=False
-            )
+            mock_run_result.output = ExtractionSummary(summary="Test session", no_extract=False)
             mock_run_result.usage.return_value = MagicMock()
             mock_run_result.all_messages.return_value = []
             mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -1717,27 +1667,24 @@ class TestExtractionVaultAware:
             assert "Skip extracting insights" in prompt
 
     @pytest.mark.asyncio
-    async def test_run_prompt_contains_session_metadata(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_run_prompt_contains_session_metadata(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from app.services.dream_agent import run_dream_extraction
 
         self._clear_extraction_agent()
 
-        with patch(
-            "app.services.dream_agent._read_vault_file",
-            new_callable=AsyncMock,
-            return_value="(empty)",
-        ), patch(
-            "app.services.dream_agent._get_extraction_agent"
-        ) as mock_get_agent:
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="(empty)",
+            ),
+            patch("app.services.dream_agent._get_extraction_agent") as mock_get_agent,
+        ):
             mock_agent = MagicMock()
             mock_run_result = MagicMock()
-            mock_run_result.output = ExtractionSummary(
-                summary="Test session", no_extract=False
-            )
+            mock_run_result.output = ExtractionSummary(summary="Test session", no_extract=False)
             mock_run_result.usage.return_value = MagicMock()
             mock_run_result.all_messages.return_value = []
             mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -1756,27 +1703,24 @@ class TestExtractionVaultAware:
             assert "user messages" in prompt
 
     @pytest.mark.asyncio
-    async def test_run_prompt_handles_empty_memory_md(
-        self, dream_deps: DreamDeps
-    ) -> None:
+    async def test_run_prompt_handles_empty_memory_md(self, dream_deps: DreamDeps) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from app.services.dream_agent import run_dream_extraction
 
         self._clear_extraction_agent()
 
-        with patch(
-            "app.services.dream_agent._read_vault_file",
-            new_callable=AsyncMock,
-            return_value=None,
-        ), patch(
-            "app.services.dream_agent._get_extraction_agent"
-        ) as mock_get_agent:
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("app.services.dream_agent._get_extraction_agent") as mock_get_agent,
+        ):
             mock_agent = MagicMock()
             mock_run_result = MagicMock()
-            mock_run_result.output = ExtractionSummary(
-                summary="Test session", no_extract=False
-            )
+            mock_run_result.output = ExtractionSummary(summary="Test session", no_extract=False)
             mock_run_result.usage.return_value = MagicMock()
             mock_run_result.all_messages.return_value = []
             mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -1814,20 +1758,20 @@ class TestStory930SimplifyExtraction:
         assert "grep_transcript" not in tool_names
         assert "transcript_info" not in tool_names
 
-    def test_dream_deps_has_session_memories_not_extracted(self) -> None:
+    def test_dream_deps_has_memories_accumulator(self) -> None:
+        """Post-9.35: DreamDeps.memories is the in-run accumulator (list[MemoryItem]).
+        The old name (session_memories) is gone; there is no session_memories_log."""
         deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
-        assert hasattr(deps, "session_memories")
+        assert hasattr(deps, "memories")
+        assert deps.memories == []
+        assert not hasattr(deps, "session_memories")
+        assert not hasattr(deps, "session_memories_log")
         assert not hasattr(deps, "extracted_memories")
 
     def test_dream_deps_has_transcript_file(self) -> None:
         deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
         assert hasattr(deps, "transcript_file")
         assert deps.transcript_file == ""
-
-    def test_dream_deps_has_session_memories_log(self) -> None:
-        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
-        assert hasattr(deps, "session_memories_log")
-        assert deps.session_memories_log == []
 
     def test_store_session_memory_tool_exists(self) -> None:
         self._clear_singletons()
@@ -1838,43 +1782,56 @@ class TestStory930SimplifyExtraction:
         assert "store_session_memory" in tool_names
         assert "store_memory" not in tool_names
 
-    def test_session_log_entry_has_session_memories(self) -> None:
+    def test_session_log_entry_memories_is_list_of_memoryitems(self) -> None:
+        """memories is a property of SessionLogEntry — typed list[MemoryItem],
+        not a list[str] of display lines."""
+        from app.services.dream_models import MemoryItem
+
         entry = SessionLogEntry()
-        assert hasattr(entry, "session_memories")
-        assert entry.session_memories == []
+        assert hasattr(entry, "memories")
+        assert entry.memories == []
+        assert not hasattr(entry, "session_memories")
+
+        entry.memories.append(
+            MemoryItem(
+                content="x",
+                vault_target="memory",
+                source_date="2026-04-18",
+            )
+        )
+        assert isinstance(entry.memories[0], MemoryItem)
 
     def test_format_session_log_includes_memory_section(self) -> None:
+        from app.services.dream_models import MemoryItem
+
         sl = SessionLogEntry(
             context="Test context",
             lessons_learned=["Lesson 1"],
-            session_memories=[
-                "[preference] User prefers dark mode",
-                "[fact] Project uses Python 3.12",
+            memories=[
+                MemoryItem(
+                    content="User prefers dark mode",
+                    vault_target="memory",
+                    source_date="2026-04-14",
+                ),
+                MemoryItem(
+                    content="Project uses Python 3.12",
+                    vault_target="patterns",
+                    source_date="2026-04-14",
+                ),
             ],
             action_items=["Write tests"],
         )
         result = _format_session_log(sl, "Test session")
         assert "Memory:" in result
-        assert "[preference] User prefers dark mode" in result
-        assert "[fact] Project uses Python 3.12" in result
+        assert "[memory]" in result
+        assert "User prefers dark mode" in result
+        assert "[patterns]" in result
+        assert "Project uses Python 3.12" in result
         lines = result.split("\n")
-        memory_idx = next(
-            i for i, line in enumerate(lines) if "Memory:" in line
-        )
-        action_idx = next(
-            i for i, line in enumerate(lines) if "Action Items:" in line
-        )
-        lesson_idx = next(
-            i for i, line in enumerate(lines) if "Lessons Learned:" in line
-        )
+        memory_idx = next(i for i, line in enumerate(lines) if "Memory:" in line)
+        action_idx = next(i for i, line in enumerate(lines) if "Action Items:" in line)
+        lesson_idx = next(i for i, line in enumerate(lines) if "Lessons Learned:" in line)
         assert lesson_idx < memory_idx < action_idx
-
-    def test_session_memory_log_includes_category_prefix(self) -> None:
-        deps = DreamDeps(transcript_id=1, workspace=Path("/tmp"))
-        deps.session_memories_log.append("[pattern] Always run migrations first")
-        deps.session_memories_log.append("[preference] Use strict mode")
-        assert deps.session_memories_log[0] == "[pattern] Always run migrations first"
-        assert deps.session_memories_log[1] == "[preference] Use strict mode"
 
     def test_format_session_log_no_memory_when_empty(self) -> None:
         sl = SessionLogEntry(
@@ -1885,9 +1842,13 @@ class TestStory930SimplifyExtraction:
         result = _format_session_log(sl, "Test session")
         assert "Memory:" not in result
 
-    def test_record_deps_has_session_memories_not_extracted(self) -> None:
+    def test_record_deps_has_no_peer_memories_field(self) -> None:
+        """Story 9.35: RecordDeps has NO peer `memories` / `session_memories`
+        field. The record agent reaches memories via deps.session_log.memories."""
         deps = RecordDeps(workspace=Path("/tmp"))
-        assert hasattr(deps, "session_memories")
+        assert hasattr(deps, "session_log")
+        assert not hasattr(deps, "memories")
+        assert not hasattr(deps, "session_memories")
         assert not hasattr(deps, "extracted_memories")
 
     @pytest.mark.asyncio
@@ -1906,9 +1867,7 @@ class TestStory930SimplifyExtraction:
 
         mock_agent = MagicMock()
         mock_run_result = MagicMock()
-        mock_run_result.output = ExtractionSummary(
-            summary="Test", no_extract=False
-        )
+        mock_run_result.output = ExtractionSummary(summary="Test", no_extract=False)
         mock_run_result.usage.return_value = MagicMock()
         mock_run_result.all_messages.return_value = []
         mock_agent.run = AsyncMock(return_value=mock_run_result)

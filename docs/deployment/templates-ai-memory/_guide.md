@@ -633,7 +633,7 @@ Entry format:
 
 Triggered after each Claude Code session ends. Runs two phases:
 
-**Phase 1: Extraction Agent** — reads the session transcript (via base file tools on `transcript.txt` in `transcripts/`) and extracts structured insights using `store_*` tools (`store_context`, `store_decision`, `store_lesson`, `store_action_item`, `store_key_exchange`, `store_concept`, `store_connection`, `store_session_memory`). Extracted data is stored to the `session_memories` database table.
+**Phase 1: Extraction Agent** — reads the session transcript (via base file tools on `transcript.txt` in `transcripts/`) and extracts structured insights using `store_*` tools (`store_context`, `store_decision`, `store_lesson`, `store_action_item`, `store_key_exchange`, `store_concept`, `store_connection`, `store_session_memory`). The full `SessionLogEntry` — including `memories` as a `list[MemoryItem]` — is persisted to `dreams.session_log` JSONB in a single write; there is no separate per-memory table.
 
 **Phase 2: Record Agent** — receives the extracted session log and memories, then:
 1. Writes/appends a session block to `dailys/YYYY-MM-DD.md` (glob-restricted to `dailys/*.md`)
