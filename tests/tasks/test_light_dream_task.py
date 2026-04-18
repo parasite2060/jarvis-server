@@ -1,4 +1,3 @@
-from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,7 +5,7 @@ import pytest
 from pydantic_ai.usage import RunUsage
 
 from app.core.exceptions import DreamError
-from app.models.tables import Dream, ExtractedMemory, Transcript
+from app.models.tables import Dream, Transcript
 from app.services.dream_models import (
     ExtractionSummary,
     FileAction,
@@ -22,6 +21,7 @@ _TELEMETRY_PATCH = "app.tasks.light_dream_task.store_phase_telemetry"
 def _mock_telemetry() -> Any:
     with patch(_TELEMETRY_PATCH, new_callable=AsyncMock, return_value=1):
         yield
+
 
 SAMPLE_MEMORIES: list[MemoryItem] = [
     MemoryItem(
@@ -44,11 +44,22 @@ SAMPLE_MEMORIES: list[MemoryItem] = [
     ),
 ]
 
-SAMPLE_SUMMARY = ExtractionSummary(
-    summary="Discussed architecture decisions",
-    no_extract=False,
-    session_log=SessionLogEntry(context="Architecture discussion"),
-)
+
+def _make_sample_summary(memories: list[MemoryItem] | None = None) -> ExtractionSummary:
+    """Build a summary whose session_log carries the given memories.
+
+    Mirrors production: session_log.memories is populated from deps.memories at
+    end-of-extraction.
+    """
+    return ExtractionSummary(
+        summary="Discussed architecture decisions",
+        no_extract=False,
+        session_log=SessionLogEntry(
+            context="Architecture discussion",
+            memories=memories or [],
+        ),
+    )
+
 
 NO_EXTRACT_SUMMARY = ExtractionSummary(
     summary="Quick fix, nothing notable",
@@ -153,15 +164,25 @@ def _make_extraction_mock(
     usage: RunUsage | None = None,
     side_effect: Exception | None = None,
 ) -> AsyncMock:
-    """Create a mock for run_dream_extraction that populates deps.session_memories."""
+    """Create a mock for run_dream_extraction that mirrors production.
+
+    Production semantics (dream_agent.run_dream_extraction):
+    - Store tools append MemoryItem objects to `deps.memories`.
+    - After the agent run, extraction assigns `output.session_log.memories = deps.memories`
+      so memories travel as a property of SessionLogEntry, not a peer field.
+    This mock reproduces both side effects.
+    """
     mems = memories if memories is not None else SAMPLE_MEMORIES
-    summ = summary or SAMPLE_SUMMARY
+    summ = summary or _make_sample_summary(memories=mems)
     usg = usage or SAMPLE_USAGE
 
     async def _fake_extraction(deps: Any) -> tuple:
         if side_effect:
             raise side_effect
-        deps.session_memories.extend(mems)
+        deps.memories.extend(mems)
+        # Ensure the returned summary's session_log carries the same memories.
+        if summ.session_log is not None and not summ.session_log.memories:
+            summ.session_log.memories = list(mems)
         return (summ, usg, 3, [])
 
     return AsyncMock(side_effect=_fake_extraction)
@@ -209,19 +230,36 @@ async def test_full_pipeline_success() -> None:
 
     mock_extract.assert_called_once()
 
-    memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
-    assert len(memories) == 3
-    types = {m.type for m in memories}
-    # vault_target "memory" is not in MEMORY_CATEGORIES, so it maps to "facts"
-    assert types == {"decisions", "facts"}
+    # Post-Story 9.35: memories are persisted inside dreams.session_log JSONB,
+    # not as rows in a separate table.
+    assert dream.session_log is not None
+    assert isinstance(dream.session_log, dict)
+    # All nine SessionLogEntry keys are always present.
+    for key in (
+        "context",
+        "key_exchanges",
+        "decisions_made",
+        "lessons_learned",
+        "failed_lessons",
+        "action_items",
+        "concepts",
+        "connections",
+        "memories",
+    ):
+        assert key in dream.session_log, f"session_log missing key: {key}"
 
-    decision_mem = next(m for m in memories if m.type == "decisions")
-    assert decision_mem.reasoning == "async-first and Pydantic integration"
-    assert decision_mem.vault_target == "decisions"
-    assert decision_mem.source_date == date(2026, 3, 31)
+    memories = dream.session_log["memories"]
+    assert len(memories) == 3
+    # Each element is a serialised MemoryItem
+    # (dict with content/reasoning/vault_target/source_date).
+    vault_targets = {m["vault_target"] for m in memories}
+    assert vault_targets == {"decisions", "memory"}
+
+    decision_mem = next(m for m in memories if m["vault_target"] == "decisions")
+    assert decision_mem["reasoning"] == "async-first and Pydantic integration"
+    assert decision_mem["source_date"] == "2026-03-31"
 
     assert dream.status == "completed"
-    assert dream.memories_extracted == 3
     assert dream.duration_ms is not None
     assert dream.completed_at is not None
     assert transcript.status == "processed"
@@ -247,10 +285,9 @@ async def test_no_extract_pipeline() -> None:
 
         await light_dream_task({}, 1)
 
-    memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
-    assert len(memories) == 0
+    # no_extract=True: session_log stays NULL, no memories persisted.
+    assert dream.session_log is None
     assert dream.status == "completed"
-    assert dream.memories_extracted == 0
     mock_merge.assert_not_called()
     assert transcript.status == "processed"
 
@@ -277,7 +314,8 @@ async def test_extraction_failure_marks_dream_failed() -> None:
     assert dream.status == "failed"
     assert dream.error_message is not None
     assert "API timeout" in dream.error_message
-    assert dream.memories_extracted == 0
+    # Extraction failure: session_log must stay NULL.
+    assert dream.session_log is None
     assert transcript.status == "failed"
     mock_merge.assert_not_called()
 
@@ -302,9 +340,9 @@ async def test_merge_failure_doesnt_fail_dream() -> None:
         await light_dream_task({}, 1)
 
     assert dream.status == "completed"
-    assert dream.memories_extracted == 3
-    memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
-    assert len(memories) == 3
+    # session_log still persisted even when record fails (soft-fail).
+    assert dream.session_log is not None
+    assert len(dream.session_log["memories"]) == 3
 
 
 @pytest.mark.asyncio
@@ -422,28 +460,28 @@ async def test_all_memory_types_stored_with_correct_fields() -> None:
 
         await light_dream_task({}, 1)
 
-    memories = [i for i in factory.added_items if isinstance(i, ExtractedMemory)]
+    # Memories persist inside dreams.session_log JSONB; each entry carries its
+    # original vault_target — no more coercion to a MEMORY_CATEGORIES subset.
+    assert dream.session_log is not None
+    memories = dream.session_log["memories"]
     assert len(memories) == 4
 
-    types = sorted(m.type for m in memories)
-    # "decisions" and "patterns" map directly; "memory" and "projects" -> "facts"
-    assert types == ["decisions", "facts", "facts", "patterns"]
+    vault_targets = sorted(m["vault_target"] for m in memories)
+    assert vault_targets == ["decisions", "memory", "patterns", "projects"]
 
-    decision_mem = next(m for m in memories if m.type == "decisions")
-    assert decision_mem.content == "Use FastAPI"
-    assert decision_mem.reasoning == "async-first"
-    assert decision_mem.vault_target == "decisions"
-    assert decision_mem.source_date == date(2026, 3, 31)
+    decision_mem = next(m for m in memories if m["vault_target"] == "decisions")
+    assert decision_mem["content"] == "Use FastAPI"
+    assert decision_mem["reasoning"] == "async-first"
+    assert decision_mem["source_date"] == "2026-03-31"
 
-    facts = [m for m in memories if m.type == "facts"]
-    assert len(facts) == 2
-    fact_contents = {m.content for m in facts}
-    assert "Prefer httpx" in fact_contents
-    assert "Project uses PostgreSQL" in fact_contents
+    memory_target = next(m for m in memories if m["vault_target"] == "memory")
+    assert memory_target["content"] == "Prefer httpx"
 
-    pattern = next(m for m in memories if m.type == "patterns")
-    assert pattern.vault_target == "patterns"
-    assert pattern.content == "Always READ before WRITE"
+    project = next(m for m in memories if m["vault_target"] == "projects")
+    assert project["content"] == "Project uses PostgreSQL"
+
+    pattern = next(m for m in memories if m["vault_target"] == "patterns")
+    assert pattern["content"] == "Always READ before WRITE"
 
 
 @pytest.mark.asyncio
@@ -573,7 +611,8 @@ async def test_git_failure_doesnt_fail_dream() -> None:
         await light_dream_task({}, 1)
 
     assert dream.status == "completed"
-    assert dream.memories_extracted == 3
+    assert dream.session_log is not None
+    assert len(dream.session_log["memories"]) == 3
     assert dream.git_branch is None
     assert dream.git_pr_url is None
     mock_invalidate.assert_not_called()

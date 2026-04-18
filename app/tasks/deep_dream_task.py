@@ -68,18 +68,14 @@ def _format_phase1_summary(
     for c in phase1_output.candidates:
         score = round(scores.get(c.content, 0.0), 3)
         if c.contradiction_flag:
-            contradiction.append(
-                f"- CONTRADICTION: \"{c.content}\" ({c.category}, score={score})"
-            )
+            contradiction.append(f'- CONTRADICTION: "{c.content}" ({c.category}, score={score})')
         if score >= 0.7 and c.reinforcement_count >= 3:
             promote.append(
-                f"- PROMOTE: \"{c.content}\" → Strong Patterns "
+                f'- PROMOTE: "{c.content}" → Strong Patterns '
                 f"(score={score}, {c.reinforcement_count}x)"
             )
         elif score < 0.2:
-            prune.append(
-                f"- PRUNE CANDIDATE: \"{c.content}\" (score={score})"
-            )
+            prune.append(f'- PRUNE CANDIDATE: "{c.content}" (score={score})')
 
     lines.append("### Actionable Decisions")
     if promote or prune or contradiction:
@@ -92,12 +88,9 @@ def _format_phase1_summary(
 
     lines.append("### Scoring Config")
     lines.append(
-        "Weights: frequency=0.25, recency=0.25, relevance=0.20, "
-        "consistency=0.20, breadth=0.10"
+        "Weights: frequency=0.25, recency=0.25, relevance=0.20, consistency=0.20, breadth=0.10"
     )
-    lines.append(
-        "Thresholds: promote >= 0.7 (3+ reinforced), prune < 0.2, decay=0.03"
-    )
+    lines.append("Thresholds: promote >= 0.7 (3+ reinforced), prune < 0.2, decay=0.03")
     lines.append("")
 
     # JSON reference with full candidate data
@@ -150,9 +143,7 @@ def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
     if phase2_output.themes:
         for t in phase2_output.themes:
             evidence = ", ".join(t.evidence) if t.evidence else "n/a"
-            lines.append(
-                f"- \"{t.topic}\" — {t.session_count} sessions. Evidence: {evidence}"
-            )
+            lines.append(f'- "{t.topic}" — {t.session_count} sessions. Evidence: {evidence}')
     else:
         lines.append("No themes detected.")
     lines.append("")
@@ -161,8 +152,7 @@ def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
     if phase2_output.new_connections:
         for c in phase2_output.new_connections:
             lines.append(
-                f"- {c.concept_a} <-[{c.relationship_type}]-> {c.concept_b}: "
-                f"{c.relationship}"
+                f"- {c.concept_a} <-[{c.relationship_type}]-> {c.concept_b}: {c.relationship}"
             )
     else:
         lines.append("No new connections.")
@@ -180,7 +170,7 @@ def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
     if phase2_output.gaps:
         for g in phase2_output.gaps:
             files = ", ".join(g.mentioned_in_files) if g.mentioned_in_files else "n/a"
-            lines.append(f"- \"{g.concept}\" — mentioned in: {files}")
+            lines.append(f'- "{g.concept}" — mentioned in: {files}')
     else:
         lines.append("No gaps detected.")
     lines.append("")
@@ -202,14 +192,10 @@ def _format_phase2_summary(phase2_output: REMSleepOutput) -> str:
 async def _backup_files(source_date: date) -> None:
     memory_md = await read_vault_file("MEMORY.md")
     if memory_md:
-        await write_vault_file(
-            f".backups/MEMORY.md.{source_date.isoformat()}.bak", memory_md
-        )
+        await write_vault_file(f".backups/MEMORY.md.{source_date.isoformat()}.bak", memory_md)
     daily_log = await read_vault_file(f"dailys/{source_date.isoformat()}.md")
     if daily_log:
-        await write_vault_file(
-            f".backups/dailys-{source_date.isoformat()}.bak", daily_log
-        )
+        await write_vault_file(f".backups/dailys-{source_date.isoformat()}.bak", daily_log)
 
 
 async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
@@ -274,9 +260,12 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     phase1_start = time.monotonic_ns() // 1_000_000
     phase1_started_at = datetime.now(UTC)
     try:
-        phase1_output, phase1_usage, phase1_tool_calls, phase1_messages = (
-            await run_phase1_light_sleep(phase1_deps)
-        )
+        (
+            phase1_output,
+            phase1_usage,
+            phase1_tool_calls,
+            phase1_messages,
+        ) = await run_phase1_light_sleep(phase1_deps)
         phase1_duration_ms = time.monotonic_ns() // 1_000_000 - phase1_start
         log.info(
             "deep_dream.phase1.completed",
@@ -341,7 +330,12 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
                 daily_logs[d.isoformat()] = content
 
         vault_index_folders = (
-            "decisions", "patterns", "concepts", "connections", "lessons", "projects",
+            "decisions",
+            "patterns",
+            "concepts",
+            "connections",
+            "lessons",
+            "projects",
         )
         vault_indexes: dict[str, str] = {}
         for folder in vault_index_folders:
@@ -349,9 +343,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             if content:
                 vault_indexes[folder] = content
 
-        phase1_for_phase2 = _format_phase1_for_phase2(
-            phase1_output.candidates, candidate_scores
-        )
+        phase1_for_phase2 = _format_phase1_for_phase2(phase1_output.candidates, candidate_scores)
         vault_index_text = _format_vault_indexes(vault_indexes)
         phase2_deps = Phase2Deps(
             source_date=source_date,
@@ -367,9 +359,12 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             f"## Phase 1 Candidates\n{phase1_for_phase2 or 'No Phase 1 candidates.'}\n\n"
             f"## Vault Indexes\n{vault_index_text or 'No vault indexes available.'}"
         )
-        phase2_output, phase2_usage, phase2_tool_calls, phase2_messages = (
-            await run_phase2_rem_sleep(phase2_deps)
-        )
+        (
+            phase2_output,
+            phase2_usage,
+            phase2_tool_calls,
+            phase2_messages,
+        ) = await run_phase2_rem_sleep(phase2_deps)
         phase2_duration_ms = time.monotonic_ns() // 1_000_000 - phase2_start
         log.info(
             "deep_dream.phase2.completed",
@@ -449,8 +444,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             phase1_summary=phase1_text,
             phase2_summary=phase2_text,
         )
-        output, usage, tool_call_count, consolidation_messages = (
-            await run_deep_dream_consolidation(deps)
+        output, usage, tool_call_count, consolidation_messages = await run_deep_dream_consolidation(
+            deps
         )
         phase3_duration_ms = time.monotonic_ns() // 1_000_000 - phase3_start
         consolidation_result = consolidation_to_dict(output)
@@ -537,8 +532,14 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     has_vault_content = vault_updates is not None and any(
         vault_updates.get(f)
         for f in (
-            "decisions", "projects", "patterns", "templates",
-            "concepts", "connections", "lessons", "topics",
+            "decisions",
+            "projects",
+            "patterns",
+            "templates",
+            "concepts",
+            "connections",
+            "lessons",
+            "topics",
         )
     )
     if has_vault_content and vault_updates is not None:
@@ -569,13 +570,9 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     # Step 6d: Health checks (deterministic Python post-processing)
     health_report: HealthReport | None = None
     try:
-        knowledge_gap_names = (
-            [g.concept for g in phase2_result.gaps] if phase2_result else []
-        )
+        knowledge_gap_names = [g.concept for g in phase2_result.gaps] if phase2_result else []
         workspace = Path(settings.jarvis_memory_path)
-        health_report = await run_health_checks(
-            workspace, knowledge_gaps=knowledge_gap_names
-        )
+        health_report = await run_health_checks(workspace, knowledge_gaps=knowledge_gap_names)
         log.info(
             "deep_dream.health_check.completed",
             dream_id=dream_id,
@@ -712,16 +709,13 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         f"contradictions={stats.get('contradictions_resolved', 0)}",
     ]
     if health_report is not None:
-        output_parts.append(
-            f"health_report={json.dumps(health_report.model_dump())}"
-        )
+        output_parts.append(f"health_report={json.dumps(health_report.model_dump())}")
     output_raw = ", ".join(output_parts)
 
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
         d: Dream = result.scalar_one()
         d.status = "partial" if is_partial else "completed"
-        d.memories_extracted = stats.get("total_memories_processed", 0)
         d.input_tokens = usage_input_tokens
         d.output_tokens = usage_output_tokens
         d.total_tokens = usage_total_tokens
@@ -741,7 +735,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         dream_id=dream_id,
         trigger=trigger,
         duration_ms=duration_ms,
-        memories_extracted=stats.get("total_memories_processed", 0),
+        memories_processed=stats.get("total_memories_processed", 0),
         files_count=len(files_modified),
         git_pr_url=git_result.get("git_pr_url", ""),
         memu_synced=memu_sync.get("items_synced", 0),

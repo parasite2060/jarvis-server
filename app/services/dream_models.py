@@ -55,7 +55,7 @@ class SessionLogEntry(BaseModel):
     action_items: list[str] = Field(default_factory=list)
     concepts: list[dict[str, str]] = Field(default_factory=list)
     connections: list[dict[str, str]] = Field(default_factory=list)
-    session_memories: list[str] = Field(default_factory=list)
+    memories: list[MemoryItem] = Field(default_factory=list)
 
 
 class ExtractionSummary(BaseModel):
