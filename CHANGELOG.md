@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/parasite2060/jarvis-server/compare/v0.6.0...v0.7.0) (2026-04-18)
+
+
+### Features
+
+* **epic-10:** story 10.1 server-side secret scrubber + prompt guardrails ([7e16e25](https://github.com/parasite2060/jarvis-server/commit/7e16e25b9e229223bd3e49f903671583da8efba4))
+* **epic-11:** story 11.2 weekly review phase telemetry + tool-call budget ([e9b306a](https://github.com/parasite2060/jarvis-server/commit/e9b306abe0749bfe9a97f2abc342761676b1173e))
+* **epic-11:** story 11.4 post-health-fix vault re-validation ([8c17cd7](https://github.com/parasite2060/jarvis-server/commit/8c17cd7365d69204fd2a251f21998eaa374299df))
+* **epic-11:** story 11.5 dreams.outcome enum for end-state disambiguation ([97a61ae](https://github.com/parasite2060/jarvis-server/commit/97a61aeb0647024c2c098858b57bb61e9cb288ce))
+* **epic-11:** story 11.7 shared secret patterns JSON + parity tests ([d1c37b7](https://github.com/parasite2060/jarvis-server/commit/d1c37b7c2ab5f88cb13363c60c44e44a36646115))
+* **epic-9:** story 9.35 consolidate session-log storage on dreams.session_log JSONB ([34382e1](https://github.com/parasite2060/jarvis-server/commit/34382e1fc6293955f136e94155c7c1b66d680e91))
+
+
+### Bug Fixes
+
+* **epic-11:** story 11.1 decouple cache invalidation from git outcome ([8cf61e9](https://github.com/parasite2060/jarvis-server/commit/8cf61e9c846f0cf5dc7a1f925d8654a0349399f4))
+
 ## [0.6.0](https://github.com/parasite2060/jarvis-server/compare/v0.5.2...v0.6.0) (2026-04-17)
 
 
