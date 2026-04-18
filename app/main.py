@@ -13,8 +13,12 @@ from app.api.routes.health import router as health_router
 from app.api.routes.memory import router as memory_router
 from app.config import settings
 from app.core.logging import get_logger
+from app.services.context_cache import invalidate_context_cache
+from app.services.file_manifest import scan_vault_files, sync_file_manifest_to_db
 
 log = get_logger("jarvis.app")
+
+VAULT_SYNC_INTERVAL_SECONDS = 1800
 
 
 async def _run_migrations() -> None:
@@ -40,6 +44,23 @@ async def _start_arq_pool(app: FastAPI) -> None:
     log.info("arq.worker.connected", redis_url=str(settings.redis_url).split("@")[-1])
 
 
+async def _vault_sync_loop() -> None:
+    from app.services.git_ops import git_ops_service
+
+    while True:
+        await asyncio.sleep(VAULT_SYNC_INTERVAL_SECONDS)
+        try:
+            await git_ops_service.pull_latest_main()
+            files = await scan_vault_files()
+            await sync_file_manifest_to_db(files)
+            await invalidate_context_cache()
+            log.info("vault_sync.completed", file_count=len(files))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("vault_sync.failed", error=str(exc))
+
+
 async def _start_dream_scheduler(app: FastAPI) -> None:
     from app.services.dream_scheduler import DreamScheduler
     from app.services.git_ops import git_ops_service
@@ -59,10 +80,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _start_arq_pool(app)
     await _start_dream_scheduler(app)
 
+    app.state.vault_sync_task = asyncio.create_task(_vault_sync_loop())
+    log.info("vault_sync.started", interval_seconds=VAULT_SYNC_INTERVAL_SECONDS)
+
     log.info("jarvis.startup.complete")
     yield
 
     log.info("jarvis.shutdown.begin")
+
+    if hasattr(app.state, "vault_sync_task"):
+        app.state.vault_sync_task.cancel()
+        try:
+            await app.state.vault_sync_task
+        except asyncio.CancelledError:
+            pass
 
     if hasattr(app.state, "scheduler_task"):
         app.state.scheduler_task.cancel()
