@@ -5,8 +5,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic_ai.usage import RunUsage
 
-from app.models.tables import Dream
+from app.core.exceptions import DreamError
+from app.models.tables import Dream, DreamPhase
+from app.services.dream_agent import WEEKLY_REVIEW_USAGE_LIMITS
 from app.services.dream_models import WeeklyReviewOutput
+
+_TELEMETRY_PATCH = "app.tasks.weekly_review_task.store_phase_telemetry"
+
+
+@pytest.fixture(autouse=True)
+def _mock_telemetry() -> Any:
+    """Autouse: prevent the real telemetry call from hitting the DB during unit tests."""
+    with patch(_TELEMETRY_PATCH, new_callable=AsyncMock, return_value=1) as mock:
+        yield mock
+
+
+SAMPLE_MESSAGES: list[Any] = [
+    MagicMock(model_dump=MagicMock(return_value={"role": "user", "content": "hi"})),
+    MagicMock(model_dump=MagicMock(return_value={"role": "assistant", "content": "ok"})),
+]
 
 SAMPLE_REVIEW_OUTPUT = WeeklyReviewOutput(
     review_content="# Weekly Review: 2026-W15\n## Week Themes\n- Architecture\n",
@@ -75,6 +92,41 @@ class FakeSession:
             item.id = self._factory.dream.id
 
 
+def _phase_rows_from_telemetry_mock(telemetry_mock: AsyncMock) -> list[DreamPhase]:
+    """Reconstruct DreamPhase rows from captured store_phase_telemetry calls.
+
+    `store_phase_telemetry` writes one DreamPhase per call, so each call's kwargs
+    map 1:1 to a DreamPhase row. Building DreamPhase objects from the kwargs lets
+    tests assert on the row shape that would be persisted.
+    """
+    rows: list[DreamPhase] = []
+    for call in telemetry_mock.call_args_list:
+        kwargs = call.kwargs
+        messages = kwargs.get("messages")
+        usage = kwargs.get("usage")
+        rows.append(
+            DreamPhase(
+                dream_id=kwargs.get("dream_id"),
+                phase=kwargs.get("phase"),
+                status=kwargs.get("status"),
+                run_prompt=kwargs.get("run_prompt"),
+                output_json=kwargs.get("output_json"),
+                conversation_history=(
+                    [m.model_dump() if hasattr(m, "model_dump") else m for m in messages]
+                    if messages
+                    else None
+                ),
+                input_tokens=getattr(usage, "input_tokens", None) if usage else None,
+                output_tokens=getattr(usage, "output_tokens", None) if usage else None,
+                total_tokens=getattr(usage, "total_tokens", None) if usage else None,
+                tool_calls=kwargs.get("tool_calls", 0),
+                duration_ms=kwargs.get("duration_ms"),
+                error_message=kwargs.get("error_message"),
+            )
+        )
+    return rows
+
+
 def _pipeline_patches(
     dream: Dream,
     *,
@@ -95,7 +147,7 @@ def _pipeline_patches(
         return None
 
     mock_run_weekly = AsyncMock(
-        return_value=(review_output or SAMPLE_REVIEW_OUTPUT, SAMPLE_USAGE, 10),
+        return_value=(review_output or SAMPLE_REVIEW_OUTPUT, SAMPLE_USAGE, 10, SAMPLE_MESSAGES),
         side_effect=agent_error,
     )
 
@@ -280,3 +332,82 @@ async def test_manual_trigger_recorded() -> None:
     await _run_with_patches(patches, trigger="manual")
 
     assert dream.status == "completed"
+
+
+def test_weekly_review_usage_limits_tool_calls() -> None:
+    """AC2: pin tool_calls_limit at >= 80 to prevent silent regression."""
+    assert WEEKLY_REVIEW_USAGE_LIMITS.tool_calls_limit is not None
+    assert WEEKLY_REVIEW_USAGE_LIMITS.tool_calls_limit >= 80
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_writes_phase_row_on_success(_mock_telemetry: AsyncMock) -> None:
+    """AC11: success path writes exactly one DreamPhase row with expected fields."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase_rows = _phase_rows_from_telemetry_mock(_mock_telemetry)
+    assert len(phase_rows) == 1
+    row = phase_rows[0]
+    assert isinstance(row, DreamPhase)
+    assert row.phase == "weekly_review"
+    assert row.status == "completed"
+    assert row.run_prompt
+    assert row.output_json is not None
+    expected_keys = set(WeeklyReviewOutput.model_fields.keys())
+    assert expected_keys.issubset(set(row.output_json.keys()))
+    assert isinstance(row.conversation_history, list)
+    assert len(row.conversation_history) > 0
+    assert row.input_tokens is not None
+    assert row.output_tokens is not None
+    assert row.total_tokens is not None
+    assert row.tool_calls is not None
+    assert row.duration_ms is not None
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_writes_phase_row_on_failure(_mock_telemetry: AsyncMock) -> None:
+    """AC12: agent failure writes one DreamPhase row with status=failed; _mark_failed preserved."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, agent_error=DreamError("test"))
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase_rows = _phase_rows_from_telemetry_mock(_mock_telemetry)
+    assert len(phase_rows) == 1
+    row = phase_rows[0]
+    assert isinstance(row, DreamPhase)
+    assert row.phase == "weekly_review"
+    assert row.status == "failed"
+    assert row.error_message is not None
+    assert "test" in row.error_message
+
+    assert dream.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_phase_row_written_for_empty_review(_mock_telemetry: AsyncMock) -> None:
+    """AC7: empty review still writes telemetry (the agent ran successfully)."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, review_output=SAMPLE_EMPTY_REVIEW_OUTPUT)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase_rows = _phase_rows_from_telemetry_mock(_mock_telemetry)
+    assert len(phase_rows) == 1
+    assert phase_rows[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_weekly_review_no_phase_row_when_no_daily_logs(_mock_telemetry: AsyncMock) -> None:
+    """AC9: skip-no-daily-logs path writes no phase row (agent never ran)."""
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, no_daily_logs=True)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    phase_rows = _phase_rows_from_telemetry_mock(_mock_telemetry)
+    assert len(phase_rows) == 0
+    assert dream.status == "skipped"

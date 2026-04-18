@@ -9,13 +9,19 @@ from app.models.db import async_session_factory
 from app.models.tables import Dream
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import WeeklyReviewDeps, run_weekly_review
+from app.services.dream_telemetry import store_phase_telemetry
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log, read_vault_file, write_vault_file
 
 log = get_logger("jarvis.tasks.weekly_review")
 
 VAULT_INDEX_FOLDERS = (
-    "decisions", "patterns", "concepts", "connections", "lessons", "projects",
+    "decisions",
+    "patterns",
+    "concepts",
+    "connections",
+    "lessons",
+    "projects",
 )
 
 
@@ -84,6 +90,12 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
     usage_output_tokens: int | None = None
     usage_total_tokens: int | None = None
     usage_tool_calls: int | None = None
+    weekly_run_prompt = (
+        f"Weekly review for {week_num}. "
+        f"Daily logs: {len(daily_logs)}, vault indexes: {len(vault_indexes)}."
+    )
+    weekly_start = time.monotonic_ns() // 1_000_000
+    weekly_started_at = datetime.now(UTC)
     try:
         deps = WeeklyReviewDeps(
             source_date=source_date,
@@ -92,7 +104,8 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
             vault_indexes=vault_indexes,
             vault_guide=vault_guide,
         )
-        output, usage, tool_call_count = await run_weekly_review(deps)
+        output, usage, tool_call_count, messages = await run_weekly_review(deps)
+        weekly_duration_ms = time.monotonic_ns() // 1_000_000 - weekly_start
         usage_input_tokens = usage.request_tokens
         usage_output_tokens = usage.response_tokens
         usage_total_tokens = usage.total_tokens
@@ -104,8 +117,29 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
             tool_calls=usage_tool_calls,
             themes=len(output.week_themes),
         )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="weekly_review",
+            status="completed",
+            run_prompt=weekly_run_prompt,
+            output_json=output.model_dump(),
+            messages=messages,
+            usage=usage,
+            tool_calls=tool_call_count,
+            duration_ms=weekly_duration_ms,
+            started_at=weekly_started_at,
+        )
     except Exception as exc:
+        weekly_duration_ms = time.monotonic_ns() // 1_000_000 - weekly_start
         log.error("weekly_review.agent.failed", dream_id=dream_id, error=str(exc))
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="weekly_review",
+            status="failed",
+            run_prompt=weekly_run_prompt,
+            duration_ms=weekly_duration_ms,
+            error_message=str(exc),
+        )
         await _mark_failed(dream_id, str(exc), start_ms)
         return
 
@@ -160,9 +194,7 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
     # Step 7: Update dream row
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
     input_summary = (
-        f"daily_logs={len(daily_logs)}, "
-        f"vault_indexes={len(vault_indexes)}, "
-        f"week={week_num}"
+        f"daily_logs={len(daily_logs)}, vault_indexes={len(vault_indexes)}, week={week_num}"
     )
     output_summary = (
         f"themes={len(output.week_themes)}, "
