@@ -19,6 +19,7 @@ from app.services.deep_dream import (
     gather_consolidation_inputs,
     run_health_checks,
     validate_consolidated_output,
+    validate_vault_post_fix,
     write_consolidated_files,
 )
 from app.services.dream_agent import (
@@ -428,6 +429,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     consolidation_result: dict[str, Any] | None = None
     consolidation_messages: list[Any] = []
     is_partial = False
+    error_message: str | None = None
     usage_input_tokens: int | None = None
     usage_output_tokens: int | None = None
     usage_total_tokens: int | None = None
@@ -658,6 +660,38 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
                     await update_file_manifest(files_modified)
                 except Exception:
                     pass
+
+                # Step 6f: Re-validate vault after health fix to catch
+                # patches that violate the line cap or remove key files.
+                # On failure: mark partial, populate error_message, but
+                # continue to git PR so the user can review the diff.
+                try:
+                    post_fix_result = await validate_vault_post_fix(source_date)
+                except Exception as exc:
+                    log.warning(
+                        "deep_dream.post_fix_validation.errored",
+                        dream_id=dream_id,
+                        error=str(exc),
+                    )
+                    is_partial = True
+                    if not error_message:
+                        error_message = f"post-fix validation errored: {exc}"
+                else:
+                    if post_fix_result["validation_failed"]:
+                        warnings_str = "; ".join(post_fix_result["warnings"])
+                        log.warning(
+                            "deep_dream.post_fix_validation.failed",
+                            dream_id=dream_id,
+                            warnings=post_fix_result["warnings"],
+                            source_date=source_date.isoformat(),
+                        )
+                        is_partial = True
+                        if error_message:
+                            error_message = f"{error_message} | post-fix: {warnings_str}"
+                        else:
+                            error_message = (
+                                f"health_fix produced invalid vault state: {warnings_str}"
+                            )
         except Exception as exc:
             log.warning(
                 "deep_dream.health_fix.failed",
@@ -731,6 +765,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         d.git_pr_status = git_result.get("git_pr_status", "")
         d.input_summary = input_summary
         d.output_raw = output_raw
+        if error_message:
+            d.error_message = error_message
         await session.commit()
 
     log.info(

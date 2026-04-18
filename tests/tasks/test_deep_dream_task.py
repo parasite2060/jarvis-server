@@ -929,6 +929,125 @@ async def test_phase2_failure_gives_empty_phase2_summary() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Story 11.4: Post-health-fix re-validation tests
+# ---------------------------------------------------------------------------
+
+
+SAMPLE_HEALTH_REPORT_WITH_BACKLINK = HealthReport(
+    orphan_notes=[],
+    stale_notes=[],
+    missing_frontmatter=[],
+    unresolved_contradictions=[],
+    memory_overflow=False,
+    knowledge_gaps=[],
+    missing_backlinks=["concepts/a.md \u2192 concepts/b.md (no reverse link)"],
+    total_issues=1,
+)
+
+
+def _patches_for_post_fix_test(
+    dream: Dream,
+    *,
+    post_fix_result: dict[str, Any] | None = None,
+    post_fix_error: Exception | None = None,
+    fix_messages: list[Any] | None = None,
+) -> dict[str, Any]:
+    """Build a pipeline patch set where health_fix actually runs (non-empty
+    consolidation_messages + total_issues > 0), and post-fix validation can
+    be controlled via post_fix_result or post_fix_error."""
+    patches = _pipeline_patches(
+        dream,
+        health_report=SAMPLE_HEALTH_REPORT_WITH_BACKLINK,
+    )
+    # Force consolidation to return a non-empty message history so the
+    # `if consolidation_messages:` guard around health_fix is satisfied.
+    patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"] = AsyncMock(
+        return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, ["msg1", "msg2"])
+    )
+    patches["app.tasks.deep_dream_task.run_health_fix"] = AsyncMock(
+        return_value=(SAMPLE_USAGE, 3, fix_messages or ["fix-msg"])
+    )
+    patches["app.tasks.deep_dream_task.append_vault_log"] = AsyncMock()
+    if post_fix_error is not None:
+        patches["app.tasks.deep_dream_task.validate_vault_post_fix"] = AsyncMock(
+            side_effect=post_fix_error
+        )
+    else:
+        patches["app.tasks.deep_dream_task.validate_vault_post_fix"] = AsyncMock(
+            return_value=post_fix_result or {"warnings": [], "validation_failed": False}
+        )
+    return patches
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_post_fix_validation_catches_memory_overflow() -> None:
+    dream = _make_dream()
+    patches = _patches_for_post_fix_test(
+        dream,
+        post_fix_result={
+            "warnings": ["MEMORY.md exceeds 200 lines after health fix (250)"],
+            "validation_failed": True,
+        },
+    )
+
+    mocks = await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "partial"
+    assert dream.error_message is not None
+    assert "200" in dream.error_message or "250" in dream.error_message
+    git_mock = mocks["app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr"]
+    git_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_post_fix_validation_happy() -> None:
+    dream = _make_dream()
+    patches = _patches_for_post_fix_test(
+        dream,
+        post_fix_result={"warnings": [], "validation_failed": False},
+    )
+
+    mocks = await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.error_message is None
+    post_fix_mock = mocks["app.tasks.deep_dream_task.validate_vault_post_fix"]
+    post_fix_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_post_fix_validation_errored() -> None:
+    dream = _make_dream()
+    patches = _patches_for_post_fix_test(
+        dream,
+        post_fix_error=PermissionError("cannot read MEMORY.md"),
+    )
+
+    mocks = await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "partial"
+    assert dream.error_message is not None
+    assert "cannot read MEMORY.md" in dream.error_message
+    git_mock = mocks["app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr"]
+    git_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_post_fix_validation_skipped_when_no_health_fix() -> None:
+    dream = _make_dream()
+    # Use the default _pipeline_patches which has empty consolidation_messages,
+    # so health_fix never runs and post-fix validation should not be called.
+    patches = _pipeline_patches(dream, health_report=SAMPLE_HEALTH_REPORT_WITH_BACKLINK)
+    post_fix_mock = AsyncMock(return_value={"warnings": [], "validation_failed": False})
+    patches["app.tasks.deep_dream_task.validate_vault_post_fix"] = post_fix_mock
+
+    await _run_with_patches(patches, trigger="auto")
+
+    post_fix_mock.assert_not_called()
+    assert dream.status == "completed"
+
+
+# ---------------------------------------------------------------------------
 # Story 9.16: Phase 2 formatter tests
 # ---------------------------------------------------------------------------
 

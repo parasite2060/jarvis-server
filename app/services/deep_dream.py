@@ -104,6 +104,40 @@ async def validate_consolidated_output(consolidation_result: dict[str, Any]) -> 
     }
 
 
+async def validate_vault_post_fix(source_date: date) -> dict[str, Any]:
+    log.info("deep_dream.post_fix_validation.started", source_date=source_date.isoformat())
+
+    warnings: list[str] = []
+    validation_failed = False
+
+    memory_md = await read_vault_file("MEMORY.md")
+    if memory_md is None or not memory_md.strip():
+        warnings.append("MEMORY.md is missing or empty after health fix")
+        validation_failed = True
+    else:
+        line_count = len(memory_md.splitlines())
+        if line_count > MAX_MEMORY_LINES:
+            warnings.append(
+                f"MEMORY.md exceeds {MAX_MEMORY_LINES} lines after health fix ({line_count})"
+            )
+            validation_failed = True
+
+    daily_path = f"dailys/{source_date.isoformat()}.md"
+    daily_log = await read_vault_file(daily_path)
+    if daily_log is None:
+        warnings.append(f"Daily log {daily_path} missing after health fix")
+        validation_failed = True
+
+    log.info(
+        "deep_dream.post_fix_validation.completed",
+        source_date=source_date.isoformat(),
+        validation_failed=validation_failed,
+        warning_count=len(warnings),
+    )
+
+    return {"warnings": warnings, "validation_failed": validation_failed}
+
+
 async def write_consolidated_files(
     validated_result: dict[str, Any],
     source_date: date,
