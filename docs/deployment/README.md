@@ -46,6 +46,8 @@ Complete these in order before deploying:
 ### PostgreSQL Requirements
 
 - PostgreSQL 17 with `pgvector` extension
+- **Cluster must be UTF8-encoded.** The dream pipeline stores JSONB with Unicode content (arrows, em-dashes, smart quotes, emoji) — an `SQL_ASCII` cluster causes `UntranslatableCharacterError` on insert. Verify with `SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'jarvis';` — must return `UTF8`.
+- If your cluster was initialized with `SQL_ASCII` (the default on some Debian setups), reinitialize with: `pg_dropcluster 17 main; pg_createcluster 17 main --start --encoding=UTF8 --locale=C.utf8 -- --data-checksums`. Back up first with `pg_dumpall`.
 - Two databases: `jarvis` (server state) and `memu` (semantic search)
 - A user with full access to both databases
 - `CREATE EXTENSION vector` enabled in the `memu` database
@@ -172,3 +174,4 @@ docker compose -f docker-compose.prod.yml logs -f jarvis-worker
 | temporal won't start | Verify PostgreSQL is accessible and credentials are correct (temporal is a memu-server dependency) |
 | Dreams not creating PRs | Check `JARVIS_GITHUB_PAT` has `contents:write` + `pull_requests:write` |
 | Context not injected | Check plugin's `serverUrl` matches the server address + port |
+| `UntranslatableCharacterError: unsupported Unicode escape sequence` | PostgreSQL cluster is `SQL_ASCII` — see [PostgreSQL Requirements](#postgresql-requirements). Run `psql -c "SELECT datname, pg_encoding_to_char(encoding) FROM pg_database;"` to verify; all should be `UTF8`. To fix, backup with `pg_dumpall`, then `pg_dropcluster 17 main && pg_createcluster 17 main --start --encoding=UTF8 --locale=C.utf8 -- --data-checksums`, then restore. |
