@@ -17,6 +17,13 @@ from app.models.db import Base
 
 SCHEMA = "jarvis"
 
+DREAM_OUTCOMES = (
+    "wrote_files",
+    "no_new_content",
+    "extraction_empty",
+    "record_soft_fail",
+)
+
 
 class DreamPhase(Base):
     __tablename__ = "dream_phases"
@@ -95,6 +102,7 @@ class Dream(Base):
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     trigger: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="queued")
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
     transcript_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey(f"{SCHEMA}.transcripts.id"), nullable=True
     )

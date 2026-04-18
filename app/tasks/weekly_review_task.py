@@ -202,9 +202,11 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
         f"project_updates={len(output.project_updates)}"
     )
 
+    outcome = "wrote_files"
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
         d: Dream = result.scalar_one()
+        d.outcome = outcome
         d.status = "completed"
         d.input_tokens = usage_input_tokens
         d.output_tokens = usage_output_tokens
@@ -228,6 +230,7 @@ async def weekly_review_task(ctx: dict[str, Any], trigger: str = "auto") -> None
         week=week_num,
         themes=len(output.week_themes),
         git_pr_url=git_result.get("git_pr_url", ""),
+        outcome=outcome,
     )
 
 
@@ -250,6 +253,7 @@ async def _mark_skipped(dream_id: int, start_ms: int) -> None:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
         d: Dream = result.scalar_one()
         d.status = "skipped"
+        d.outcome = "no_new_content"
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         await session.commit()

@@ -935,3 +935,115 @@ async def test_last_processed_line_not_set_when_segment_end_line_zero() -> None:
 
     assert transcript.status == "processed"
     assert transcript.last_processed_line != 900
+
+
+# ── Story 11.5: outcome enum tests ──
+
+
+@pytest.mark.asyncio
+async def test_light_dream_outcome_wrote_files() -> None:
+    """Happy path: extraction + record produced files → outcome='wrote_files'."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(return_value=(SAMPLE_RECORD_RESULT, SAMPLE_USAGE, 2, []))
+    mock_create_pr = AsyncMock(
+        return_value={
+            "git_branch": "dream/light-2026-04-18-100000",
+            "git_pr_url": "https://github.com/owner/repo/pull/1",
+            "git_pr_status": "merged",
+        }
+    )
+    mock_cleanup = AsyncMock()
+    mock_invalidate = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.tasks.light_dream_task.git_ops_service.create_light_dream_pr", mock_create_pr),
+        patch("app.tasks.light_dream_task.git_ops_service.cleanup_branch", mock_cleanup),
+        patch("app.tasks.light_dream_task.invalidate_context_cache", mock_invalidate),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.outcome == "wrote_files"
+
+
+@pytest.mark.asyncio
+async def test_light_dream_outcome_no_new_content() -> None:
+    """Extraction succeeds, record returns empty files_modified → 'no_new_content'."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    empty_record = RecordResult(files=[], summary="No vault changes needed")
+    mock_merge = AsyncMock(return_value=(empty_record, SAMPLE_USAGE, 2, []))
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.outcome == "no_new_content"
+
+
+@pytest.mark.asyncio
+async def test_light_dream_outcome_extraction_empty() -> None:
+    """summary.no_extract=True → outcome='extraction_empty'."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_no_extract_mock()
+    mock_merge = AsyncMock()
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.outcome == "extraction_empty"
+
+
+@pytest.mark.asyncio
+async def test_light_dream_outcome_record_soft_fail() -> None:
+    """Extraction succeeds, record raises (caught soft-fail) → 'record_soft_fail'."""
+    transcript = _make_transcript()
+    dream = _make_dream()
+    factory = FakeSessionFactory(transcript, dream)
+    mock_extract = _make_extraction_mock()
+    mock_merge = AsyncMock(side_effect=Exception("Record agent crashed"))
+
+    with (
+        patch("app.tasks.light_dream_task.async_session_factory", factory),
+        patch("app.tasks.light_dream_task.run_dream_extraction", mock_extract),
+        patch("app.tasks.light_dream_task.run_record", mock_merge),
+        patch("app.config.settings") as mock_settings,
+    ):
+        mock_settings.jarvis_memory_path = "/tmp/test-memory"
+        from app.tasks.light_dream_task import light_dream_task
+
+        await light_dream_task({}, 1)
+
+    assert dream.status == "completed"
+    assert dream.outcome == "record_soft_fail"

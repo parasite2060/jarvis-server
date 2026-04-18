@@ -45,6 +45,15 @@ from app.services.vault_updater import update_file_manifest, update_vault_folder
 log = get_logger("jarvis.tasks.deep_dream")
 
 
+def _determine_deep_dream_outcome(
+    *,
+    files_modified: list[dict[str, str]] | None,
+) -> str:
+    if files_modified:
+        return "wrote_files"
+    return "no_new_content"
+
+
 def _format_phase1_summary(
     phase1_output: LightSleepOutput,
     scores: dict[str, float],
@@ -749,9 +758,11 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         output_parts.append(f"health_report={json.dumps(health_report.model_dump())}")
     output_raw = ", ".join(output_parts)
 
+    outcome = _determine_deep_dream_outcome(files_modified=files_modified)
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
         d: Dream = result.scalar_one()
+        d.outcome = outcome
         d.status = "partial" if is_partial else "completed"
         d.input_tokens = usage_input_tokens
         d.output_tokens = usage_output_tokens
@@ -778,6 +789,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         files_count=len(files_modified),
         git_pr_url=git_result.get("git_pr_url", ""),
         memu_synced=memu_sync.get("items_synced", 0),
+        outcome=outcome,
     )
 
 
@@ -800,6 +812,7 @@ async def _mark_skipped(dream_id: int, start_ms: int) -> None:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
         d: Dream = result.scalar_one()
         d.status = "skipped"
+        d.outcome = "no_new_content"
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         await session.commit()

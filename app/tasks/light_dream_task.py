@@ -15,12 +15,30 @@ from app.models.db import async_session_factory
 from app.models.tables import Dream, Transcript
 from app.services.context_cache import invalidate_context_cache
 from app.services.dream_agent import DreamDeps, RecordDeps, run_dream_extraction, run_record
-from app.services.dream_models import SessionLogEntry
+from app.services.dream_models import ExtractionSummary, SessionLogEntry
 from app.services.dream_telemetry import store_phase_telemetry
 from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log
 
 log = get_logger("jarvis.tasks.light_dream")
+
+
+def _determine_light_dream_outcome(
+    *,
+    extraction_failed: bool,
+    summary: ExtractionSummary,
+    record_raised: bool,
+    files_modified: list[dict[str, object]],
+) -> str | None:
+    if extraction_failed:
+        return None
+    if getattr(summary, "no_extract", False):
+        return "extraction_empty"
+    if record_raised:
+        return "record_soft_fail"
+    if files_modified:
+        return "wrote_files"
+    return "no_new_content"
 
 
 async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
@@ -84,6 +102,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
 
     extraction_failed = False
     is_partial = False
+    record_raised = False
     error_message: str | None = None
     memories_count = 0
     source_date_for_git = date.today()
@@ -94,8 +113,6 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
     usage_tool_calls: int | None = None
     # Default extraction output — overwritten on success; left untouched (no_extract=True
     # effective) when extraction raises or UsageLimitExceeded without a partial result.
-    from app.services.dream_models import ExtractionSummary
-
     summary: ExtractionSummary = ExtractionSummary(no_extract=True)
 
     try:
@@ -279,6 +296,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 except Exception as log_exc:
                     log.warning("light_dream.vault_log.failed", error=str(log_exc))
             except Exception as exc:
+                record_raised = True
                 log.warning(
                     "light_dream.record.failed",
                     transcript_id=transcript_id,
@@ -323,9 +341,16 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
 
         # Step 9: Update dream row
         duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
+        outcome = _determine_light_dream_outcome(
+            extraction_failed=extraction_failed,
+            summary=summary,
+            record_raised=record_raised,
+            files_modified=files_modified,
+        )
         async with async_session_factory() as session:
             dream_result = await session.execute(select(Dream).where(Dream.id == dream_id))
             d: Dream = dream_result.scalar_one()
+            d.outcome = outcome
             if extraction_failed:
                 d.status = "failed"
                 d.error_message = error_message
@@ -367,6 +392,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 transcript_id=transcript_id,
                 dream_id=dream_id,
                 duration_ms=duration_ms,
+                outcome=outcome,
             )
         elif is_partial:
             log.warning(
@@ -375,6 +401,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 dream_id=dream_id,
                 memories_count=memories_count,
                 duration_ms=duration_ms,
+                outcome=outcome,
             )
         else:
             log.info(
@@ -383,6 +410,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                 dream_id=dream_id,
                 memories_count=memories_count,
                 duration_ms=duration_ms,
+                outcome=outcome,
             )
 
     finally:
