@@ -597,9 +597,7 @@ def vault_workspace(tmp_path: Path) -> Path:
     (tmp_path / "patterns" / "_index.md").write_text(
         "# Patterns\n- [[async-patterns]]\n", encoding="utf-8"
     )
-    (tmp_path / "concepts" / "_index.md").write_text(
-        "# Concepts\n", encoding="utf-8"
-    )
+    (tmp_path / "concepts" / "_index.md").write_text("# Concepts\n", encoding="utf-8")
 
     # Create vault files with frontmatter
     (tmp_path / "decisions" / "arch-choices.md").write_text(
@@ -712,9 +710,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
         "---\ntype: concept\nlast_reviewed: 2026-04-01\n---\n# Orphan\n",
         encoding="utf-8",
     )
-    (vault_workspace / "decisions" / "no-fm.md").write_text(
-        "# No FM\n", encoding="utf-8"
-    )
+    (vault_workspace / "decisions" / "no-fm.md").write_text("# No FM\n", encoding="utf-8")
     (vault_workspace / "decisions" / "contradicted.md").write_text(
         "---\nhas_contradiction: true\n---\n# X\n", encoding="utf-8"
     )
@@ -723,7 +719,8 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
 
     report = await run_health_checks(vault_workspace, knowledge_gaps=["gap1"])
 
-    # orphan + missing_fm + contradiction + gap + stale + backlinks + unclassified
+    # orphan + missing_fm + contradiction + gap + stale + backlinks +
+    # unclassified + broken_wikilinks
     assert report.total_issues == (
         len(report.orphan_notes)
         + len(report.stale_notes)
@@ -733,6 +730,7 @@ async def test_health_checks_total_issues_correct(vault_workspace: Path) -> None
         + len(report.knowledge_gaps)
         + len(report.missing_backlinks)
         + len(report.unclassified_lessons)
+        + len(report.broken_wikilinks)
     )
 
 
@@ -757,8 +755,7 @@ async def test_health_check_skips_references_stale(tmp_path: Path) -> None:
     index.write_text("- [Old Ref](old-ref.md) -- old reference", encoding="utf-8")
     old_ref = refs_dir / "old-ref.md"
     old_ref.write_text(
-        "---\ntype: reference\nstatus: permanent\n"
-        "last_reviewed: 2024-01-01\n---\n# Old Ref",
+        "---\ntype: reference\nstatus: permanent\nlast_reviewed: 2024-01-01\n---\n# Old Ref",
         encoding="utf-8",
     )
     (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
@@ -919,8 +916,7 @@ class TestMissingBacklinks:
             encoding="utf-8",
         )
         (patterns / "async-patterns.md").write_text(
-            "---\ntype: pattern\nlast_reviewed: 2026-04-01\n---\n"
-            "# AP\nNo backlink.\n",
+            "---\ntype: pattern\nlast_reviewed: 2026-04-01\n---\n# AP\nNo backlink.\n",
             encoding="utf-8",
         )
         (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
@@ -1065,18 +1061,14 @@ class TestAutoFixHealthIssues:
         patterns_dir = tmp_path / "patterns"
         patterns_dir.mkdir()
 
-        (decisions_dir / "_index.md").write_text(
-            "- [Choice](choice.md)", encoding="utf-8"
-        )
+        (decisions_dir / "_index.md").write_text("- [Choice](choice.md)", encoding="utf-8")
         (decisions_dir / "choice.md").write_text(
             "---\ntype: decision\ncreated: 2026-04-14\n"
             "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
             "# Choice\nSee [[patterns/my-pattern]]\n",
             encoding="utf-8",
         )
-        (patterns_dir / "_index.md").write_text(
-            "- [My Pattern](my-pattern.md)", encoding="utf-8"
-        )
+        (patterns_dir / "_index.md").write_text("- [My Pattern](my-pattern.md)", encoding="utf-8")
         (patterns_dir / "my-pattern.md").write_text(
             "---\ntype: pattern\ncreated: 2026-04-14\n"
             "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
@@ -1099,9 +1091,7 @@ class TestAutoFixHealthIssues:
     async def test_fixes_missing_frontmatter(self, tmp_path: Path) -> None:
         decisions_dir = tmp_path / "decisions"
         decisions_dir.mkdir()
-        (decisions_dir / "_index.md").write_text(
-            "- [No FM](no-fm.md)", encoding="utf-8"
-        )
+        (decisions_dir / "_index.md").write_text("- [No FM](no-fm.md)", encoding="utf-8")
         (decisions_dir / "no-fm.md").write_text(
             "# No Frontmatter\nJust content\n", encoding="utf-8"
         )
@@ -1126,9 +1116,7 @@ class TestAutoFixHealthIssues:
     async def test_fixes_orphan_notes(self, tmp_path: Path) -> None:
         patterns_dir = tmp_path / "patterns"
         patterns_dir.mkdir()
-        (patterns_dir / "_index.md").write_text(
-            "# Patterns Index\n", encoding="utf-8"
-        )
+        (patterns_dir / "_index.md").write_text("# Patterns Index\n", encoding="utf-8")
         (patterns_dir / "orphan-pattern.md").write_text(
             "---\ntype: pattern\n---\n# Orphan\n", encoding="utf-8"
         )
@@ -1173,7 +1161,7 @@ class TestAutoFixHealthIssues:
         from app.services.deep_dream import auto_fix_health_issues, run_health_checks
 
         report = await run_health_checks(tmp_path)
-        fixes = await auto_fix_health_issues(tmp_path, report)
+        await auto_fix_health_issues(tmp_path, report)
 
         concept_content = (concepts_dir / "c.md").read_text(encoding="utf-8")
         assert "[[decisions/d]]" in concept_content
@@ -1187,6 +1175,427 @@ class TestAutoFixHealthIssues:
         report = HealthReport(total_issues=0)
         fixes = await auto_fix_health_issues(tmp_path, report)
         assert fixes["total_fixed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Story 11.12: Bootstrap missing _index.md in orphan repair
+# ---------------------------------------------------------------------------
+
+
+class TestFixOrphanNotesBootstrap:
+    """Story 11.12 — `_fix_orphan_notes` creates the folder's `_index.md`
+    via `regenerate_index` when it does not exist, else appends idempotently."""
+
+    @pytest.mark.asyncio
+    async def test_fix_orphan_creates_missing_index(self, tmp_path: Path) -> None:
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        (templates_dir / "alpha.md").write_text(
+            "---\ntype: template\ncreated: 2026-04-01\n"
+            "updated: 2026-04-01\nlast_reviewed: 2026-04-01\n---\n\n"
+            "# Alpha Template\n\nThe alpha template body.\n",
+            encoding="utf-8",
+        )
+        (templates_dir / "beta.md").write_text(
+            "---\ntype: template\ncreated: 2026-04-02\n"
+            "updated: 2026-04-02\nlast_reviewed: 2026-04-02\n---\n\n"
+            "# Beta Template\n\nThe beta template body.\n",
+            encoding="utf-8",
+        )
+
+        from app.services.deep_dream import _fix_orphan_notes
+
+        with (
+            patch("app.services.vault_updater.settings") as mock_vu_settings,
+            patch("app.services.memory_files.settings") as mock_mf_settings,
+        ):
+            mock_vu_settings.ai_memory_repo_path = str(tmp_path)
+            mock_mf_settings.ai_memory_repo_path = str(tmp_path)
+            fixed = await _fix_orphan_notes(
+                tmp_path,
+                ["templates/alpha.md", "templates/beta.md"],
+                date(2026, 4, 18),
+            )
+
+        index_path = templates_dir / "_index.md"
+        assert index_path.is_file()
+        content = index_path.read_text(encoding="utf-8")
+        assert "type: index" in content
+        assert "# Templates Index" in content
+        assert "(alpha.md)" in content
+        assert "(beta.md)" in content
+        assert fixed == 2
+
+    @pytest.mark.asyncio
+    async def test_fix_orphan_appends_to_existing_index(self, tmp_path: Path) -> None:
+        concepts_dir = tmp_path / "concepts"
+        concepts_dir.mkdir()
+        existing_index = (
+            "---\ntype: index\ntags: [concepts]\n"
+            "created: 2026-04-01\nupdated: 2026-04-01\n"
+            "last_reviewed: 2026-04-01\n---\n\n"
+            "# Concepts Index\n\n"
+            "- [Already Indexed](already-indexed.md) -- Some existing summary\n"
+        )
+        (concepts_dir / "_index.md").write_text(existing_index, encoding="utf-8")
+        (concepts_dir / "already-indexed.md").write_text(
+            "---\ntype: concept\n---\n# Already Indexed\n", encoding="utf-8"
+        )
+        (concepts_dir / "new-orphan.md").write_text(
+            "---\ntype: concept\n---\n# New Orphan\n", encoding="utf-8"
+        )
+
+        from app.services.deep_dream import _fix_orphan_notes
+
+        fixed = await _fix_orphan_notes(
+            tmp_path,
+            ["concepts/new-orphan.md"],
+            date(2026, 4, 18),
+        )
+
+        content = (concepts_dir / "_index.md").read_text(encoding="utf-8")
+        assert "- [Already Indexed](already-indexed.md) -- Some existing summary" in content
+        assert "(new-orphan.md)" in content
+        assert fixed == 1
+
+    @pytest.mark.asyncio
+    async def test_fix_orphan_is_idempotent_within_loop(self, tmp_path: Path) -> None:
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        (patterns_dir / "_index.md").write_text(
+            "---\ntype: index\n---\n\n# Patterns Index\n",
+            encoding="utf-8",
+        )
+        (patterns_dir / "repeat.md").write_text(
+            "---\ntype: pattern\n---\n# Repeat\n", encoding="utf-8"
+        )
+
+        from app.services.deep_dream import _fix_orphan_notes
+
+        await _fix_orphan_notes(tmp_path, ["patterns/repeat.md"], date(2026, 4, 18))
+        first = (patterns_dir / "_index.md").read_text(encoding="utf-8")
+
+        fixed_second = await _fix_orphan_notes(tmp_path, ["patterns/repeat.md"], date(2026, 4, 18))
+        second = (patterns_dir / "_index.md").read_text(encoding="utf-8")
+
+        assert first == second
+        assert fixed_second == 0
+        assert first.count("(repeat.md)") == 1
+
+    @pytest.mark.asyncio
+    async def test_loop_iteration_bootstraps_missing_index(self, tmp_path: Path) -> None:
+        """AC9 — integration: a full `auto_fix_health_issues` call inside the
+        loop context bootstraps `_index.md` for an orphan whose folder lacks one."""
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        (templates_dir / "2026-04-06-factory-and-chain-patterns.md").write_text(
+            "---\ntype: template\ncreated: 2026-04-06\n"
+            "updated: 2026-04-06\nlast_reviewed: 2026-04-06\n---\n\n"
+            "# Factory and Chain Patterns\n\nFactory and chain pattern template.\n",
+            encoding="utf-8",
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            orphan_notes=["templates/2026-04-06-factory-and-chain-patterns.md"],
+            total_issues=1,
+        )
+
+        with (
+            patch("app.services.vault_updater.settings") as mock_vu_settings,
+            patch("app.services.memory_files.settings") as mock_mf_settings,
+        ):
+            mock_vu_settings.ai_memory_repo_path = str(tmp_path)
+            mock_mf_settings.ai_memory_repo_path = str(tmp_path)
+            fixes = await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        index_path = templates_dir / "_index.md"
+        assert index_path.is_file()
+        content = index_path.read_text(encoding="utf-8")
+        assert "(2026-04-06-factory-and-chain-patterns.md)" in content
+        assert fixes["orphans_fixed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_fix_orphan_groups_by_folder(self, tmp_path: Path) -> None:
+        for folder in ("templates", "decisions", "concepts"):
+            (tmp_path / folder).mkdir()
+            (tmp_path / folder / f"{folder[:-1]}-a.md").write_text(
+                f"---\ntype: {folder[:-1]}\n---\n# {folder.title()} A\n",
+                encoding="utf-8",
+            )
+            (tmp_path / folder / f"{folder[:-1]}-b.md").write_text(
+                f"---\ntype: {folder[:-1]}\n---\n# {folder.title()} B\n",
+                encoding="utf-8",
+            )
+
+        from app.services.deep_dream import _fix_orphan_notes
+
+        regen_mock = AsyncMock(return_value={"path": "x/_index.md", "action": "rewrite"})
+        with (
+            patch("app.services.vault_updater.settings") as mock_settings,
+            patch("app.services.deep_dream.regenerate_index", regen_mock),
+        ):
+            mock_settings.ai_memory_repo_path = str(tmp_path)
+            fixed = await _fix_orphan_notes(
+                tmp_path,
+                [
+                    "templates/template-a.md",
+                    "templates/template-b.md",
+                    "decisions/decision-a.md",
+                    "concepts/concept-a.md",
+                    "concepts/concept-b.md",
+                ],
+                date(2026, 4, 18),
+            )
+
+        assert regen_mock.call_count == 3
+        folders_called = {call.args[0] for call in regen_mock.call_args_list}
+        assert folders_called == {"templates", "decisions", "concepts"}
+        assert fixed == 5
+
+
+# ---------------------------------------------------------------------------
+# Story 11.13: Deterministic backlink writer + broken_wikilinks check
+# ---------------------------------------------------------------------------
+
+
+def _seed_file(path: Path, body: str, *, with_frontmatter: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if with_frontmatter:
+        fm = (
+            "---\ntype: note\ncreated: 2026-04-14\n"
+            "updated: 2026-04-14\nlast_reviewed: 2026-04-14\n---\n\n"
+        )
+        path.write_text(fm + body, encoding="utf-8")
+    else:
+        path.write_text(body, encoding="utf-8")
+
+
+class TestBacklinkWriter:
+    """Story 11.13 — deterministic backlink repair in `auto_fix_health_issues`."""
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_adds_reverse_link(self, tmp_path: Path) -> None:
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "patterns").mkdir()
+        _seed_file(
+            tmp_path / "decisions" / "choice.md",
+            "# Choice\n\nSee [[patterns/my-pattern]].\n",
+        )
+        _seed_file(
+            tmp_path / "patterns" / "my-pattern.md",
+            "# My Pattern\n\nPattern body.\n",
+        )
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=[
+                "decisions/choice.md \u2192 patterns/my-pattern.md (no reverse link)"
+            ],
+            total_issues=1,
+        )
+        fixes = await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        content = (tmp_path / "patterns" / "my-pattern.md").read_text(encoding="utf-8")
+        assert "## Related" in content
+        assert "[[decisions/choice]]" in content
+        assert fixes["backlinks_fixed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_creates_related_section_if_missing(self, tmp_path: Path) -> None:
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "patterns").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n")
+        target_body = "# Target\n\nBody with no related section.\n"
+        _seed_file(tmp_path / "patterns" / "target.md", target_body)
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=["decisions/d.md \u2192 patterns/target.md (no reverse link)"],
+            total_issues=1,
+        )
+        await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        content = (tmp_path / "patterns" / "target.md").read_text(encoding="utf-8")
+        assert "\n\n## Related\n" in content
+        assert "- [[decisions/d]]\n" in content
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_is_idempotent(self, tmp_path: Path) -> None:
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "patterns").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n")
+        _seed_file(tmp_path / "patterns" / "t.md", "# T\n\nBody.\n")
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=["decisions/d.md \u2192 patterns/t.md (no reverse link)"],
+            total_issues=1,
+        )
+
+        await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+        first = (tmp_path / "patterns" / "t.md").read_text(encoding="utf-8")
+
+        fixes_second = await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+        second = (tmp_path / "patterns" / "t.md").read_text(encoding="utf-8")
+
+        assert first == second
+        assert fixes_second["backlinks_fixed"] == 0
+        assert first.count("[[decisions/d]]") == 1
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_skips_references_target(self, tmp_path: Path) -> None:
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "references").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n")
+        ref_body = "# Ref\n\nTerminal reference.\n"
+        _seed_file(tmp_path / "references" / "r.md", ref_body)
+        before = (tmp_path / "references" / "r.md").read_text(encoding="utf-8")
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=["decisions/d.md \u2192 references/r.md (no reverse link)"],
+            total_issues=1,
+        )
+        fixes = await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        after = (tmp_path / "references" / "r.md").read_text(encoding="utf-8")
+        assert before == after
+        assert fixes["backlinks_fixed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_handles_missing_source(self, tmp_path: Path) -> None:
+        (tmp_path / "patterns").mkdir()
+        target_body = "# T\n\nBody.\n"
+        _seed_file(tmp_path / "patterns" / "t.md", target_body)
+        before = (tmp_path / "patterns" / "t.md").read_text(encoding="utf-8")
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=["decisions/nonexistent.md \u2192 patterns/t.md (no reverse link)"],
+            total_issues=1,
+        )
+        fixes = await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        after = (tmp_path / "patterns" / "t.md").read_text(encoding="utf-8")
+        assert before == after
+        assert fixes["backlinks_fixed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_backlink_writer_preserves_existing_related_entries(self, tmp_path: Path) -> None:
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "concepts").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n")
+        existing = (
+            "# T\n\nBody.\n\n"
+            "## Related\n"
+            "- [[patterns/existing-one]]\n"
+            "- [[patterns/existing-two]]\n"
+            "- [[concepts/existing-three]]\n"
+        )
+        _seed_file(tmp_path / "concepts" / "t.md", existing)
+
+        from app.services.deep_dream import auto_fix_health_issues
+        from app.services.dream_models import HealthReport
+
+        report = HealthReport(
+            missing_backlinks=["decisions/d.md \u2192 concepts/t.md (no reverse link)"],
+            total_issues=1,
+        )
+        await auto_fix_health_issues(tmp_path, report, date(2026, 4, 18))
+
+        content = (tmp_path / "concepts" / "t.md").read_text(encoding="utf-8")
+        assert "[[patterns/existing-one]]" in content
+        assert "[[patterns/existing-two]]" in content
+        assert "[[concepts/existing-three]]" in content
+        assert "[[decisions/d]]" in content
+
+
+class TestBrokenWikilinks:
+    """Story 11.13 — `_find_broken_wikilinks` structural check."""
+
+    @pytest.mark.asyncio
+    async def test_broken_wikilinks_catches_empty_filename(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _find_broken_wikilinks
+
+        (tmp_path / "projects").mkdir()
+        _seed_file(
+            tmp_path / "projects" / "svc.md",
+            "# Service\n\n## Related\n- [[decisions/]] — native librdkafka\n",
+        )
+
+        unresolved = _find_broken_wikilinks(tmp_path)
+        assert any("projects/svc.md" in e and "[[decisions/]]" in e for e in unresolved)
+
+    @pytest.mark.asyncio
+    async def test_broken_wikilinks_catches_fabricated_target(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _find_broken_wikilinks
+
+        (tmp_path / "patterns").mkdir()
+        _seed_file(
+            tmp_path / "patterns" / "arch.md",
+            "# Arch\n\nSee [[projects/does-not-exist]].\n",
+        )
+
+        unresolved = _find_broken_wikilinks(tmp_path)
+        assert any(
+            "patterns/arch.md" in e and "[[projects/does-not-exist]]" in e for e in unresolved
+        )
+
+    @pytest.mark.asyncio
+    async def test_broken_wikilinks_ignores_valid_links(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _find_broken_wikilinks
+
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "patterns").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n\nSee [[patterns/p]].\n")
+        _seed_file(tmp_path / "patterns" / "p.md", "# P\n\nSee [[decisions/d]].\n")
+
+        unresolved = _find_broken_wikilinks(tmp_path)
+        assert unresolved == []
+
+    @pytest.mark.asyncio
+    async def test_broken_wikilinks_ignores_dailys_and_backups(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _find_broken_wikilinks
+
+        (tmp_path / "dailys").mkdir()
+        (tmp_path / ".backups").mkdir()
+        (tmp_path / "dailys" / "2026-04-18.md").write_text("[[decisions/gone]]", encoding="utf-8")
+        (tmp_path / ".backups" / "MEMORY.md.2026-04-18.bak").write_text(
+            "[[anywhere/]]", encoding="utf-8"
+        )
+
+        unresolved = _find_broken_wikilinks(tmp_path)
+        assert unresolved == []
+
+    @pytest.mark.asyncio
+    async def test_broken_wikilinks_handles_references(self, tmp_path: Path) -> None:
+        """References can be linked to without being flagged.
+
+        A reference file with a valid forward link and no inbound link should
+        not produce spurious `broken_wikilinks` entries — the check is about
+        whether `target.md` resolves on disk, not about bidirectionality."""
+        from app.services.deep_dream import _find_broken_wikilinks
+
+        (tmp_path / "decisions").mkdir()
+        (tmp_path / "references").mkdir()
+        _seed_file(tmp_path / "decisions" / "d.md", "# D\n\nSee [[references/rfc]].\n")
+        _seed_file(tmp_path / "references" / "rfc.md", "# RFC 7159\n\nTerminal reference.\n")
+
+        unresolved = _find_broken_wikilinks(tmp_path)
+        assert unresolved == []
 
 
 # ── validate_vault_post_fix tests ──
@@ -1269,3 +1678,334 @@ async def test_validate_vault_post_fix_empty_memory() -> None:
 
     assert result["validation_failed"] is True
     assert any("MEMORY.md" in w and "empty" in w for w in result["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Story 11.10: Bounded health-check / health-fix loop
+# ---------------------------------------------------------------------------
+
+import contextlib  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+from pydantic_ai.usage import RunUsage  # noqa: E402
+
+from app.models.tables import Dream  # noqa: E402
+from app.services.dream_models import (  # noqa: E402
+    ConsolidationOutput,
+    ConsolidationStats,
+    HealthFixAction,
+    HealthFixOutput,
+    HealthReport,
+    LightSleepOutput,
+    REMSleepOutput,
+    ScoredCandidate,
+    VaultUpdates,
+)
+
+
+def _make_dream_row() -> Dream:
+    d = Dream(type="deep", trigger="auto", status="processing")
+    d.id = 1  # type: ignore[assignment]
+    return d
+
+
+class _FakeSessionFactory:
+    def __init__(self, dream: Dream) -> None:
+        self.dream = dream
+        self.added_items: list[Any] = []
+
+    def __call__(self) -> "_FakeSessionFactory":
+        return self
+
+    async def __aenter__(self) -> "_FakeSession":
+        return _FakeSession(self)
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+
+class _FakeSession:
+    def __init__(self, factory: _FakeSessionFactory) -> None:
+        self._factory = factory
+
+    async def execute(self, stmt: Any) -> MagicMock:
+        result = MagicMock()
+        result.scalar_one.return_value = self._factory.dream
+        result.scalar_one_or_none.return_value = self._factory.dream
+        return result
+
+    def add(self, item: Any) -> None:
+        self._factory.added_items.append(item)
+
+    async def commit(self) -> None:
+        return None
+
+    async def refresh(self, item: Any) -> None:
+        if isinstance(item, Dream):
+            item.id = self._factory.dream.id
+
+
+_LOOP_USAGE = RunUsage(input_tokens=10, output_tokens=5, requests=1)
+
+
+_LOOP_CONSOLIDATION = ConsolidationOutput(
+    memory_md="# M\n- entry",
+    daily_summary="Day.",
+    stats=ConsolidationStats(),
+    vault_updates=VaultUpdates(),
+)
+
+_LOOP_VALIDATED: dict[str, Any] = {
+    "memory_md": "# M\n- entry",
+    "daily_summary": "Day.",
+    "stats": {},
+    "vault_updates": {
+        "decisions": [],
+        "projects": [],
+        "patterns": [],
+        "templates": [],
+        "concepts": [],
+        "connections": [],
+        "lessons": [],
+    },
+    "line_count": 2,
+    "warnings": [],
+}
+
+
+def _report_with_contradictions(n: int) -> HealthReport:
+    return HealthReport(
+        unresolved_contradictions=[f"decisions/c{i}.md" for i in range(n)],
+        total_issues=n,
+    )
+
+
+def _loop_fix_output(n_actions: int, iteration: int = 1) -> HealthFixOutput:
+    return HealthFixOutput(
+        actions=[
+            HealthFixAction(
+                issue_type="unresolved_contradiction",
+                target_file=f"decisions/c{i}.md",
+                action_taken="resolved_contradiction",
+            )
+            for i in range(n_actions)
+        ],
+        issues_resolved=n_actions,
+        iteration=iteration,
+    )
+
+
+def _build_loop_patches(
+    dream: Dream,
+    *,
+    health_check_sequence: list[HealthReport],
+    run_health_fix_returns: list[Any] | None = None,
+    run_health_fix_side_effect: list[Any] | None = None,
+) -> dict[str, Any]:
+    patches: dict[str, Any] = {
+        "app.tasks.deep_dream_task.async_session_factory": _FakeSessionFactory(dream),
+        "app.tasks.deep_dream_task.gather_consolidation_inputs": AsyncMock(
+            return_value={
+                "memu_memories": [{"content": "x"}],
+                "memory_md": "m",
+                "daily_log": "d",
+                "soul_md": "s",
+            }
+        ),
+        "app.tasks.deep_dream_task._backup_files": AsyncMock(),
+        "app.tasks.deep_dream_task.run_phase1_light_sleep": AsyncMock(
+            return_value=(
+                LightSleepOutput(candidates=[ScoredCandidate(content="c", category="facts")]),
+                _LOOP_USAGE,
+                1,
+                [],
+            )
+        ),
+        "app.tasks.deep_dream_task.read_vault_file": AsyncMock(return_value=None),
+        "app.tasks.deep_dream_task.run_phase2_rem_sleep": AsyncMock(
+            return_value=(REMSleepOutput(), _LOOP_USAGE, 1, [])
+        ),
+        "app.tasks.deep_dream_task.run_deep_dream_consolidation": AsyncMock(
+            return_value=(_LOOP_CONSOLIDATION, _LOOP_USAGE, 1, ["phase3-msg"])
+        ),
+        "app.tasks.deep_dream_task.consolidation_to_dict": MagicMock(return_value=_LOOP_VALIDATED),
+        "app.tasks.deep_dream_task.validate_consolidated_output": AsyncMock(
+            return_value=_LOOP_VALIDATED
+        ),
+        "app.tasks.deep_dream_task.write_consolidated_files": AsyncMock(
+            return_value=[{"path": "MEMORY.md", "action": "rewrite"}]
+        ),
+        "app.tasks.deep_dream_task.update_vault_folders": AsyncMock(return_value=[]),
+        "app.tasks.deep_dream_task.update_file_manifest": AsyncMock(),
+        "app.tasks.deep_dream_task.append_vault_log": AsyncMock(),
+        "app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr": AsyncMock(
+            return_value={"git_branch": "", "git_pr_url": "", "git_pr_status": ""}
+        ),
+        "app.tasks.deep_dream_task.git_ops_service.cleanup_branch": AsyncMock(),
+        "app.tasks.deep_dream_task.invalidate_context_cache": AsyncMock(),
+        "app.tasks.deep_dream_task.align_memu_with_memory": AsyncMock(
+            return_value={"items_synced": 0, "errors": 0}
+        ),
+        "app.tasks.deep_dream_task.auto_fix_health_issues": AsyncMock(
+            return_value={"total_fixed": 0}
+        ),
+        "app.tasks.deep_dream_task.run_health_checks": AsyncMock(
+            side_effect=list(health_check_sequence)
+        ),
+        "app.tasks.deep_dream_task.calculate_candidate_score": MagicMock(return_value=0.5),
+        "app.tasks.deep_dream_task.validate_vault_post_fix": AsyncMock(
+            return_value={"warnings": [], "validation_failed": False}
+        ),
+        "app.tasks.deep_dream_task.store_phase_telemetry": AsyncMock(return_value=1),
+    }
+    if run_health_fix_side_effect is not None:
+        patches["app.tasks.deep_dream_task.run_health_fix"] = AsyncMock(
+            side_effect=run_health_fix_side_effect
+        )
+    else:
+        patches["app.tasks.deep_dream_task.run_health_fix"] = AsyncMock(
+            side_effect=run_health_fix_returns or []
+        )
+    return patches
+
+
+async def _run_loop(patches: dict[str, Any]) -> dict[str, AsyncMock]:
+    mocks: dict[str, AsyncMock] = {}
+    with contextlib.ExitStack() as stack:
+        for target, mock_obj in patches.items():
+            mocks[target] = stack.enter_context(patch(target, mock_obj))
+        from app.tasks.deep_dream_task import deep_dream_task
+
+        await deep_dream_task({}, trigger="auto")
+    return mocks
+
+
+class TestHealthFixLoop:
+    """Story 11.10 — bounded health-check / health-fix loop."""
+
+    @pytest.mark.asyncio
+    async def test_loop_exits_on_clean_check(self) -> None:
+        dream = _make_dream_row()
+        clean = HealthReport(total_issues=0)
+        patches = _build_loop_patches(
+            dream,
+            health_check_sequence=[clean],
+        )
+        mocks = await _run_loop(patches)
+
+        mocks["app.tasks.deep_dream_task.run_health_fix"].assert_not_called()
+        # No health_fix telemetry row written
+        telemetry_calls = mocks["app.tasks.deep_dream_task.store_phase_telemetry"].call_args_list
+        health_fix_rows = [c for c in telemetry_calls if c.kwargs.get("phase") == "health_fix"]
+        assert len(health_fix_rows) == 0
+        assert dream.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_loop_converges_in_two_iterations(self) -> None:
+        dream = _make_dream_row()
+        r3 = _report_with_contradictions(3)
+        r1 = _report_with_contradictions(1)
+        clean = HealthReport(total_issues=0)
+        patches = _build_loop_patches(
+            dream,
+            # Sequence [3, 1, 0]: iter1 check=3 → fix; iter2 check=1 → fix; iter3 check=0 → break
+            health_check_sequence=[r3, r1, clean],
+            run_health_fix_returns=[
+                (_loop_fix_output(3), _LOOP_USAGE, 1, ["m1"]),
+                (_loop_fix_output(1), _LOOP_USAGE, 1, ["m2"]),
+            ],
+        )
+        mocks = await _run_loop(patches)
+
+        fix_mock = mocks["app.tasks.deep_dream_task.run_health_fix"]
+        assert fix_mock.call_count == 2
+
+        telemetry_calls = mocks["app.tasks.deep_dream_task.store_phase_telemetry"].call_args_list
+        health_fix_rows = [c for c in telemetry_calls if c.kwargs.get("phase") == "health_fix"]
+        assert len(health_fix_rows) == 2
+        iterations = [row.kwargs["output_json"]["iteration"] for row in health_fix_rows]
+        assert iterations == [1, 2]
+
+        assert dream.status == "completed"
+        assert dream.error_message is None
+
+    @pytest.mark.asyncio
+    async def test_loop_hits_iteration_cap(self) -> None:
+        dream = _make_dream_row()
+        r3 = _report_with_contradictions(3)
+        patches = _build_loop_patches(
+            dream,
+            # Sequence [3, 3, 3, 3]: 4 checks total, 3 LLM fixes, then cap hit.
+            health_check_sequence=[r3, r3, r3, r3],
+            run_health_fix_returns=[
+                (_loop_fix_output(3), _LOOP_USAGE, 1, ["m1"]),
+                (_loop_fix_output(3), _LOOP_USAGE, 1, ["m2"]),
+                (_loop_fix_output(3), _LOOP_USAGE, 1, ["m3"]),
+            ],
+        )
+        mocks = await _run_loop(patches)
+
+        fix_mock = mocks["app.tasks.deep_dream_task.run_health_fix"]
+        assert fix_mock.call_count == 3
+
+        telemetry_calls = mocks["app.tasks.deep_dream_task.store_phase_telemetry"].call_args_list
+        health_fix_rows = [c for c in telemetry_calls if c.kwargs.get("phase") == "health_fix"]
+        assert len(health_fix_rows) == 3
+
+        assert dream.status == "partial"
+        assert dream.error_message is not None
+        assert "health_fix did not converge after 3 iterations" in dream.error_message
+
+    @pytest.mark.asyncio
+    async def test_iteration_failure_exits_to_partial(self) -> None:
+        dream = _make_dream_row()
+        r3 = _report_with_contradictions(3)
+        patches = _build_loop_patches(
+            dream,
+            # iter1 check=3 → fix succeeds; iter2 check=3 → fix raises → partial exit
+            health_check_sequence=[r3, r3],
+            run_health_fix_side_effect=[
+                (_loop_fix_output(3), _LOOP_USAGE, 1, ["m1"]),
+                ValueError("agent returned malformed json"),
+            ],
+        )
+        mocks = await _run_loop(patches)
+
+        fix_mock = mocks["app.tasks.deep_dream_task.run_health_fix"]
+        assert fix_mock.call_count == 2
+
+        telemetry_calls = mocks["app.tasks.deep_dream_task.store_phase_telemetry"].call_args_list
+        health_fix_rows = [c for c in telemetry_calls if c.kwargs.get("phase") == "health_fix"]
+        assert len(health_fix_rows) == 2
+
+        iter1_row = health_fix_rows[0]
+        iter2_row = health_fix_rows[1]
+        assert iter1_row.kwargs["status"] == "completed"
+        assert iter2_row.kwargs["status"] == "failed"
+        assert "malformed" in (iter2_row.kwargs.get("error_message") or "")
+
+        assert dream.status == "partial"
+
+    @pytest.mark.asyncio
+    async def test_incomplete_actions_warn_and_partial(self) -> None:
+        dream = _make_dream_row()
+        r3 = _report_with_contradictions(3)
+        clean = HealthReport(total_issues=0)
+        patches = _build_loop_patches(
+            dream,
+            # iter1 check=3 → fix with 1/3 actions → partial marker;
+            # iter2 check=0 → break (loop converges but dream remains partial)
+            health_check_sequence=[r3, clean],
+            run_health_fix_returns=[
+                (_loop_fix_output(1), _LOOP_USAGE, 1, ["m1"]),
+            ],
+        )
+        mocks = await _run_loop(patches)
+
+        # Loop continues normally — one fix call, converges on iter 2's check
+        fix_mock = mocks["app.tasks.deep_dream_task.run_health_fix"]
+        assert fix_mock.call_count == 1
+
+        assert dream.status == "partial"
+        assert dream.error_message is not None
+        assert "1/3 actions" in dream.error_message

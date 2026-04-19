@@ -10,6 +10,8 @@ from app.models.tables import Dream
 from app.services.dream_models import (
     ConsolidationOutput,
     ConsolidationStats,
+    HealthFixAction,
+    HealthFixOutput,
     HealthReport,
     LightSleepOutput,
     REMSleepOutput,
@@ -933,16 +935,18 @@ async def test_phase2_failure_gives_empty_phase2_summary() -> None:
 # ---------------------------------------------------------------------------
 
 
-SAMPLE_HEALTH_REPORT_WITH_BACKLINK = HealthReport(
+SAMPLE_HEALTH_REPORT_WITH_CONTRADICTION = HealthReport(
     orphan_notes=[],
     stale_notes=[],
     missing_frontmatter=[],
-    unresolved_contradictions=[],
+    unresolved_contradictions=["decisions/a.md"],
     memory_overflow=False,
     knowledge_gaps=[],
-    missing_backlinks=["concepts/a.md \u2192 concepts/b.md (no reverse link)"],
+    missing_backlinks=[],
     total_issues=1,
 )
+
+CLEAN_HEALTH_REPORT = HealthReport(total_issues=0)
 
 
 def _patches_for_post_fix_test(
@@ -957,15 +961,40 @@ def _patches_for_post_fix_test(
     be controlled via post_fix_result or post_fix_error."""
     patches = _pipeline_patches(
         dream,
-        health_report=SAMPLE_HEALTH_REPORT_WITH_BACKLINK,
+        health_report=SAMPLE_HEALTH_REPORT_WITH_CONTRADICTION,
     )
     # Force consolidation to return a non-empty message history so the
     # `if consolidation_messages:` guard around health_fix is satisfied.
     patches["app.tasks.deep_dream_task.run_deep_dream_consolidation"] = AsyncMock(
         return_value=(SAMPLE_CONSOLIDATION_OUTPUT, SAMPLE_USAGE, 5, ["msg1", "msg2"])
     )
+    # Loop converges after 1 LLM iteration. Call sequence:
+    #  1. iter 1: run_health_checks → REPORT (total>0, run LLM fix)
+    #  2. iter 2: auto_fix → run_health_checks → CLEAN (break)
+    patches["app.tasks.deep_dream_task.run_health_checks"] = AsyncMock(
+        side_effect=[
+            SAMPLE_HEALTH_REPORT_WITH_CONTRADICTION,
+            CLEAN_HEALTH_REPORT,
+        ]
+    )
+    patches["app.tasks.deep_dream_task.auto_fix_health_issues"] = AsyncMock(
+        return_value={"total_fixed": 0}
+    )
+    # run_health_fix now returns (HealthFixOutput, usage, tool_calls, messages)
+    fix_output = HealthFixOutput(
+        actions=[
+            HealthFixAction(
+                issue_type="unresolved_contradiction",
+                target_file="decisions/a.md",
+                action_taken="resolved_contradiction",
+            )
+        ],
+        issues_resolved=1,
+        issues_skipped=0,
+        iteration=1,
+    )
     patches["app.tasks.deep_dream_task.run_health_fix"] = AsyncMock(
-        return_value=(SAMPLE_USAGE, 3, fix_messages or ["fix-msg"])
+        return_value=(fix_output, SAMPLE_USAGE, 3, fix_messages or ["fix-msg"])
     )
     patches["app.tasks.deep_dream_task.append_vault_log"] = AsyncMock()
     if post_fix_error is not None:
@@ -1037,7 +1066,7 @@ async def test_deep_dream_post_fix_validation_skipped_when_no_health_fix() -> No
     dream = _make_dream()
     # Use the default _pipeline_patches which has empty consolidation_messages,
     # so health_fix never runs and post-fix validation should not be called.
-    patches = _pipeline_patches(dream, health_report=SAMPLE_HEALTH_REPORT_WITH_BACKLINK)
+    patches = _pipeline_patches(dream, health_report=SAMPLE_HEALTH_REPORT_WITH_CONTRADICTION)
     post_fix_mock = AsyncMock(return_value={"warnings": [], "validation_failed": False})
     patches["app.tasks.deep_dream_task.validate_vault_post_fix"] = post_fix_mock
 
@@ -1045,6 +1074,32 @@ async def test_deep_dream_post_fix_validation_skipped_when_no_health_fix() -> No
 
     post_fix_mock.assert_not_called()
     assert dream.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_broken_wikilinks_triggers_partial_in_revalidation() -> None:
+    """Story 11.13 AC17 — when the post-fix re-validation returns unresolved
+    wiki-links, the dream lands `partial` with `unresolved_wikilinks:` in the
+    error_message and the git PR still runs."""
+    dream = _make_dream()
+    patches = _patches_for_post_fix_test(
+        dream,
+        post_fix_result={
+            "warnings": [
+                "unresolved_wikilinks: patterns/arch.md → [[projects/does-not-exist]] (unresolved)"
+            ],
+            "validation_failed": True,
+            "unresolved_wikilinks": ["patterns/arch.md → [[projects/does-not-exist]] (unresolved)"],
+        },
+    )
+
+    mocks = await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "partial"
+    assert dream.error_message is not None
+    assert "unresolved_wikilinks" in dream.error_message
+    git_mock = mocks["app.tasks.deep_dream_task.git_ops_service.create_deep_dream_pr"]
+    git_mock.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

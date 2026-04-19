@@ -4,10 +4,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.core.logging import get_logger
 from app.services.dream_models import HealthReport
 from app.services.memory_files import read_vault_file, write_vault_file
 from app.services.memu_client import memu_memorize, memu_retrieve
+from app.services.vault_updater import regenerate_index
 
 log = get_logger("jarvis.services.deep_dream")
 
@@ -128,14 +130,27 @@ async def validate_vault_post_fix(source_date: date) -> dict[str, Any]:
         warnings.append(f"Daily log {daily_path} missing after health fix")
         validation_failed = True
 
+    # Story 11.13: wiki-link resolution check catches fabricated or
+    # empty-filename links introduced by any prior step (agent or manual).
+    unresolved = _find_broken_wikilinks(Path(settings.ai_memory_repo_path))
+    if unresolved:
+        preview = "; ".join(unresolved[:5])
+        warnings.append(f"unresolved_wikilinks: {preview}")
+        validation_failed = True
+
     log.info(
         "deep_dream.post_fix_validation.completed",
         source_date=source_date.isoformat(),
         validation_failed=validation_failed,
         warning_count=len(warnings),
+        unresolved_wikilinks=len(unresolved),
     )
 
-    return {"warnings": warnings, "validation_failed": validation_failed}
+    return {
+        "warnings": warnings,
+        "validation_failed": validation_failed,
+        "unresolved_wikilinks": unresolved,
+    }
 
 
 async def write_consolidated_files(
@@ -311,6 +326,55 @@ VAULT_FOLDERS = (
 STALE_DAYS_DEFAULT = 60
 MEMORY_OVERFLOW_THRESHOLD = 180
 
+WIKILINK_SCAN_EXCLUDES = (".backups", "transcripts", "dailys")
+WIKILINK_EXTRACT_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
+
+
+def _find_broken_wikilinks(vault_root: Path) -> list[str]:
+    """Walk the vault, extract wiki-links, and flag any that don't resolve.
+
+    A link `[[target]]` resolves when `{vault_root}/{target}.md` exists.
+    Empty targets (`[[decisions/]]`), malformed targets (no `/`), or targets
+    that point to non-existent files are flagged.
+
+    Excludes `.backups/`, `transcripts/`, `dailys/` folders per AC8.
+    """
+    unresolved: list[str] = []
+    if not vault_root.is_dir():
+        return unresolved
+
+    for md_file in vault_root.rglob("*.md"):
+        try:
+            rel = md_file.relative_to(vault_root)
+        except ValueError:
+            continue
+        parts = rel.parts
+        if parts and parts[0] in WIKILINK_SCAN_EXCLUDES:
+            continue
+        try:
+            text = md_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        source_rel = rel.as_posix()
+        seen: set[str] = set()
+        for match in WIKILINK_EXTRACT_RE.findall(text):
+            raw = match.split("|", 1)[0].strip()
+            if raw in seen:
+                continue
+            seen.add(raw)
+
+            if not raw or raw.endswith("/") or "/" not in raw:
+                unresolved.append(f"{source_rel} → [[{raw}]] (unresolved)")
+                continue
+
+            target_name = raw if raw.endswith(".md") else f"{raw}.md"
+            target_path = vault_root / target_name
+            if not target_path.is_file():
+                unresolved.append(f"{source_rel} → [[{raw}]] (unresolved)")
+
+    return unresolved
+
 
 async def run_health_checks(
     workspace: Path,
@@ -369,14 +433,10 @@ async def run_health_checks(
                 unresolved_contradictions.append(rel_path)
 
             # Check for stale notes
-            reviewed_match = re.search(
-                r"last_reviewed:\s*(\d{4}-\d{2}-\d{2})", frontmatter
-            )
+            reviewed_match = re.search(r"last_reviewed:\s*(\d{4}-\d{2}-\d{2})", frontmatter)
             if reviewed_match:
                 try:
-                    last_reviewed = datetime.strptime(
-                        reviewed_match.group(1), "%Y-%m-%d"
-                    ).date()
+                    last_reviewed = datetime.strptime(reviewed_match.group(1), "%Y-%m-%d").date()
                     if (today - last_reviewed).days > stale_days:
                         stale_notes.append(rel_path)
                 except ValueError:
@@ -388,9 +448,7 @@ async def run_health_checks(
                 has_outcome = re.search(r"outcome:\s*\w+", frontmatter) is not None
                 if created_match and not has_outcome:
                     try:
-                        created_date = datetime.strptime(
-                            created_match.group(1), "%Y-%m-%d"
-                        ).date()
+                        created_date = datetime.strptime(created_match.group(1), "%Y-%m-%d").date()
                         if (today - created_date).days > 90:
                             unclassified_lessons.append(rel_path)
                     except ValueError:
@@ -455,6 +513,8 @@ async def run_health_checks(
 
     gaps = knowledge_gaps or []
 
+    broken_wikilinks = _find_broken_wikilinks(workspace)
+
     total_issues = (
         len(orphan_notes)
         + len(stale_notes)
@@ -464,6 +524,7 @@ async def run_health_checks(
         + len(gaps)
         + len(missing_backlinks)
         + len(unclassified_lessons)
+        + len(broken_wikilinks)
     )
 
     return HealthReport(
@@ -475,6 +536,7 @@ async def run_health_checks(
         knowledge_gaps=gaps,
         missing_backlinks=missing_backlinks,
         unclassified_lessons=unclassified_lessons,
+        broken_wikilinks=broken_wikilinks,
         total_issues=total_issues,
     )
 
@@ -499,50 +561,129 @@ confidence: low
 """
 
 
+def _index_contains(existing: str, filename: str) -> bool:
+    """Idempotency check: does the existing _index.md already list this basename?"""
+    needle = f"]({filename})"
+    return any(needle in line for line in existing.splitlines() if line.lstrip().startswith("- ["))
+
+
+async def _fix_orphan_notes(
+    workspace: Path,
+    orphans: list[str],
+    source_date: date,
+) -> int:
+    """Bootstrap missing `_index.md` via regenerate_index, or append missing entries.
+
+    Groups orphans by folder. For each folder: if `_index.md` is absent, call
+    `regenerate_index` (which globs all `*.md` and builds a fresh index with
+    frontmatter — naturally includes the orphans). If present, append one line
+    per orphan not already listed (basename-based idempotency).
+    """
+    fixed_orphans = 0
+    by_folder: dict[str, list[str]] = {}
+    for rel in orphans:
+        parts = rel.split("/", 1)
+        if len(parts) != 2:
+            continue
+        folder = parts[0]
+        by_folder.setdefault(folder, []).append(rel)
+
+    for folder, folder_orphans in by_folder.items():
+        index_path = workspace / folder / "_index.md"
+
+        if not index_path.is_file():
+            try:
+                await regenerate_index(folder, source_date, summaries={})
+            except Exception as exc:
+                log.warning(
+                    "deep_dream.auto_fix.index_bootstrap_failed",
+                    folder=folder,
+                    error=str(exc),
+                )
+                continue
+            fixed_orphans += len(folder_orphans)
+            continue
+
+        index_content = index_path.read_text(encoding="utf-8")
+        changed = False
+        for rel_path in folder_orphans:
+            filename = rel_path.split("/", 1)[1]
+            stem = filename.removesuffix(".md")
+            title = stem.replace("-", " ").title()
+            if _index_contains(index_content, filename):
+                continue
+            entry = f"- [{title}]({filename})"
+            index_content = index_content.rstrip() + "\n" + entry + "\n"
+            changed = True
+            fixed_orphans += 1
+        if changed:
+            index_path.write_text(index_content, encoding="utf-8")
+
+    return fixed_orphans
+
+
 async def auto_fix_health_issues(
     workspace: Path,
     report: HealthReport,
+    source_date: date | None = None,
 ) -> dict[str, int]:
     """Auto-fix deterministic health issues. Returns counts of fixes applied."""
     fixed_backlinks = 0
     fixed_frontmatter = 0
-    fixed_orphans = 0
 
-    today_str = date.today().isoformat()
+    today = date.today()
+    today_str = today.isoformat()
+    effective_source_date = source_date or today
 
-    # 1. Fix missing backlinks — add reverse link to target's ## Related section
+    # 1. Fix missing backlinks — deterministic Python writer (Story 11.13).
+    # Stem comes from the source's filesystem path (no LLM guessing).
+    # Skips references/ targets (terminal nodes, no reverse link expected).
     for entry in report.missing_backlinks:
         parts = entry.split(" → ")
         if len(parts) != 2:
             continue
-        source_part = parts[0].strip()
-        target_part = parts[1].split(" (")[0].strip()
+        source_rel = parts[0].strip()
+        target_rel = parts[1].split(" (")[0].strip()
 
-        source_slug = source_part.replace(".md", "")
-        target_path = workspace / target_part
+        if target_rel.startswith("references/"):
+            continue
 
+        source_path = workspace / source_rel
+        if not source_path.is_file():
+            log.warning(
+                "deep_dream.backlink_fix.source_missing",
+                source=source_rel,
+                target=target_rel,
+            )
+            continue
+
+        target_path = workspace / target_rel
         if not target_path.is_file():
             continue
 
+        source_slug = source_rel.removesuffix(".md")
+        new_link_inner = f"[[{source_slug}]]"
+        new_line = f"- {new_link_inner}"
+
         content = target_path.read_text(encoding="utf-8")
 
-        # Check if ## Related section exists
+        if new_link_inner in content:
+            continue
+
         if "## Related" in content:
-            # Append to existing Related section
             related_idx = content.index("## Related")
-            # Find end of Related section (next ## or end of file)
-            next_section = content.find("\n## ", related_idx + 10)
+            next_section = content.find("\n## ", related_idx + len("## Related"))
             insert_pos = next_section if next_section != -1 else len(content)
-            new_link = f"- [[{source_slug}]]\n"
-            if new_link.strip() not in content:
-                content = content[:insert_pos] + new_link + content[insert_pos:]
-                target_path.write_text(content, encoding="utf-8")
-                fixed_backlinks += 1
+            prefix = content[:insert_pos].rstrip()
+            suffix = content[insert_pos:]
+            rebuilt = prefix + "\n" + new_line + "\n"
+            if suffix:
+                rebuilt += suffix if suffix.startswith("\n") else "\n" + suffix
+            target_path.write_text(rebuilt, encoding="utf-8")
         else:
-            # Add ## Related section at end of file
-            content = content.rstrip() + f"\n\n## Related\n- [[{source_slug}]]\n"
-            target_path.write_text(content, encoding="utf-8")
-            fixed_backlinks += 1
+            rebuilt = content.rstrip() + "\n\n## Related\n" + new_line + "\n"
+            target_path.write_text(rebuilt, encoding="utf-8")
+        fixed_backlinks += 1
 
     # 2. Fix missing frontmatter — add default template
     for rel_path in report.missing_frontmatter:
@@ -570,25 +711,9 @@ async def auto_fix_health_issues(
             file_path.write_text(fm + "\n" + content, encoding="utf-8")
             fixed_frontmatter += 1
 
-    # 3. Fix orphan notes — add to _index.md
-    for rel_path in report.orphan_notes:
-        parts = rel_path.split("/", 1)
-        if len(parts) != 2:
-            continue
-        folder, filename = parts
-        stem = filename.replace(".md", "")
-        title = stem.replace("-", " ").title()
-
-        index_path = workspace / folder / "_index.md"
-        if not index_path.is_file():
-            continue
-
-        index_content = index_path.read_text(encoding="utf-8")
-        entry = f"- [{title}]({filename})\n"
-        if filename not in index_content and stem not in index_content:
-            index_content = index_content.rstrip() + "\n" + entry
-            index_path.write_text(index_content, encoding="utf-8")
-            fixed_orphans += 1
+    # 3. Fix orphan notes — bootstrap `_index.md` via regenerate_index when
+    # missing, or append idempotently when present (Story 11.12).
+    fixed_orphans = await _fix_orphan_notes(workspace, report.orphan_notes, effective_source_date)
 
     fixes = {
         "backlinks_fixed": fixed_backlinks,

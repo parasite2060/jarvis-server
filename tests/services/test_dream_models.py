@@ -1,7 +1,12 @@
+import pytest
+from pydantic import ValidationError
+
 from app.services.dream_models import (
     ALLOWED_RELATIONSHIP_TYPES,
     ALLOWED_VAULT_TARGETS,
     ConnectionCandidate,
+    HealthFixAction,
+    HealthFixOutput,
     HealthReport,
     KnowledgeGap,
     LightSleepOutput,
@@ -257,9 +262,7 @@ class TestREMSleepOutput:
         output = REMSleepOutput(
             themes=[Theme(topic="async", session_count=2)],
             new_connections=[
-                ConnectionCandidate(
-                    concept_a="A", concept_b="B", relationship="related"
-                )
+                ConnectionCandidate(concept_a="A", concept_b="B", relationship="related")
             ],
             promotion_candidates=[
                 PromotionCandidate(
@@ -325,6 +328,47 @@ class TestHealthReport:
         assert data["orphan_notes"] == ["a.md"]
         assert data["total_issues"] == 1
         assert data["memory_overflow"] is False
+
+
+class TestHealthFixAction:
+    def test_rejects_invalid_issue_type(self) -> None:
+        with pytest.raises(ValidationError):
+            HealthFixAction(
+                issue_type="invented",  # type: ignore[arg-type]
+                target_file="concepts/x.md",
+                action_taken="skipped",
+            )
+
+    def test_rejects_invalid_action_taken(self) -> None:
+        with pytest.raises(ValidationError):
+            HealthFixAction(
+                issue_type="knowledge_gap",
+                target_file="concepts/x.md",
+                action_taken="magic",  # type: ignore[arg-type]
+            )
+
+    def test_accepts_valid_values(self) -> None:
+        action = HealthFixAction(
+            issue_type="unresolved_contradiction",
+            target_file="decisions/foo.md",
+            action_taken="resolved_contradiction",
+        )
+        assert action.issue_type == "unresolved_contradiction"
+        assert action.action_taken == "resolved_contradiction"
+        assert action.reason == ""
+
+
+class TestHealthFixOutput:
+    def test_iteration_defaults_to_1(self) -> None:
+        output = HealthFixOutput()
+        assert output.iteration == 1
+        assert output.actions == []
+        assert output.issues_resolved == 0
+        assert output.issues_skipped == 0
+
+    def test_accepts_explicit_iteration(self) -> None:
+        output = HealthFixOutput(iteration=3)
+        assert output.iteration == 3
 
 
 class TestWeeklyReviewOutput:

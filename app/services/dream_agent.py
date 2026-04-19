@@ -20,6 +20,7 @@ from app.services.dream_models import (
     ALLOWED_RELATIONSHIP_TYPES,
     ALLOWED_VAULT_TARGETS,
     ExtractionSummary,
+    HealthFixOutput,
     LightSleepOutput,
     MemoryItem,
     RecordResult,
@@ -945,34 +946,64 @@ async def run_deep_dream_consolidation(
 HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
 
 
+def _load_health_fix_prompt() -> str:
+    return (_PROMPTS_DIR / "deep_dream_health_fix.md").read_text(encoding="utf-8")
+
+
+_health_fix_agent: Agent[DeepDreamDeps, HealthFixOutput] | None = None
+
+
+def _get_health_fix_agent() -> Agent[DeepDreamDeps, HealthFixOutput]:
+    global _health_fix_agent
+    if _health_fix_agent is not None:
+        return _health_fix_agent
+
+    agent: Agent[DeepDreamDeps, HealthFixOutput] = Agent(
+        _build_model(),
+        deps_type=DeepDreamDeps,
+        output_type=HealthFixOutput,
+        instructions=_load_health_fix_prompt(),
+        retries=2,
+        output_retries=3,
+        history_processors=[compact_history],
+    )
+
+    _register_base_tools(agent)
+    _health_fix_agent = agent
+    return _health_fix_agent
+
+
 async def run_health_fix(
     deps: DeepDreamDeps,
     message_history: list[Any],
     health_summary: str,
-) -> tuple[RunUsage, int, list[Any]]:
-    """Send health check results back to the consolidation agent to fix issues.
+) -> tuple[HealthFixOutput, RunUsage, int, list[Any]]:
+    """Send LLM-scoped health check results to the health-fix agent.
 
-    Uses message_history from the consolidation run so the agent has full
-    context of what was written. Token caching preserves the prefix.
+    Scope is restricted to unresolved_contradictions, knowledge_gaps, and
+    unclassified_lessons — deterministic Python owns missing_backlink /
+    missing_frontmatter / orphan_note before this call is made.
+
+    Uses message_history from the consolidation run so the agent keeps the
+    vault context. Returns a typed HealthFixOutput.
     """
-    agent = _get_deep_dream_agent()
-    result = await agent.run(
-        f"The health check found issues after your consolidation. "
-        f"Fix them using the file tools:\n\n{health_summary}\n\n"
-        f"For missing backlinks: read the target file, add a "
-        f"`- [[source/file]]` entry under `## Related` (create section "
-        f"if missing). "
-        f"For orphan notes: read the folder's _index.md and add the "
-        f"missing entry. "
-        f"For missing frontmatter: read the file and add a YAML "
-        f"frontmatter block at the top. "
-        f"Fix as many issues as you can, then return your consolidation "
-        f"output unchanged.",
+    global _health_fix_agent
+    if _health_fix_agent is None:
+        _health_fix_agent = _get_health_fix_agent()
+    result = await _health_fix_agent.run(
+        "The health check found LLM-scope issues after your consolidation. "
+        "Fix them using the file tools, then return one HealthFixAction per "
+        f"issue in the HealthFixOutput:\n\n{health_summary}",
         deps=deps,
         message_history=message_history,
         usage_limits=HEALTH_FIX_LIMITS,
     )
-    return result.usage(), _count_tool_calls(result.all_messages()), result.all_messages()
+    return (
+        result.output,
+        result.usage(),
+        _count_tool_calls(result.all_messages()),
+        result.all_messages(),
+    )
 
 
 def consolidation_to_dict(output: ConsolidationOutput) -> dict[str, Any]:
