@@ -15,6 +15,7 @@ from app.models.tables import Dream
 from app.services.context_cache import invalidate_context_cache
 from app.services.deep_dream import (
     align_memu_with_memory,
+    auto_fix_health_issues,
     calculate_candidate_score,
     gather_consolidation_inputs,
     run_health_checks,
@@ -54,9 +55,72 @@ def _determine_deep_dream_outcome(
     return "no_new_content"
 
 
-def _stitch_error(existing: str | None, prefix: str, exc: BaseException) -> str:
+def _stitch_error(existing: str | None, prefix: str, exc: BaseException | str) -> str:
     segment = f"{prefix}: {exc}"
     return segment if not existing else f"{existing}; {segment}"
+
+
+HEALTH_FIX_MAX_ITERATIONS = 3
+
+
+def _filter_llm_scope(health_report: HealthReport) -> HealthReport:
+    """Return a copy of the health report with Python-owned fields cleared.
+
+    The LLM only sees unresolved_contradictions, knowledge_gaps, and
+    unclassified_lessons. Backlinks / frontmatter / orphans are owned by
+    the deterministic auto_fix_health_issues step and must never leak
+    to the agent.
+    """
+    return HealthReport(
+        orphan_notes=[],
+        stale_notes=list(health_report.stale_notes),
+        missing_frontmatter=[],
+        unresolved_contradictions=list(health_report.unresolved_contradictions),
+        memory_overflow=health_report.memory_overflow,
+        knowledge_gaps=list(health_report.knowledge_gaps),
+        missing_backlinks=[],
+        unclassified_lessons=list(health_report.unclassified_lessons),
+        broken_wikilinks=[],
+        total_issues=(
+            len(health_report.unresolved_contradictions)
+            + len(health_report.knowledge_gaps)
+            + len(health_report.unclassified_lessons)
+        ),
+    )
+
+
+def _summarize_remaining(health_report: HealthReport) -> str:
+    parts: list[str] = []
+    if health_report.unresolved_contradictions:
+        parts.append(f"{len(health_report.unresolved_contradictions)} contradictions")
+    if health_report.knowledge_gaps:
+        parts.append(f"{len(health_report.knowledge_gaps)} gaps")
+    if health_report.unclassified_lessons:
+        parts.append(f"{len(health_report.unclassified_lessons)} unclassified lessons")
+    if health_report.orphan_notes:
+        parts.append(f"{len(health_report.orphan_notes)} orphans")
+    if health_report.missing_frontmatter:
+        parts.append(f"{len(health_report.missing_frontmatter)} missing frontmatter")
+    if health_report.missing_backlinks:
+        parts.append(f"{len(health_report.missing_backlinks)} missing backlinks")
+    if health_report.broken_wikilinks:
+        parts.append(f"{len(health_report.broken_wikilinks)} broken wikilinks")
+    if health_report.stale_notes:
+        parts.append(f"{len(health_report.stale_notes)} stale")
+    if health_report.memory_overflow:
+        parts.append("MEMORY.md overflow")
+    return ", ".join(parts) if parts else "unknown"
+
+
+def _format_llm_health_summary(scoped: HealthReport) -> list[str]:
+    issues: list[str] = []
+    for entry in scoped.unresolved_contradictions:
+        issues.append(f"- Unresolved contradiction: {entry}")
+    for entry in scoped.knowledge_gaps:
+        issues.append(f"- Knowledge gap (concept referenced but no note): {entry}")
+    for entry in scoped.unclassified_lessons:
+        issues.append(f"- Unclassified lesson (>90 days, no outcome): {entry}")
+    return issues
 
 
 def _format_phase1_summary(
@@ -585,135 +649,239 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     except Exception as exc:
         log.warning("deep_dream.vault_log.failed", dream_id=dream_id, error=str(exc))
 
-    # Step 6d: Health checks (deterministic Python post-processing)
+    # Step 6d-6e: Bounded health-check / health-fix loop (max 3 LLM iterations).
+    # Each iteration: deterministic Python auto-fix → run health checks →
+    # early-exit if clean / cap-exit to partial / else LLM fix → repeat.
+    # Loop always runs (health checks are useful even without Phase 3 history),
+    # but run_health_fix is skipped if consolidation_messages is empty.
     health_report: HealthReport | None = None
-    try:
-        knowledge_gap_names = [g.concept for g in phase2_result.gaps] if phase2_result else []
-        workspace = Path(settings.jarvis_memory_path)
-        health_report = await run_health_checks(workspace, knowledge_gaps=knowledge_gap_names)
-        log.info(
-            "deep_dream.health_check.completed",
-            dream_id=dream_id,
-            total_issues=health_report.total_issues,
-            orphans=len(health_report.orphan_notes),
-            stale=len(health_report.stale_notes),
-            missing_fm=len(health_report.missing_frontmatter),
-            contradictions=len(health_report.unresolved_contradictions),
-            memory_overflow=health_report.memory_overflow,
-            gaps=len(health_report.knowledge_gaps),
-        )
-    except Exception as exc:
-        log.warning("deep_dream.health_check.failed", dream_id=dream_id, error=str(exc))
+    workspace = Path(settings.jarvis_memory_path)
+    knowledge_gap_names = [g.concept for g in phase2_result.gaps] if phase2_result else []
+    iteration = 1
+    any_fix_ran = False
+    loop_aborted = False
+    lint_logged = False
+    while True:
+        # Per Story 11.10 AC6, auto_fix runs first in every iteration so
+        # Python-owned issues left on disk by Phase 3 (or introduced by the
+        # previous LLM iteration) are repaired before the next health check.
+        # On iteration 1 there is no prior report, so we pass an empty
+        # HealthReport — auto_fix iterates over empty lists and is a no-op;
+        # the first health_check below populates the report for iter 2+.
+        try:
+            await auto_fix_health_issues(
+                workspace,
+                health_report if health_report is not None else HealthReport(),
+                source_date,
+            )
+        except Exception as exc:
+            log.warning(
+                "deep_dream.auto_fix.failed",
+                dream_id=dream_id,
+                iteration=iteration,
+                error=str(exc),
+            )
 
-    if health_report is not None and health_report.total_issues > 0:
+        try:
+            health_report = await run_health_checks(
+                workspace,
+                knowledge_gaps=knowledge_gap_names,
+            )
+            log.info(
+                "deep_dream.health_check.completed",
+                dream_id=dream_id,
+                iteration=iteration,
+                total_issues=health_report.total_issues,
+                orphans=len(health_report.orphan_notes),
+                stale=len(health_report.stale_notes),
+                missing_fm=len(health_report.missing_frontmatter),
+                contradictions=len(health_report.unresolved_contradictions),
+                memory_overflow=health_report.memory_overflow,
+                gaps=len(health_report.knowledge_gaps),
+            )
+        except Exception as exc:
+            log.warning(
+                "deep_dream.health_check.failed",
+                dream_id=dream_id,
+                iteration=iteration,
+                error=str(exc),
+            )
+            loop_aborted = True
+            break
+
+        if not lint_logged and health_report.total_issues > 0:
+            try:
+                await append_vault_log(
+                    "lint",
+                    f"Health check: {len(health_report.orphan_notes)} orphans, "
+                    f"{len(health_report.stale_notes)} stale, "
+                    f"{len(health_report.unresolved_contradictions)} contradictions",
+                )
+            except Exception:
+                pass
+            lint_logged = True
+
+        if health_report.total_issues == 0:
+            break
+
+        # No LLM history → skip the agent fix entirely. Deterministic auto-fix
+        # will run on the next iteration from the now-populated health_report,
+        # but without LLM-driven fixes the loop cannot progress past that, so
+        # break to avoid spinning.
+        if not consolidation_messages:
+            break
+
+        if iteration > HEALTH_FIX_MAX_ITERATIONS:
+            error_message = _stitch_error(
+                error_message,
+                "health_fix did not converge after 3 iterations",
+                _summarize_remaining(health_report),
+            )
+            is_partial = True
+            break
+
+        scoped_report = _filter_llm_scope(health_report)
+        scoped_issues = _format_llm_health_summary(scoped_report)
+        if not scoped_issues:
+            # Only Python-owned issues remain; the LLM has nothing to do
+            # on this iteration. Skip the agent call and let the next
+            # iteration's auto_fix repair them. The iteration cap bounds
+            # this path — if auto_fix still can't resolve them after 3
+            # iterations, the cap branch stitches the partial error and
+            # exits cleanly.
+            iteration += 1
+            continue
+
+        health_summary = "\n".join(scoped_issues)
+        deps_for_fix = DeepDreamDeps(
+            source_date=source_date,
+            memu_memories=memu_memories,
+            memory_md=memory_md,
+            daily_log=daily_log,
+            soul_md=soul_md,
+            phase1_summary=phase1_text,
+            phase2_summary=phase2_text,
+        )
+        health_fix_start = time.monotonic_ns() // 1_000_000
+        health_fix_started_at = datetime.now(UTC)
+        try:
+            (
+                fix_output,
+                fix_usage,
+                fix_tool_calls,
+                health_fix_messages,
+            ) = await run_health_fix(deps_for_fix, consolidation_messages, health_summary)
+        except Exception as exc:
+            health_fix_duration_ms = time.monotonic_ns() // 1_000_000 - health_fix_start
+            log.warning(
+                "deep_dream.health_fix.iteration_failed",
+                dream_id=dream_id,
+                iteration=iteration,
+                exc=str(exc),
+            )
+            await store_phase_telemetry(
+                dream_id=dream_id,
+                phase="health_fix",
+                status="failed",
+                run_prompt=health_summary,
+                duration_ms=health_fix_duration_ms,
+                started_at=health_fix_started_at,
+                error_message=str(exc),
+            )
+            error_message = _stitch_error(
+                error_message,
+                f"health_fix iteration {iteration} raised",
+                exc,
+            )
+            is_partial = True
+            loop_aborted = True
+            break
+
+        health_fix_duration_ms = time.monotonic_ns() // 1_000_000 - health_fix_start
+        fix_output.iteration = iteration
+        any_fix_ran = True
+
+        expected_count = len(scoped_issues)
+        reported_count = len(fix_output.actions)
+        if reported_count < expected_count:
+            log.warning(
+                "deep_dream.health_fix.incomplete",
+                dream_id=dream_id,
+                iteration=iteration,
+                expected=expected_count,
+                reported=reported_count,
+            )
+            shortfall = (
+                f"health_fix iteration {iteration} reported "
+                f"{reported_count}/{expected_count} actions"
+            )
+            error_message = f"{error_message}; {shortfall}" if error_message else shortfall
+            is_partial = True
+
+        log.info(
+            "deep_dream.health_fix.completed",
+            dream_id=dream_id,
+            iteration=iteration,
+            fix_tokens=fix_usage.total_tokens,
+            fix_tool_calls=fix_tool_calls,
+            issues_sent=expected_count,
+            actions_reported=reported_count,
+        )
+        await store_phase_telemetry(
+            dream_id=dream_id,
+            phase="health_fix",
+            status="completed",
+            run_prompt=health_summary,
+            output_json=fix_output.model_dump(),
+            messages=health_fix_messages,
+            usage=fix_usage,
+            tool_calls=fix_tool_calls,
+            duration_ms=health_fix_duration_ms,
+            started_at=health_fix_started_at,
+        )
         try:
             await append_vault_log(
-                "lint",
-                f"Health check: {len(health_report.orphan_notes)} orphans, "
-                f"{len(health_report.stale_notes)} stale, "
-                f"{len(health_report.unresolved_contradictions)} contradictions",
+                "update",
+                f"Health fix iteration {iteration}: sent {expected_count} issues to agent",
             )
         except Exception:
             pass
-
-    # Step 6e: Agent-based health fix (same session as consolidation for context)
-    if health_report is not None and health_report.total_issues > 0 and consolidation_messages:
         try:
-            # Build health summary for the agent
-            issues: list[str] = []
-            for entry in health_report.missing_backlinks:
-                issues.append(f"- Missing backlink: {entry}")
-            for entry in health_report.orphan_notes:
-                issues.append(f"- Orphan note (not in _index.md): {entry}")
-            for entry in health_report.missing_frontmatter:
-                issues.append(f"- Missing YAML frontmatter: {entry}")
-            for entry in health_report.unresolved_contradictions:
-                issues.append(f"- Unresolved contradiction: {entry}")
-            for entry in health_report.knowledge_gaps:
-                issues.append(f"- Knowledge gap (concept referenced but no note): {entry}")
+            await update_file_manifest(files_modified)
+        except Exception:
+            pass
+        iteration += 1
 
-            if issues:
-                health_summary = "\n".join(issues)
-                deps_for_fix = DeepDreamDeps(
-                    source_date=source_date,
-                    memu_memories=memu_memories,
-                    memory_md=memory_md,
-                    daily_log=daily_log,
-                    soul_md=soul_md,
-                    phase1_summary=phase1_text,
-                    phase2_summary=phase2_text,
-                )
-                health_fix_start = time.monotonic_ns() // 1_000_000
-                health_fix_started_at = datetime.now(UTC)
-                fix_usage, fix_tool_calls, health_fix_messages = await run_health_fix(
-                    deps_for_fix, consolidation_messages, health_summary
-                )
-                health_fix_duration_ms = time.monotonic_ns() // 1_000_000 - health_fix_start
-                log.info(
-                    "deep_dream.health_fix.completed",
-                    dream_id=dream_id,
-                    fix_tokens=fix_usage.total_tokens,
-                    fix_tool_calls=fix_tool_calls,
-                    issues_sent=len(issues),
-                )
-                await store_phase_telemetry(
-                    dream_id=dream_id,
-                    phase="health_fix",
-                    status="completed",
-                    run_prompt=health_summary,
-                    messages=health_fix_messages,
-                    usage=fix_usage,
-                    tool_calls=fix_tool_calls,
-                    duration_ms=health_fix_duration_ms,
-                    started_at=health_fix_started_at,
-                )
-                await append_vault_log(
-                    "update",
-                    f"Health fix: sent {len(issues)} issues to consolidation agent",
-                )
-                # Update file manifest after fixes
-                try:
-                    await update_file_manifest(files_modified)
-                except Exception:
-                    pass
-
-                # Step 6f: Re-validate vault after health fix to catch
-                # patches that violate the line cap or remove key files.
-                # On failure: mark partial, populate error_message, but
-                # continue to git PR so the user can review the diff.
-                try:
-                    post_fix_result = await validate_vault_post_fix(source_date)
-                except Exception as exc:
-                    log.warning(
-                        "deep_dream.post_fix_validation.errored",
-                        dream_id=dream_id,
-                        error=str(exc),
-                    )
-                    is_partial = True
-                    if not error_message:
-                        error_message = f"post-fix validation errored: {exc}"
-                else:
-                    if post_fix_result["validation_failed"]:
-                        warnings_str = "; ".join(post_fix_result["warnings"])
-                        log.warning(
-                            "deep_dream.post_fix_validation.failed",
-                            dream_id=dream_id,
-                            warnings=post_fix_result["warnings"],
-                            source_date=source_date.isoformat(),
-                        )
-                        is_partial = True
-                        if error_message:
-                            error_message = f"{error_message} | post-fix: {warnings_str}"
-                        else:
-                            error_message = (
-                                f"health_fix produced invalid vault state: {warnings_str}"
-                            )
+    # Step 6f: Re-validate vault after the health-fix loop (Story 11.4).
+    # Only runs when at least one LLM fix iteration ran and the loop
+    # didn't abort on an iteration failure — otherwise there's nothing
+    # new to re-validate beyond what Phase 3 already wrote.
+    if any_fix_ran and not loop_aborted:
+        try:
+            post_fix_result = await validate_vault_post_fix(source_date)
         except Exception as exc:
             log.warning(
-                "deep_dream.health_fix.failed",
+                "deep_dream.post_fix_validation.errored",
                 dream_id=dream_id,
                 error=str(exc),
             )
+            is_partial = True
+            if not error_message:
+                error_message = f"post-fix validation errored: {exc}"
+        else:
+            if post_fix_result["validation_failed"]:
+                warnings_str = "; ".join(post_fix_result["warnings"])
+                log.warning(
+                    "deep_dream.post_fix_validation.failed",
+                    dream_id=dream_id,
+                    warnings=post_fix_result["warnings"],
+                    source_date=source_date.isoformat(),
+                )
+                is_partial = True
+                if error_message:
+                    error_message = f"{error_message} | post-fix: {warnings_str}"
+                else:
+                    error_message = f"health_fix produced invalid vault state: {warnings_str}"
 
     # Step 7: Git branch and PR
     stats = consolidation_result.get("stats", {})

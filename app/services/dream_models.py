@@ -182,4 +182,28 @@ class HealthReport(BaseModel):
     knowledge_gaps: list[str] = Field(default_factory=list)
     missing_backlinks: list[str] = Field(default_factory=list)
     unclassified_lessons: list[str] = Field(default_factory=list)
+    broken_wikilinks: list[str] = Field(default_factory=list)
     total_issues: int = 0
+
+
+class HealthFixAction(BaseModel):
+    issue_type: Literal[
+        "unresolved_contradiction",
+        "knowledge_gap",
+        "unclassified_lesson",
+    ]
+    target_file: str
+    action_taken: Literal[
+        "resolved_contradiction",
+        "added_concept_note",
+        "classified_lesson",
+        "skipped",
+    ]
+    reason: str = ""
+
+
+class HealthFixOutput(BaseModel):
+    actions: list[HealthFixAction] = Field(default_factory=list)
+    issues_resolved: int = 0
+    issues_skipped: int = 0
+    iteration: int = 1
