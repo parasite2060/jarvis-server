@@ -622,6 +622,56 @@ async def _fix_orphan_notes(
     return fixed_orphans
 
 
+FRONTMATTER_FOLDER_TYPE_MAP: dict[str, str] = {
+    "decisions": "decision",
+    "patterns": "pattern",
+    "projects": "project",
+    "templates": "template",
+    "concepts": "concept",
+    "connections": "connection",
+    "lessons": "lesson",
+    "references": "reference",
+    "reviews": "review",
+    "topics": "topic",
+    "dailys": "daily",
+}
+
+
+async def _fix_missing_frontmatter(
+    workspace: Path,
+    missing_frontmatter: list[str],
+    today_str: str,
+) -> int:
+    """Prepend default frontmatter to files flagged missing_frontmatter.
+
+    Idempotent by construction: if `content.lstrip().startswith("---")` the
+    function is a byte-equal no-op for that file (Story 11.11 AC3/AC5).
+    Folder → type via FRONTMATTER_FOLDER_TYPE_MAP; unknown folders fall back
+    to `"note"` (AC4).
+
+    Safe to re-run across the Story 11.10 health-fix loop iterations:
+    if iteration N's LLM strips frontmatter, iteration N+1's pass at the
+    top of the loop restores it (AC9 regression recovery).
+    """
+    fixed = 0
+    for rel_path in missing_frontmatter:
+        file_path = workspace / rel_path
+        if not file_path.is_file():
+            continue
+
+        content = file_path.read_text(encoding="utf-8")
+        if content.lstrip().startswith("---"):
+            continue
+
+        folder = rel_path.split("/", 1)[0]
+        file_type = FRONTMATTER_FOLDER_TYPE_MAP.get(folder, "note")
+        fm = DEFAULT_FRONTMATTER.format(type=file_type, date=today_str)
+
+        file_path.write_text(fm + "\n" + content, encoding="utf-8")
+        fixed += 1
+    return fixed
+
+
 async def auto_fix_health_issues(
     workspace: Path,
     report: HealthReport,
@@ -685,31 +735,10 @@ async def auto_fix_health_issues(
             target_path.write_text(rebuilt, encoding="utf-8")
         fixed_backlinks += 1
 
-    # 2. Fix missing frontmatter — add default template
-    for rel_path in report.missing_frontmatter:
-        file_path = workspace / rel_path
-        if not file_path.is_file():
-            continue
-
-        folder = rel_path.split("/")[0]
-        type_map = {
-            "decisions": "decision",
-            "patterns": "pattern",
-            "projects": "project",
-            "templates": "template",
-            "concepts": "concept",
-            "connections": "connection",
-            "lessons": "lesson",
-            "references": "reference",
-            "reviews": "review",
-        }
-        file_type = type_map.get(folder, "unknown")
-        fm = DEFAULT_FRONTMATTER.format(type=file_type, date=today_str)
-
-        content = file_path.read_text(encoding="utf-8")
-        if not content.startswith("---"):
-            file_path.write_text(fm + "\n" + content, encoding="utf-8")
-            fixed_frontmatter += 1
+    # 2. Fix missing frontmatter — idempotent prepend (Story 11.11).
+    fixed_frontmatter = await _fix_missing_frontmatter(
+        workspace, report.missing_frontmatter, today_str
+    )
 
     # 3. Fix orphan notes — bootstrap `_index.md` via regenerate_index when
     # missing, or append idempotently when present (Story 11.12).

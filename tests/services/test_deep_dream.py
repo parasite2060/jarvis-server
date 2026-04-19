@@ -2009,3 +2009,161 @@ class TestHealthFixLoop:
         assert dream.status == "partial"
         assert dream.error_message is not None
         assert "1/3 actions" in dream.error_message
+
+
+# ---------------------------------------------------------------------------
+# Story 11.11: Deterministic frontmatter prepend inside loop
+# ---------------------------------------------------------------------------
+
+
+class TestFixMissingFrontmatter:
+    """Story 11.11 — idempotent prepend, folder→type map, note fallback."""
+
+    @pytest.mark.asyncio
+    async def test_prepends_default_for_pattern_file(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        (patterns_dir / "foo.md").write_text("# Foo\n\nNo frontmatter here.\n", encoding="utf-8")
+        today_str = date.today().isoformat()
+
+        fixed = await _fix_missing_frontmatter(tmp_path, ["patterns/foo.md"], today_str)
+
+        assert fixed == 1
+        content = (patterns_dir / "foo.md").read_text(encoding="utf-8")
+        assert content.startswith("---")
+        assert "type: pattern" in content
+        assert f"created: {today_str}" in content
+        assert f"updated: {today_str}" in content
+        assert "# Foo" in content
+
+    @pytest.mark.asyncio
+    async def test_prepends_for_project_file(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+        (projects_dir / "bar.md").write_text("# Bar project\n", encoding="utf-8")
+
+        await _fix_missing_frontmatter(tmp_path, ["projects/bar.md"], date.today().isoformat())
+
+        content = (projects_dir / "bar.md").read_text(encoding="utf-8")
+        assert "type: project" in content
+
+    @pytest.mark.asyncio
+    async def test_uses_note_fallback_for_unknown_folder(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        foobar = tmp_path / "foobar"
+        foobar.mkdir()
+        (foobar / "baz.md").write_text("# Baz\n", encoding="utf-8")
+
+        await _fix_missing_frontmatter(tmp_path, ["foobar/baz.md"], date.today().isoformat())
+
+        content = (foobar / "baz.md").read_text(encoding="utf-8")
+        assert "type: note" in content
+
+    @pytest.mark.asyncio
+    async def test_is_idempotent_when_frontmatter_present(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        existing = (
+            "---\n"
+            "type: decision\n"
+            "status: active\n"
+            "tags: [demo]\n"
+            "created: 2026-04-01\n"
+            "updated: 2026-04-01\n"
+            "last_reviewed: 2026-04-01\n"
+            "---\n\n"
+            "# Already tagged\n"
+        )
+        decisions_dir = tmp_path / "decisions"
+        decisions_dir.mkdir()
+        target = decisions_dir / "have-fm.md"
+        target.write_text(existing, encoding="utf-8")
+        original_bytes = target.read_bytes()
+
+        fixed = await _fix_missing_frontmatter(
+            tmp_path, ["decisions/have-fm.md"], date.today().isoformat()
+        )
+
+        assert fixed == 0
+        assert target.read_bytes() == original_bytes
+
+    @pytest.mark.asyncio
+    async def test_is_idempotent_with_leading_whitespace(self, tmp_path: Path) -> None:
+        """`lstrip()` guard — files with leading blank line already have frontmatter."""
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        existing = "\n---\ntype: pattern\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n\n# X\n"
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        target = patterns_dir / "leading-ws.md"
+        target.write_text(existing, encoding="utf-8")
+        original_bytes = target.read_bytes()
+
+        await _fix_missing_frontmatter(
+            tmp_path, ["patterns/leading-ws.md"], date.today().isoformat()
+        )
+
+        assert target.read_bytes() == original_bytes
+
+    @pytest.mark.asyncio
+    async def test_multiple_files_only_modifies_missing(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        (patterns_dir / "missing1.md").write_text("# One\n", encoding="utf-8")
+        (patterns_dir / "missing2.md").write_text("# Two\n", encoding="utf-8")
+        existing = "---\ntype: pattern\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Three\n"
+        (patterns_dir / "has-fm.md").write_text(existing, encoding="utf-8")
+        original_has_fm = (patterns_dir / "has-fm.md").read_bytes()
+
+        fixed = await _fix_missing_frontmatter(
+            tmp_path,
+            ["patterns/missing1.md", "patterns/missing2.md", "patterns/has-fm.md"],
+            date.today().isoformat(),
+        )
+
+        # Only 2 are actually modified — the third already has frontmatter.
+        assert fixed == 2
+        assert (patterns_dir / "has-fm.md").read_bytes() == original_has_fm
+        assert (patterns_dir / "missing1.md").read_text(encoding="utf-8").startswith("---")
+        assert (patterns_dir / "missing2.md").read_text(encoding="utf-8").startswith("---")
+
+    @pytest.mark.asyncio
+    async def test_catches_llm_regression(self, tmp_path: Path) -> None:
+        """Simulates iteration N+1 after a previous iteration stripped frontmatter."""
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        patterns_dir = tmp_path / "patterns"
+        patterns_dir.mkdir()
+        # Iteration N: file had frontmatter. LLM rewrote it without frontmatter.
+        (patterns_dir / "regressed.md").write_text(
+            "# Regressed\n\nLLM stripped frontmatter.\n", encoding="utf-8"
+        )
+
+        # Iteration N+1: health check re-flags the file; auto-fix at top of loop
+        # restores frontmatter deterministically.
+        fixed = await _fix_missing_frontmatter(
+            tmp_path, ["patterns/regressed.md"], date.today().isoformat()
+        )
+
+        assert fixed == 1
+        content = (patterns_dir / "regressed.md").read_text(encoding="utf-8")
+        assert content.startswith("---")
+        assert "type: pattern" in content
+        assert "# Regressed" in content
+
+    @pytest.mark.asyncio
+    async def test_skips_missing_file(self, tmp_path: Path) -> None:
+        from app.services.deep_dream import _fix_missing_frontmatter
+
+        fixed = await _fix_missing_frontmatter(
+            tmp_path, ["decisions/does-not-exist.md"], date.today().isoformat()
+        )
+
+        assert fixed == 0
