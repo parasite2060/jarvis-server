@@ -281,8 +281,10 @@ class TestPhase3AgentTools:
         agent = _get_deep_dream_agent()
         registered = _tool_names(agent)
         removed = {
-            "read_memory_file", "read_soul_file",
-            "read_phase1_candidates", "read_phase2_analysis",
+            "read_memory_file",
+            "read_soul_file",
+            "read_phase1_candidates",
+            "read_phase2_analysis",
         }
         present = removed & registered
         assert not present, f"Old tools still present: {present}"
@@ -378,9 +380,9 @@ class TestRunPromptInjection:
         from app.services.dream_agent import DEEP_DREAM_USAGE_LIMITS, HEALTH_FIX_LIMITS
 
         assert DEEP_DREAM_USAGE_LIMITS.total_tokens_limit == 500_000
-        assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == 50
+        assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == 300
         assert HEALTH_FIX_LIMITS.total_tokens_limit == 200_000
-        assert HEALTH_FIX_LIMITS.tool_calls_limit == 50
+        assert HEALTH_FIX_LIMITS.tool_calls_limit == 300
 
 
 # ---------------------------------------------------------------------------

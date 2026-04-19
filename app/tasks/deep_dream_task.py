@@ -54,6 +54,11 @@ def _determine_deep_dream_outcome(
     return "no_new_content"
 
 
+def _stitch_error(existing: str | None, prefix: str, exc: BaseException) -> str:
+    segment = f"{prefix}: {exc}"
+    return segment if not existing else f"{existing}; {segment}"
+
+
 def _format_phase1_summary(
     phase1_output: LightSleepOutput,
     scores: dict[str, float],
@@ -328,6 +333,8 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             context_count=len(candidate.source_sessions),
         )
 
+    error_message: str | None = None
+
     # Step 2e: Phase 2 — REM Sleep (cross-session pattern detection)
     phase2_start = time.monotonic_ns() // 1_000_000
     phase2_started_at = datetime.now(UTC)
@@ -402,6 +409,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     except Exception as exc:
         phase2_duration_ms = time.monotonic_ns() // 1_000_000 - phase2_start
         phase2_result = None
+        error_message = _stitch_error(error_message, "phase2_rem_sleep soft-failed", exc)
         log.warning("deep_dream.phase2.failed", dream_id=dream_id, error=str(exc))
         await store_phase_telemetry(
             dream_id=dream_id,
@@ -438,7 +446,6 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     consolidation_result: dict[str, Any] | None = None
     consolidation_messages: list[Any] = []
     is_partial = False
-    error_message: str | None = None
     usage_input_tokens: int | None = None
     usage_output_tokens: int | None = None
     usage_total_tokens: int | None = None

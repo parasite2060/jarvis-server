@@ -497,7 +497,7 @@ class TestPhase1PromptInjection:
         from app.services.dream_agent import PHASE1_USAGE_LIMITS
 
         assert PHASE1_USAGE_LIMITS.total_tokens_limit == 200_000
-        assert PHASE1_USAGE_LIMITS.tool_calls_limit == 25
+        assert PHASE1_USAGE_LIMITS.tool_calls_limit == 300
 
     @pytest.mark.asyncio
     async def test_run_prompt_contains_memory_md(self, deep_dream_deps: DeepDreamDeps) -> None:
@@ -755,7 +755,7 @@ class TestPhase2PromptInjection:
         from app.services.dream_agent import PHASE2_USAGE_LIMITS
 
         assert PHASE2_USAGE_LIMITS.total_tokens_limit == 200_000
-        assert PHASE2_USAGE_LIMITS.tool_calls_limit == 25
+        assert PHASE2_USAGE_LIMITS.tool_calls_limit == 300
 
     @pytest.mark.asyncio
     async def test_run_phase2_prompt_contains_candidates(self) -> None:
@@ -1895,3 +1895,28 @@ class TestStory930SimplifyExtraction:
 
             assert "transcripts/test-123_abc12345.txt" in prompt
             assert "store_session_memory()" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Story 11.9: Uniform phase tool-call budget
+# ---------------------------------------------------------------------------
+
+
+def test_phase_tool_call_limits_are_300() -> None:
+    from app.services.dream_agent import (
+        DEEP_DREAM_USAGE_LIMITS,
+        EXTRACTION_LIMITS,
+        HEALTH_FIX_LIMITS,
+        PHASE1_USAGE_LIMITS,
+        PHASE2_USAGE_LIMITS,
+        RECORD_LIMITS,
+        WEEKLY_REVIEW_USAGE_LIMITS,
+    )
+
+    assert PHASE1_USAGE_LIMITS.tool_calls_limit == 300
+    assert PHASE2_USAGE_LIMITS.tool_calls_limit == 300
+    assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == 300
+    assert HEALTH_FIX_LIMITS.tool_calls_limit == 300
+    assert WEEKLY_REVIEW_USAGE_LIMITS.tool_calls_limit == 300
+    assert EXTRACTION_LIMITS.tool_calls_limit == 300
+    assert RECORD_LIMITS.tool_calls_limit == 300

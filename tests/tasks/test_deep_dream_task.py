@@ -1150,3 +1150,37 @@ async def test_deep_dream_outcome_no_new_content() -> None:
 
     assert dream.status == "skipped"
     assert dream.outcome == "no_new_content"
+
+
+# ---------------------------------------------------------------------------
+# Story 11.9: Phase 2 soft-fail error_message stitching
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_phase2_soft_fail_stitches_error_message() -> None:
+    from pydantic_ai.exceptions import UsageLimitExceeded
+
+    dream = _make_dream()
+    patches = _pipeline_patches(
+        dream,
+        phase2_error=UsageLimitExceeded("test-budget"),
+    )
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.error_message is not None
+    assert dream.error_message.startswith("phase2_rem_sleep soft-failed:")
+    assert "test-budget" in dream.error_message
+
+
+@pytest.mark.asyncio
+async def test_phase2_happy_path_leaves_error_message_null() -> None:
+    dream = _make_dream()
+    patches = _pipeline_patches(dream)
+
+    await _run_with_patches(patches, trigger="auto")
+
+    assert dream.status == "completed"
+    assert dream.error_message is None

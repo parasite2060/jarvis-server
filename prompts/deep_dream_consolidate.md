@@ -21,6 +21,8 @@ All core data is in your prompt (no tool calls needed):
 4. **Daily log** — today's sessions to summarize
 5. **SOUL.md** — alignment reference (do NOT modify)
 
+If the Phase 2 summary section is empty or absent, proceed with Phase 1 data only; do not fabricate themes, connections, or promotion candidates that you cannot ground in the provided inputs.
+
 ### Base Tools (vault-rooted, read-only)
 All agents share: `read_file(path)`, `grep(pattern, path)`, `list_files(path)`, `file_info(path)`, `read_frontmatter(path)`, `memu_search(query)`, `memu_categories()`.
 

@@ -5,13 +5,73 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import yaml
+from sqlalchemy import select
 
 from app.config import settings
 from app.core.exceptions import GitOpsError
 from app.core.logging import get_logger
 from app.models.config_schemas import DEFAULT_DEEP_DREAM_CRON
+from app.models.db import async_session_factory
+from app.models.tables import DreamPhase
 
 log = get_logger("jarvis.services.git_ops")
+
+_NOTES_TRUNCATE_LIMIT = 120
+
+
+def _format_phase_notes(error_message: str | None) -> str:
+    if not error_message:
+        return ""
+    text = error_message.replace("\n", " ").replace("|", "\\|").strip()
+    if len(text) > _NOTES_TRUNCATE_LIMIT:
+        return text[:_NOTES_TRUNCATE_LIMIT] + "…"
+    return text
+
+
+def _format_phase_label(phase: str, output_json: dict | None) -> str:
+    if phase == "health_fix" and isinstance(output_json, dict):
+        iteration = output_json.get("iteration")
+        if iteration is not None:
+            return f"health_fix (iter {iteration})"
+    return phase
+
+
+def _format_phase_status(status: str) -> str:
+    return status if status == "completed" else f"**{status.upper()}**"
+
+
+def _format_phase_duration(duration_ms: int | None) -> str:
+    if duration_ms is None:
+        return ""
+    return f"{round(duration_ms / 1000)}s"
+
+
+def _render_phase_status_section(phases: list[DreamPhase]) -> str:
+    if not phases:
+        return ""
+    lines: list[str] = [
+        "",
+        "## Phase status",
+        "",
+        "| Phase | Status | Duration | Notes |",
+        "|---|---|---|---|",
+    ]
+    for row in phases:
+        label = _format_phase_label(row.phase, row.output_json)
+        status = _format_phase_status(row.status)
+        duration = _format_phase_duration(row.duration_ms)
+        notes = _format_phase_notes(row.error_message) if row.status != "completed" else ""
+        lines.append(f"| {label} | {status} | {duration} | {notes} |")
+    return "\n".join(lines)
+
+
+async def _fetch_dream_phases(dream_id: int) -> list[DreamPhase]:
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(DreamPhase).where(DreamPhase.dream_id == dream_id).order_by(DreamPhase.id)
+        )
+        return list(result.scalars().all())
+
 
 DEFAULT_DREAM_CONFIG: dict[str, object] = {
     "auto_merge": True,
@@ -174,9 +234,7 @@ class GitOpsService:
 
         if auto_merge:
             try:
-                await self.run_gh(
-                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
-                )
+                await self.run_gh(["pr", "merge", "--squash", "--delete-branch", pr_url])
                 pr_status = "merged"
                 log.info("git_ops.pr.merged", pr_url=pr_url)
             except GitOpsError as exc:
@@ -263,6 +321,17 @@ class GitOpsService:
                 f"- Stale pruned: {stats.get('stale_pruned', 0)}\n"
             )
 
+        try:
+            phase_rows = await _fetch_dream_phases(dream_id)
+            phase_status_section = _render_phase_status_section(phase_rows)
+        except Exception as exc:
+            log.warning(
+                "git_ops.deep_pr.phase_status_fetch_failed",
+                dream_id=dream_id,
+                error=str(exc),
+            )
+            phase_status_section = ""
+
         pr_body = (
             f"## Deep Dream Consolidation\n\n"
             f"**Dream ID:** {dream_id}\n"
@@ -271,6 +340,7 @@ class GitOpsService:
             + "\n".join(f"- `{p}`" for p in file_paths)
             + f"\n\n**Total:** {len(file_paths)} file(s) modified"
             + stats_section
+            + phase_status_section
         )
 
         # Create PR
@@ -284,9 +354,7 @@ class GitOpsService:
 
         if auto_merge:
             try:
-                await self.run_gh(
-                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
-                )
+                await self.run_gh(["pr", "merge", "--squash", "--delete-branch", pr_url])
                 pr_status = "merged"
                 log.info("git_ops.deep_pr.merged", pr_url=pr_url)
             except GitOpsError as exc:
@@ -376,9 +444,7 @@ class GitOpsService:
 
         if auto_merge:
             try:
-                await self.run_gh(
-                    ["pr", "merge", "--squash", "--delete-branch", pr_url]
-                )
+                await self.run_gh(["pr", "merge", "--squash", "--delete-branch", pr_url])
                 pr_status = "merged"
                 log.info("git_ops.weekly_review_pr.merged", pr_url=pr_url)
             except GitOpsError as exc:
