@@ -899,7 +899,7 @@ def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
     return _deep_dream_agent
 
 
-DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=500_000, tool_calls_limit=50)
+DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=500_000, tool_calls_limit=300)
 
 
 async def run_deep_dream_consolidation(
@@ -942,7 +942,7 @@ async def run_deep_dream_consolidation(
     )
 
 
-HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=50)
+HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
 
 
 async def run_health_fix(
@@ -1043,7 +1043,7 @@ def _get_phase1_agent() -> Agent[DeepDreamDeps, LightSleepOutput]:
     return _phase1_agent
 
 
-PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
+PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
 
 
 async def run_phase1_light_sleep(
@@ -1120,7 +1120,7 @@ def _get_phase2_agent() -> Agent[Phase2Deps, REMSleepOutput]:
     return _phase2_agent
 
 
-PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=25)
+PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
 
 
 async def run_phase2_rem_sleep(
@@ -1196,7 +1196,7 @@ def _get_weekly_review_agent() -> Agent[WeeklyReviewDeps, WeeklyReviewOutput]:
     return _weekly_review_agent
 
 
-WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=80)
+WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=300)
 
 
 async def run_weekly_review(

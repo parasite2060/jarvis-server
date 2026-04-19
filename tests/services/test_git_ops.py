@@ -1,10 +1,21 @@
 from datetime import UTC, date, datetime
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.core.exceptions import GitOpsError
 from app.services.git_ops import GitOpsService
+
+
+@pytest.fixture(autouse=True)
+def _stub_fetch_dream_phases() -> Any:
+    with patch(
+        "app.services.git_ops._fetch_dream_phases",
+        new_callable=AsyncMock,
+        return_value=[],
+    ) as mock:
+        yield mock
 
 
 def _make_process(stdout: str = "", stderr: str = "", returncode: int = 0) -> AsyncMock:
@@ -741,3 +752,171 @@ async def test_get_pr_status_gh_failure() -> None:
 
     assert result["state"] == "unknown"
     assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Story 11.9: PR body phase-status table
+# ---------------------------------------------------------------------------
+
+
+def _make_phase_row(
+    phase: str,
+    status: str,
+    duration_ms: int | None = 15_000,
+    error_message: str | None = None,
+    output_json: dict | None = None,
+) -> MagicMock:
+    row = MagicMock()
+    row.phase = phase
+    row.status = status
+    row.duration_ms = duration_ms
+    row.error_message = error_message
+    row.output_json = output_json
+    return row
+
+
+@pytest.mark.asyncio
+async def test_pr_body_phase_status_table(_stub_fetch_dream_phases: Any) -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
+    pr_bodies: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            body_idx = args.index("--body") + 1
+            pr_bodies.append(args[body_idx])
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    phases = [
+        _make_phase_row("phase1_light_sleep", "completed", duration_ms=27_000),
+        _make_phase_row(
+            "phase2_rem_sleep",
+            "failed",
+            duration_ms=15_000,
+            error_message=(
+                "The next tool call(s) would exceed the tool_calls_limit of 25 (tool_calls=28)"
+            ),
+        ),
+        _make_phase_row("phase3_deep_sleep", "completed", duration_ms=80_000),
+        _make_phase_row("health_fix", "completed", duration_ms=61_000),
+    ]
+    _stub_fetch_dream_phases.return_value = phases
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        await service.create_deep_dream_pr(files, dream_id=42, source_date=date(2026, 4, 19))
+
+    assert len(pr_bodies) == 1
+    body = pr_bodies[0]
+    assert "## Phase status" in body
+    assert "| Phase | Status | Duration | Notes |" in body
+    assert "| phase1_light_sleep | completed | 27s |  |" in body
+    assert "| phase2_rem_sleep | **FAILED** | 15s |" in body
+    assert "tool_calls_limit of 25" in body
+    assert "| phase3_deep_sleep | completed | 80s |  |" in body
+    assert "| health_fix | completed | 61s |  |" in body
+
+
+@pytest.mark.asyncio
+async def test_pr_body_phase_status_truncates_long_error(
+    _stub_fetch_dream_phases: Any,
+) -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
+    pr_bodies: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            body_idx = args.index("--body") + 1
+            pr_bodies.append(args[body_idx])
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    long_error = "x" * 200
+    phases = [_make_phase_row("phase2_rem_sleep", "failed", error_message=long_error)]
+    _stub_fetch_dream_phases.return_value = phases
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        await service.create_deep_dream_pr(files, dream_id=42, source_date=date(2026, 4, 19))
+
+    body = pr_bodies[0]
+    assert "…" in body
+    assert "x" * 120 in body
+    assert "x" * 121 not in body
+
+
+@pytest.mark.asyncio
+async def test_pr_body_phase_status_labels_health_fix_iteration(
+    _stub_fetch_dream_phases: Any,
+) -> None:
+    service = GitOpsService()
+    service._last_pull_at = datetime.now(UTC)
+
+    pr_bodies: list[str] = []
+
+    async def mock_run_git(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[:2] == ["diff", "--cached"]:
+            raise GitOpsError("changes exist")
+        return ("", "", 0)
+
+    async def mock_run_gh(args: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+        if args[0] == "pr" and args[1] == "create":
+            body_idx = args.index("--body") + 1
+            pr_bodies.append(args[body_idx])
+            return ("https://github.com/owner/repo/pull/10", "", 0)
+        return ("", "", 0)
+
+    phases = [
+        _make_phase_row("health_fix", "completed", output_json={"iteration": 1}),
+        _make_phase_row("health_fix", "completed", output_json={"iteration": 2}),
+    ]
+    _stub_fetch_dream_phases.return_value = phases
+
+    files = [{"path": "MEMORY.md", "action": "rewrite"}]
+
+    with (
+        patch.object(service, "run_git", side_effect=mock_run_git),
+        patch.object(service, "run_gh", side_effect=mock_run_gh),
+        patch.object(
+            service,
+            "read_dream_config",
+            AsyncMock(return_value={"auto_merge": False}),
+        ),
+    ):
+        await service.create_deep_dream_pr(files, dream_id=42, source_date=date(2026, 4, 19))
+
+    body = pr_bodies[0]
+    assert "health_fix (iter 1)" in body
+    assert "health_fix (iter 2)" in body
