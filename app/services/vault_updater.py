@@ -45,22 +45,55 @@ def build_frontmatter(
     tags: list[str],
     created: date,
     updated: date,
+    summary: str = "",
 ) -> str:
     tags_str = ", ".join(tags)
-    return (
-        "---\n"
-        f"type: {file_type}\n"
-        f"tags: [{tags_str}]\n"
-        f"created: {created.isoformat()}\n"
-        f"updated: {updated.isoformat()}\n"
-        f"last_reviewed: {updated.isoformat()}\n"
-        "---\n"
-    )
+    lines = [
+        "---",
+        f"type: {file_type}",
+        f"tags: [{tags_str}]",
+        f"created: {created.isoformat()}",
+        f"updated: {updated.isoformat()}",
+        f"last_reviewed: {updated.isoformat()}",
+    ]
+    if summary:
+        # Double-quoted YAML scalar; escape internal `"` and `\` for safety.
+        escaped = summary.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'summary: "{escaped}"')
+    lines.append("---\n")
+    return "\n".join(lines)
 
 
 def extract_created_date(content: str) -> str | None:
     match = re.search(r"^created:\s*(\d{4}-\d{2}-\d{2})", content, re.MULTILINE)
     return match.group(1) if match else None
+
+
+def _extract_frontmatter_block(content: str) -> str | None:
+    """Return the body of the leading YAML frontmatter block, or None."""
+    match = re.match(r"^---\n(.*?)\n---\n", content, re.DOTALL)
+    return match.group(1) if match else None
+
+
+def _extract_frontmatter_summary(content: str) -> str | None:
+    """Extract the `summary:` field from frontmatter, or None if absent.
+
+    Accepts both quoted and unquoted YAML scalars. Unescapes `\\"` and `\\\\`.
+    """
+    block = _extract_frontmatter_block(content)
+    if block is None:
+        return None
+    for line in block.splitlines():
+        m = re.match(r"^summary:\s*(.*?)\s*$", line)
+        if m is None:
+            continue
+        value = m.group(1)
+        # Strip matching surrounding quotes, then unescape.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+            value = value.replace('\\"', '"').replace("\\\\", "\\")
+        return value
+    return None
 
 
 def _extract_title(content: str) -> str | None:
@@ -69,11 +102,21 @@ def _extract_title(content: str) -> str | None:
 
 
 def _extract_first_sentence(content: str) -> str:
-    body_match = re.search(r"^#\s+.+\n+(.+)", content, re.MULTILINE)
-    if body_match:
-        sentence = body_match.group(1).strip()
-        return sentence[:97] + "..." if len(sentence) > 100 else sentence
-    return ""
+    # Skip markdown subheadings between the H1 and the first prose line
+    # (Story 11.14 AC9 hardening — prevents `## Decision` / `## What It Is`
+    # from leaking into `_index.md` summaries).
+    m = re.search(
+        r"^#\s+.+\n+(?:#{2,}.*\n+)*(.+?)(?:\n|$)",
+        content,
+        re.MULTILINE,
+    )
+    if not m:
+        return ""
+    sentence = m.group(1).strip()
+    # Belt-and-braces: never leak a subheading even if the skip regex missed.
+    if sentence.startswith("#"):
+        return ""
+    return sentence[:97] + "..." if len(sentence) > 100 else sentence
 
 
 def _compute_file_hash(content: str) -> str:
@@ -89,6 +132,8 @@ async def write_vault_folder_file(
     relative_path = f"{folder}/{filename}"
     created_date = source_date
     action: str = entry["action"]
+    incoming_summary: str = entry.get("summary", "")
+    summary = incoming_summary
 
     if action == "update":
         existing = await read_vault_file(relative_path)
@@ -96,6 +141,12 @@ async def write_vault_folder_file(
             existing_created = extract_created_date(existing)
             if existing_created is not None:
                 created_date = date.fromisoformat(existing_created)
+            # Preserve existing summary if the entry didn't supply one
+            # (Story 11.14 AC5 — same rule as `created:`).
+            if not incoming_summary:
+                existing_summary = _extract_frontmatter_summary(existing)
+                if existing_summary:
+                    summary = existing_summary
         else:
             action = "create"
 
@@ -105,6 +156,7 @@ async def write_vault_folder_file(
         tags=entry.get("tags", []),
         created=created_date,
         updated=source_date,
+        summary=summary,
     )
     full_content = frontmatter + "\n" + entry["content"]
     await write_vault_file(relative_path, full_content)
@@ -135,11 +187,18 @@ async def regenerate_index(
         if content is None:
             continue
         title = _extract_title(content) or md_file.stem.replace("-", " ").title()
+        # Story 11.14 AC8 precedence: this-dream LLM summary → persisted
+        # frontmatter `summary:` → legacy first-sentence fallback.
         summary = ""
         if summaries and md_file.name in summaries:
             summary = summaries[md_file.name]
-        else:
+        if not summary:
+            summary = _extract_frontmatter_summary(content) or ""
+        if not summary:
             summary = _extract_first_sentence(content)
+        # AC10: truncate at 100 chars with ellipsis suffix.
+        if len(summary) > 100:
+            summary = summary[:97] + "..."
         entries.append((title, md_file.name, summary))
 
     entries.sort(key=lambda e: e[0].lower())
