@@ -165,21 +165,14 @@ async def write_consolidated_files(
 
     await write_vault_file("MEMORY.md", validated_result["memory_md"])
 
-    daily_path = f"dailys/{source_date.isoformat()}.md"
-    existing_daily = await read_vault_file(daily_path) or ""
-
-    frontmatter = ""
-    if existing_daily.startswith("---"):
-        end_idx = existing_daily.find("---", 3)
-        if end_idx != -1:
-            frontmatter = existing_daily[: end_idx + 3] + "\n\n"
-
-    daily_content = frontmatter + validated_result["daily_summary"]
-    await write_vault_file(daily_path, daily_content)
+    # Story 11.15: deep dream does NOT write to dailys/{date}.md. The record
+    # agent is the sole writer of daily logs (see design/knowledge-vault-design.md
+    # §13). The `daily_summary` field in `validated_result` is still produced by
+    # Phase 3 and persisted to dream_phases.output_json for forensic review —
+    # it just isn't written to the vault.
 
     files_modified = [
         {"path": "MEMORY.md", "action": "rewrite"},
-        {"path": daily_path, "action": "rewrite"},
         {"path": backup_path, "action": "create"},
     ]
 
