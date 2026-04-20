@@ -911,10 +911,18 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
 
     # Step 8: MemU alignment
     memu_sync: dict[str, int] = {"items_synced": 0, "errors": 0}
+    log.info("deep_dream.memu_align.started", dream_id=dream_id)
     try:
         memu_sync = await align_memu_with_memory(validated["memory_md"], source_date)
+        log.info(
+            "deep_dream.memu_align.completed",
+            dream_id=dream_id,
+            items_synced=memu_sync.get("items_synced", 0),
+            errors=memu_sync.get("errors", 0),
+        )
     except Exception as exc:
         log.error("deep_dream.memu_align.failed", dream_id=dream_id, error=str(exc))
+        error_message = _stitch_error(error_message, "memu_align_failed", exc)
 
     # Step 9: Update dream row
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms

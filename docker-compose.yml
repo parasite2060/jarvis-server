@@ -66,6 +66,34 @@ services:
       timeout: 5s
       retries: 10
 
+  memu-worker:
+    build:
+      context: ../memu-server
+      dockerfile: dockerfiles/Dockerfile
+    command: ["python", "-m", "app.workers.worker"]
+    environment:
+      - OPENAI_API_KEY=${LLM_API_KEY:-changeme}
+      - OPENAI_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=text-embedding-3-large
+      - DEFAULT_LLM_MODEL=gpt-5.4
+      - POSTGRES_USER=jarvis
+      - POSTGRES_PASSWORD=jarvis-local-dev
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=memu
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      memu-server:
+        condition: service_healthy
+    networks:
+      - jarvis-network
+
   postgres:
     image: pgvector/pgvector:pg17
     environment:
