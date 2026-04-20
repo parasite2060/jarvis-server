@@ -237,9 +237,10 @@ async def test_write_rewrites_memory_md() -> None:
 
 
 @pytest.mark.asyncio
-async def test_write_rewrites_daily_log() -> None:
-    existing_daily = "---\ntype: daily\ndate: 2026-03-31\n---\n\n## Session 1\nOld content."
-    mock_read = AsyncMock(side_effect=["old memory", existing_daily])
+async def test_write_does_not_touch_daily_log() -> None:
+    """Story 11.15 — deep dream no longer writes to dailys/. The record agent
+    owns daily-log writes exclusively. This test pins the new behavior."""
+    mock_read = AsyncMock(side_effect=["old memory"])  # Only MEMORY.md is read.
     mock_write = AsyncMock()
 
     with (
@@ -253,16 +254,17 @@ async def test_write_rewrites_daily_log() -> None:
             date(2026, 3, 31),
         )
 
-    daily_write = mock_write.call_args_list[2]
-    assert daily_write[0][0] == "dailys/2026-03-31.md"
-    written_content: str = daily_write[0][1]
-    assert written_content.startswith("---\ntype: daily\ndate: 2026-03-31\n---")
-    assert "Consolidated summary." in written_content
+    # Verify no write ever targets a dailys/ path.
+    written_paths = [call[0][0] for call in mock_write.call_args_list]
+    assert not any(path.startswith("dailys/") for path in written_paths), (
+        f"deep dream must not write to dailys/, but wrote: {written_paths}"
+    )
 
 
 @pytest.mark.asyncio
 async def test_write_returns_correct_files_modified() -> None:
-    mock_read = AsyncMock(side_effect=["old", ""])
+    """Story 11.15 — files_modified lists MEMORY.md + backup only; no daily entry."""
+    mock_read = AsyncMock(side_effect=["old"])
     mock_write = AsyncMock()
 
     with (
@@ -276,10 +278,11 @@ async def test_write_returns_correct_files_modified() -> None:
             date(2026, 3, 31),
         )
 
-    assert len(result) == 3
+    assert len(result) == 2
     assert result[0] == {"path": "MEMORY.md", "action": "rewrite"}
-    assert result[1] == {"path": "dailys/2026-03-31.md", "action": "rewrite"}
-    assert result[2] == {"path": "topics/memory-backup-2026-03-31.md", "action": "create"}
+    assert result[1] == {"path": "topics/memory-backup-2026-03-31.md", "action": "create"}
+    # Critical: no entry starting with "dailys/".
+    assert not any(entry["path"].startswith("dailys/") for entry in result)
 
 
 # ── align_memu_with_memory tests ──
