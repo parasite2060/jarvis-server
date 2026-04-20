@@ -79,6 +79,33 @@ services:
       timeout: 5s
       retries: 10
 
+  memu-worker:
+    image: ghcr.io/parasite2060/memu-server:latest
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.worker"]
+    volumes:
+      - ./patches/sitecustomize.py:/app/.venv/lib/python3.13/site-packages/sitecustomize.py:ro
+    environment:
+      - OPENAI_API_KEY=${LLM_API_KEY}
+      - OPENAI_BASE_URL=${LLM_BASE_URL}
+      - EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL}
+      - EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL:-text-embedding-3-large}
+      - DEFAULT_LLM_MODEL=${LLM_MODEL}
+      - POSTGRES_USER=${DB_USER:-jarvis}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_HOST=${DB_HOST}
+      - POSTGRES_PORT=${DB_PORT:-5432}
+      - POSTGRES_DB=memu
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+    depends_on:
+      temporal:
+        condition: service_started
+      memu-server:
+        condition: service_healthy
+    networks:
+      - jarvis-network
+
   memu-ui:
     image: ghcr.io/parasite2060/memu-ui:latest
     restart: unless-stopped

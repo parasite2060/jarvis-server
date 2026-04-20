@@ -91,7 +91,8 @@ async def memu_memorize(
 
     result: dict[str, Any] = response.json()
     log.info(
-        "memu_client.memorize.success",
+        "memu_client.memorize.enqueued",
         message_count=len(messages),
+        task_id=result.get("task_id"),
     )
     return result
