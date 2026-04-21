@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/parasite2060/jarvis-server/compare/v0.8.0...v0.9.0) (2026-04-20)
+
+
+### Features
+
+* **epic-11:** stories 11.10 + 11.12 + 11.13 dream engine hardening ([14f3d69](https://github.com/parasite2060/jarvis-server/commit/14f3d69a293aea73197db8a3a1f3b74c3645b9be))
+* **epic-11:** story 11.11 idempotent frontmatter prepend inside health-fix loop ([124ad6f](https://github.com/parasite2060/jarvis-server/commit/124ad6f836745674688ed1436ec72ea64dc8b6c7))
+* **epic-11:** story 11.14 persist vault summary in frontmatter ([0614323](https://github.com/parasite2060/jarvis-server/commit/0614323c5355a5fb845fe1d8a2a11b6d4dc17187))
+* **epic-11:** story 11.15 remove deep-dream daily log write ([15b106a](https://github.com/parasite2060/jarvis-server/commit/15b106aaedb90b6720cbd6856f0a30ab3409888e))
+* **epic-11:** story 11.17 add memu-worker service and fix reinforcement telemetry ([dc2911a](https://github.com/parasite2060/jarvis-server/commit/dc2911aedad6da828c8d3fc9cd8fe9fe62a3ea9b))
+* **epic-11:** story 11.9 phase tool-call budgets 300 + phase 2 visibility ([fac3627](https://github.com/parasite2060/jarvis-server/commit/fac3627cf8d91ef22d59179e5d2e611619536fd5))
+
 ## [0.8.0](https://github.com/parasite2060/jarvis-server/compare/v0.7.0...v0.8.0) (2026-04-18)
 
 
