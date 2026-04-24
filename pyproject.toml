@@ -1,6 +1,6 @@
 [project]
 name = "jarvis-server"
-version = "0.10.0"
+version = "0.11.0"
 description = "Jarvis Server — REST API, dreaming engine, git ops"
 requires-python = ">=3.12"
 dependencies = [
