@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/parasite2060/jarvis-server/compare/v0.10.0...v0.11.0) (2026-04-24)
+
+
+### Features
+
+* make agent usage limits configurable via env vars and raise token ceilings ([d1338d8](https://github.com/parasite2060/jarvis-server/commit/d1338d8c646391d3ba30fbd506beebbfe7928f72))
+
 ## [0.10.0](https://github.com/parasite2060/jarvis-server/compare/v0.9.0...v0.10.0) (2026-04-24)
 
 
