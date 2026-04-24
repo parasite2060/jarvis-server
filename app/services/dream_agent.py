@@ -474,7 +474,10 @@ def _get_extraction_agent() -> Agent[DreamDeps, ExtractionSummary]:
     return _extraction_agent
 
 
-EXTRACTION_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
+EXTRACTION_LIMITS = UsageLimits(
+    total_tokens_limit=settings.extraction_tokens_limit,
+    tool_calls_limit=settings.extraction_tool_calls_limit,
+)
 
 MIN_USER_MESSAGES = 3
 CONTEXT_RETRY_LIMIT = 3
@@ -716,7 +719,10 @@ def _get_record_agent(
     return _record_agent
 
 
-RECORD_LIMITS = UsageLimits(total_tokens_limit=1_500_000, tool_calls_limit=300)
+RECORD_LIMITS = UsageLimits(
+    total_tokens_limit=settings.record_tokens_limit,
+    tool_calls_limit=settings.record_tool_calls_limit,
+)
 
 
 def _format_session_log(sl: SessionLogEntry, summary: str) -> str:
@@ -900,7 +906,10 @@ def _get_deep_dream_agent() -> Agent[DeepDreamDeps, ConsolidationOutput]:
     return _deep_dream_agent
 
 
-DEEP_DREAM_USAGE_LIMITS = UsageLimits(total_tokens_limit=500_000, tool_calls_limit=300)
+DEEP_DREAM_USAGE_LIMITS = UsageLimits(
+    total_tokens_limit=settings.deep_dream_tokens_limit,
+    tool_calls_limit=settings.deep_dream_tool_calls_limit,
+)
 
 
 async def run_deep_dream_consolidation(
@@ -943,7 +952,10 @@ async def run_deep_dream_consolidation(
     )
 
 
-HEALTH_FIX_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
+HEALTH_FIX_LIMITS = UsageLimits(
+    total_tokens_limit=settings.health_fix_tokens_limit,
+    tool_calls_limit=settings.health_fix_tool_calls_limit,
+)
 
 
 def _load_health_fix_prompt() -> str:
@@ -1074,7 +1086,10 @@ def _get_phase1_agent() -> Agent[DeepDreamDeps, LightSleepOutput]:
     return _phase1_agent
 
 
-PHASE1_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
+PHASE1_USAGE_LIMITS = UsageLimits(
+    total_tokens_limit=settings.phase1_tokens_limit,
+    tool_calls_limit=settings.phase1_tool_calls_limit,
+)
 
 
 async def run_phase1_light_sleep(
@@ -1151,7 +1166,10 @@ def _get_phase2_agent() -> Agent[Phase2Deps, REMSleepOutput]:
     return _phase2_agent
 
 
-PHASE2_USAGE_LIMITS = UsageLimits(total_tokens_limit=200_000, tool_calls_limit=300)
+PHASE2_USAGE_LIMITS = UsageLimits(
+    total_tokens_limit=settings.phase2_tokens_limit,
+    tool_calls_limit=settings.phase2_tool_calls_limit,
+)
 
 
 async def run_phase2_rem_sleep(
@@ -1227,7 +1245,10 @@ def _get_weekly_review_agent() -> Agent[WeeklyReviewDeps, WeeklyReviewOutput]:
     return _weekly_review_agent
 
 
-WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(total_tokens_limit=100_000, tool_calls_limit=300)
+WEEKLY_REVIEW_USAGE_LIMITS = UsageLimits(
+    total_tokens_limit=settings.weekly_review_tokens_limit,
+    tool_calls_limit=settings.weekly_review_tool_calls_limit,
+)
 
 
 async def run_weekly_review(

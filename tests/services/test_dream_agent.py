@@ -494,10 +494,11 @@ class TestPhase1PromptInjection:
         assert "read_daily_log" not in self._tool_names(agent)
 
     def test_phase1_usage_limits(self) -> None:
+        from app.config import settings
         from app.services.dream_agent import PHASE1_USAGE_LIMITS
 
-        assert PHASE1_USAGE_LIMITS.total_tokens_limit == 200_000
-        assert PHASE1_USAGE_LIMITS.tool_calls_limit == 300
+        assert PHASE1_USAGE_LIMITS.total_tokens_limit == settings.phase1_tokens_limit
+        assert PHASE1_USAGE_LIMITS.tool_calls_limit == settings.phase1_tool_calls_limit
 
     @pytest.mark.asyncio
     async def test_run_prompt_contains_memory_md(self, deep_dream_deps: DeepDreamDeps) -> None:
@@ -752,10 +753,11 @@ class TestPhase2PromptInjection:
         assert deps.vault_index_text == ""
 
     def test_phase2_usage_limits(self) -> None:
+        from app.config import settings
         from app.services.dream_agent import PHASE2_USAGE_LIMITS
 
-        assert PHASE2_USAGE_LIMITS.total_tokens_limit == 200_000
-        assert PHASE2_USAGE_LIMITS.tool_calls_limit == 300
+        assert PHASE2_USAGE_LIMITS.total_tokens_limit == settings.phase2_tokens_limit
+        assert PHASE2_USAGE_LIMITS.tool_calls_limit == settings.phase2_tool_calls_limit
 
     @pytest.mark.asyncio
     async def test_run_phase2_prompt_contains_candidates(self) -> None:
@@ -1903,6 +1905,7 @@ class TestStory930SimplifyExtraction:
 
 
 def test_phase_tool_call_limits_are_300() -> None:
+    from app.config import settings
     from app.services.dream_agent import (
         DEEP_DREAM_USAGE_LIMITS,
         EXTRACTION_LIMITS,
@@ -1913,10 +1916,10 @@ def test_phase_tool_call_limits_are_300() -> None:
         WEEKLY_REVIEW_USAGE_LIMITS,
     )
 
-    assert PHASE1_USAGE_LIMITS.tool_calls_limit == 300
-    assert PHASE2_USAGE_LIMITS.tool_calls_limit == 300
-    assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == 300
-    assert HEALTH_FIX_LIMITS.tool_calls_limit == 300
-    assert WEEKLY_REVIEW_USAGE_LIMITS.tool_calls_limit == 300
-    assert EXTRACTION_LIMITS.tool_calls_limit == 300
-    assert RECORD_LIMITS.tool_calls_limit == 300
+    assert PHASE1_USAGE_LIMITS.tool_calls_limit == settings.phase1_tool_calls_limit
+    assert PHASE2_USAGE_LIMITS.tool_calls_limit == settings.phase2_tool_calls_limit
+    assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == settings.deep_dream_tool_calls_limit
+    assert HEALTH_FIX_LIMITS.tool_calls_limit == settings.health_fix_tool_calls_limit
+    assert WEEKLY_REVIEW_USAGE_LIMITS.tool_calls_limit == settings.weekly_review_tool_calls_limit
+    assert EXTRACTION_LIMITS.tool_calls_limit == settings.extraction_tool_calls_limit
+    assert RECORD_LIMITS.tool_calls_limit == settings.record_tool_calls_limit
