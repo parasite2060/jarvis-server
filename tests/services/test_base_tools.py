@@ -242,7 +242,7 @@ class TestRegisterBaseTools:
         with patch("app.services.dream_agent.settings") as mock_settings:
             mock_settings.jarvis_memory_path = str(vault_dir)
             result = await tool.function(ctx, pattern="Python")
-        assert "decisions/use-python.md" in result
+        assert "decisions/use-python.md" in result.replace("\\", "/")
 
     @pytest.mark.asyncio
     async def test_grep_invalid_regex(self, vault_dir: Path) -> None:

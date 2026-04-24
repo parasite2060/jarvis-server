@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from importlib.metadata import version as pkg_version
 
 
 @pytest.mark.asyncio
@@ -22,4 +23,4 @@ async def test_health_returns_version(client: AsyncClient) -> None:
     response = await client.get("/health")
     body = response.json()
 
-    assert body["data"]["version"] == "0.5.2"
+    assert body["data"]["version"] == pkg_version("jarvis-server")

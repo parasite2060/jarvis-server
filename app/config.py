@@ -31,6 +31,22 @@ class Settings(BaseSettings):
     # ── MemU ──
     memu_base_url: str = "http://memu-server:8000"
 
+    # ── Usage Limits ──
+    phase1_tokens_limit: int = 1_500_000
+    phase1_tool_calls_limit: int = 300
+    phase2_tokens_limit: int = 1_500_000
+    phase2_tool_calls_limit: int = 300
+    deep_dream_tokens_limit: int = 2_000_000
+    deep_dream_tool_calls_limit: int = 300
+    health_fix_tokens_limit: int = 1_500_000
+    health_fix_tool_calls_limit: int = 300
+    weekly_review_tokens_limit: int = 1_500_000
+    weekly_review_tool_calls_limit: int = 300
+    extraction_tokens_limit: int = 1_500_000
+    extraction_tool_calls_limit: int = 300
+    record_tokens_limit: int = 1_500_000
+    record_tool_calls_limit: int = 300
+
     @property
     def database_url(self) -> str:
         return (

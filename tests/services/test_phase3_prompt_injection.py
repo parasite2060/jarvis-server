@@ -377,12 +377,13 @@ class TestRunPromptInjection:
         assert "(empty)" in prompt
 
     def test_token_budget_updated(self) -> None:
+        from app.config import settings
         from app.services.dream_agent import DEEP_DREAM_USAGE_LIMITS, HEALTH_FIX_LIMITS
 
-        assert DEEP_DREAM_USAGE_LIMITS.total_tokens_limit == 500_000
-        assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == 300
-        assert HEALTH_FIX_LIMITS.total_tokens_limit == 200_000
-        assert HEALTH_FIX_LIMITS.tool_calls_limit == 300
+        assert DEEP_DREAM_USAGE_LIMITS.total_tokens_limit == settings.deep_dream_tokens_limit
+        assert DEEP_DREAM_USAGE_LIMITS.tool_calls_limit == settings.deep_dream_tool_calls_limit
+        assert HEALTH_FIX_LIMITS.total_tokens_limit == settings.health_fix_tokens_limit
+        assert HEALTH_FIX_LIMITS.tool_calls_limit == settings.health_fix_tool_calls_limit
 
 
 # ---------------------------------------------------------------------------
