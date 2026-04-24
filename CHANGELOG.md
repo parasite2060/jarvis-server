@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/parasite2060/jarvis-server/compare/v0.9.0...v0.10.0) (2026-04-24)
+
+
+### Features
+
+* **epic-11:** story 11.19 POST /dream accepts optional source_date ([dbc5a1b](https://github.com/parasite2060/jarvis-server/commit/dbc5a1b8adc75629ffa62fc6b118b1a89e86bf68))
+
+
+### Bug Fixes
+
+* **deployment:** shared bind-mount for memu-server + memu-worker storage ([5271ead](https://github.com/parasite2060/jarvis-server/commit/5271ead3e7c12428ff29bc017b2000e7dbb8b5a7))
+
 ## [0.9.0](https://github.com/parasite2060/jarvis-server/compare/v0.8.0...v0.9.0) (2026-04-20)
 
 
