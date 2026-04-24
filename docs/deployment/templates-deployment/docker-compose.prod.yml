@@ -53,6 +53,11 @@ services:
     image: ghcr.io/parasite2060/memu-server:latest
     restart: unless-stopped
     volumes:
+      # Host bind-mount shared with memu-worker so conversation-*.json files
+      # written by /memorize are visible to the Temporal worker that does the
+      # actual embedding. Create the directory with `mkdir -p /opt/memu/storage`
+      # on the host before first `docker compose up`.
+      - /opt/memu/storage:/app/data/storage
       - ./patches/sitecustomize.py:/app/.venv/lib/python3.13/site-packages/sitecustomize.py:ro
     environment:
       - OPENAI_API_KEY=${LLM_API_KEY}
@@ -84,6 +89,8 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "app.workers.worker"]
     volumes:
+      # Must share /app/data/storage with memu-server (see comment above).
+      - /opt/memu/storage:/app/data/storage
       - ./patches/sitecustomize.py:/app/.venv/lib/python3.13/site-packages/sitecustomize.py:ro
     environment:
       - OPENAI_API_KEY=${LLM_API_KEY}
