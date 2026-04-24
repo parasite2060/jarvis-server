@@ -1239,3 +1239,36 @@ async def test_phase2_happy_path_leaves_error_message_null() -> None:
 
     assert dream.status == "completed"
     assert dream.error_message is None
+
+
+# ---------------------------------------------------------------------------
+# Story 11.19: optional source_date parameter for backfill
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_uses_today_when_source_date_none() -> None:
+    from datetime import date
+
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase1_output=SAMPLE_PHASE1_EMPTY)
+
+    mocks = await _run_with_patches(patches, trigger="manual", source_date_iso=None)
+
+    gather_mock = mocks["app.tasks.deep_dream_task.gather_consolidation_inputs"]
+    gather_mock.assert_awaited_once_with(date.today())
+
+
+@pytest.mark.asyncio
+async def test_deep_dream_uses_provided_source_date() -> None:
+    from datetime import date
+
+    dream = _make_dream()
+    patches = _pipeline_patches(dream, phase1_output=SAMPLE_PHASE1_EMPTY)
+
+    mocks = await _run_with_patches(
+        patches, trigger="manual-backfill", source_date_iso="2026-04-20"
+    )
+
+    gather_mock = mocks["app.tasks.deep_dream_task.gather_consolidation_inputs"]
+    gather_mock.assert_awaited_once_with(date(2026, 4, 20))
