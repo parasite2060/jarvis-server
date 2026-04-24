@@ -277,11 +277,18 @@ async def _backup_files(source_date: date) -> None:
         await write_vault_file(f".backups/dailys-{source_date.isoformat()}.bak", daily_log)
 
 
-async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
-    log.info("deep_dream.started", trigger=trigger)
+async def deep_dream_task(
+    ctx: dict[str, Any],
+    trigger: str = "auto",
+    source_date_iso: str | None = None,
+) -> None:
+    source_date: date = date.fromisoformat(source_date_iso) if source_date_iso else date.today()
+    log.info(
+        "deep_dream.started",
+        trigger=trigger,
+        source_date=source_date.isoformat(),
+    )
     start_ms = time.monotonic_ns() // 1_000_000
-
-    source_date = date.today()
 
     # Step 1: Create dream row
     dream = Dream(
@@ -303,12 +310,17 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         inputs = await gather_consolidation_inputs(source_date)
     except Exception as exc:
         log.error("deep_dream.gather.failed", dream_id=dream_id, error=str(exc))
-        await _mark_failed(dream_id, str(exc), start_ms)
+        await _mark_failed(dream_id, str(exc), start_ms, source_date)
         return
 
     if inputs is None:
-        log.info("deep_dream.skipped", dream_id=dream_id, reason="no_memories")
-        await _mark_skipped(dream_id, start_ms)
+        log.info(
+            "deep_dream.skipped",
+            dream_id=dream_id,
+            reason="no_memories",
+            source_date=source_date.isoformat(),
+        )
+        await _mark_skipped(dream_id, start_ms, source_date)
         return
 
     memu_memories: list[dict[str, Any]] = inputs["memu_memories"]
@@ -378,12 +390,12 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             duration_ms=phase1_duration_ms,
             error_message=str(exc),
         )
-        await _mark_failed(dream_id, f"Phase 1 failed: {exc}", start_ms)
+        await _mark_failed(dream_id, f"Phase 1 failed: {exc}", start_ms, source_date)
         return
 
     if not phase1_output.candidates:
         log.info("deep_dream.phase1.skipped", dream_id=dream_id, reason="no_candidates")
-        await _mark_skipped(dream_id, start_ms)
+        await _mark_skipped(dream_id, start_ms, source_date)
         return
 
     # Step 2d: Compute scores for Phase 1 candidates (deterministic Python)
@@ -582,11 +594,11 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
             duration_ms=phase3_duration_ms,
             error_message=str(exc),
         )
-        await _mark_failed(dream_id, str(exc), start_ms)
+        await _mark_failed(dream_id, str(exc), start_ms, source_date)
         return
 
     if consolidation_result is None:
-        await _mark_failed(dream_id, "consolidation produced no output", start_ms)
+        await _mark_failed(dream_id, "consolidation produced no output", start_ms, source_date)
         return
 
     # Step 4: Validate output
@@ -595,7 +607,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         validated = await validate_consolidated_output(consolidation_result)
     except (ValueError, KeyError) as exc:
         log.error("deep_dream.validation.failed", dream_id=dream_id, error=str(exc))
-        await _mark_failed(dream_id, str(exc), start_ms)
+        await _mark_failed(dream_id, str(exc), start_ms, source_date)
         return
 
     # Step 5: Write files (DESTRUCTIVE)
@@ -604,7 +616,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         files_modified = await write_consolidated_files(validated, source_date)
     except Exception as exc:
         log.error("deep_dream.files.failed", dream_id=dream_id, error=str(exc))
-        await _mark_failed(dream_id, str(exc), start_ms)
+        await _mark_failed(dream_id, str(exc), start_ms, source_date)
         return
 
     # Step 6b: Update vault folders
@@ -967,6 +979,7 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
         "deep_dream.completed",
         dream_id=dream_id,
         trigger=trigger,
+        source_date=source_date.isoformat(),
         duration_ms=duration_ms,
         memories_processed=stats.get("total_memories_processed", 0),
         files_count=len(files_modified),
@@ -976,7 +989,12 @@ async def deep_dream_task(ctx: dict[str, Any], trigger: str = "auto") -> None:
     )
 
 
-async def _mark_failed(dream_id: int, error_message: str, start_ms: int) -> None:
+async def _mark_failed(
+    dream_id: int,
+    error_message: str,
+    start_ms: int,
+    source_date: date | None = None,
+) -> None:
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
@@ -986,10 +1004,22 @@ async def _mark_failed(dream_id: int, error_message: str, start_ms: int) -> None
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         await session.commit()
-    log.error("deep_dream.failed", dream_id=dream_id, duration_ms=duration_ms)
+    if source_date is not None:
+        log.error(
+            "deep_dream.failed",
+            dream_id=dream_id,
+            duration_ms=duration_ms,
+            source_date=source_date.isoformat(),
+        )
+    else:
+        log.error("deep_dream.failed", dream_id=dream_id, duration_ms=duration_ms)
 
 
-async def _mark_skipped(dream_id: int, start_ms: int) -> None:
+async def _mark_skipped(
+    dream_id: int,
+    start_ms: int,
+    source_date: date | None = None,
+) -> None:
     duration_ms = time.monotonic_ns() // 1_000_000 - start_ms
     async with async_session_factory() as session:
         result = await session.execute(select(Dream).where(Dream.id == dream_id))
@@ -999,4 +1029,12 @@ async def _mark_skipped(dream_id: int, start_ms: int) -> None:
         d.duration_ms = duration_ms
         d.completed_at = datetime.now(UTC)
         await session.commit()
-    log.info("deep_dream.skipped", dream_id=dream_id, duration_ms=duration_ms)
+    if source_date is not None:
+        log.info(
+            "deep_dream.skipped",
+            dream_id=dream_id,
+            duration_ms=duration_ms,
+            source_date=source_date.isoformat(),
+        )
+    else:
+        log.info("deep_dream.skipped", dream_id=dream_id, duration_ms=duration_ms)
