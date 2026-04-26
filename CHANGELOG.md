@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/parasite2060/jarvis-server/compare/v0.11.0...v0.12.0) (2026-04-26)
+
+
+### Features
+
+* **epic-11:** add memory endpoint and enhance validation for memory, soul, and identity character limits ([d52ee31](https://github.com/parasite2060/jarvis-server/commit/d52ee314e3621f6aafceb223a5dd2d4feb7639c1))
+
 ## [0.11.0](https://github.com/parasite2060/jarvis-server/compare/v0.10.0...v0.11.0) (2026-04-24)
 
 
