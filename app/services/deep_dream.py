@@ -13,7 +13,9 @@ from app.services.vault_updater import regenerate_index
 
 log = get_logger("jarvis.services.deep_dream")
 
-MAX_MEMORY_LINES = 200
+MAX_MEMORY_CHARS = 5000
+MAX_SOUL_CHARS = 1500
+MAX_IDENTITY_CHARS = 1500
 
 RELATIVE_DATE_PATTERN = re.compile(
     r"\b(yesterday|today|tomorrow|last week|next week|last month|next month)\b",
@@ -72,16 +74,19 @@ async def validate_consolidated_output(consolidation_result: dict[str, Any]) -> 
         msg = "Consolidated memory_md is empty"
         raise ValueError(msg)
 
-    lines = memory_md.splitlines()
-    line_count = len(lines)
+    char_count = len(memory_md)
+    line_count = len(memory_md.splitlines())
 
-    if line_count > MAX_MEMORY_LINES:
-        warnings.append(f"memory_md exceeded {MAX_MEMORY_LINES} lines ({line_count}), truncating")
-        log.warning("deep_dream.validation.truncated", original_lines=line_count)
-        lines = lines[:MAX_MEMORY_LINES]
-        memory_md = "\n".join(lines)
-        consolidation_result["memory_md"] = memory_md
-        line_count = MAX_MEMORY_LINES
+    if char_count > MAX_MEMORY_CHARS:
+        warnings.append(
+            f"memory_md exceeded {MAX_MEMORY_CHARS} chars ({char_count}); "
+            f"deep-dream consolidation should compress further"
+        )
+        log.warning(
+            "deep_dream.validation.over_memory_cap",
+            char_count=char_count,
+            cap=MAX_MEMORY_CHARS,
+        )
 
     relative_matches = RELATIVE_DATE_PATTERN.findall(memory_md)
     if relative_matches:
@@ -117,10 +122,10 @@ async def validate_vault_post_fix(source_date: date) -> dict[str, Any]:
         warnings.append("MEMORY.md is missing or empty after health fix")
         validation_failed = True
     else:
-        line_count = len(memory_md.splitlines())
-        if line_count > MAX_MEMORY_LINES:
+        char_count = len(memory_md)
+        if char_count > MAX_MEMORY_CHARS:
             warnings.append(
-                f"MEMORY.md exceeds {MAX_MEMORY_LINES} lines after health fix ({line_count})"
+                f"MEMORY.md exceeds {MAX_MEMORY_CHARS} chars after health fix ({char_count})"
             )
             validation_failed = True
 
@@ -129,6 +134,20 @@ async def validate_vault_post_fix(source_date: date) -> dict[str, Any]:
     if daily_log is None:
         warnings.append(f"Daily log {daily_path} missing after health fix")
         validation_failed = True
+
+    soul_md = await read_vault_file("SOUL.md")
+    if soul_md and len(soul_md) > MAX_SOUL_CHARS:
+        warnings.append(
+            f"SOUL.md exceeds {MAX_SOUL_CHARS} chars ({len(soul_md)}) — "
+            f"deep-dream should compress on next run"
+        )
+
+    identity_md = await read_vault_file("IDENTITY.md")
+    if identity_md and len(identity_md) > MAX_IDENTITY_CHARS:
+        warnings.append(
+            f"IDENTITY.md exceeds {MAX_IDENTITY_CHARS} chars ({len(identity_md)}) — "
+            f"deep-dream should compress on next run"
+        )
 
     # Story 11.13: wiki-link resolution check catches fabricated or
     # empty-filename links introduced by any prior step (agent or manual).

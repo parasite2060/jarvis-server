@@ -121,6 +121,24 @@ async def get_identity() -> FileContentResponse:
     )
 
 
+@router.get("/memory/memory", response_model=FileContentResponse)
+async def get_memory() -> FileContentResponse:
+    content = await read_vault_file("MEMORY.md")
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {"code": "FILE_NOT_FOUND", "message": "MEMORY.md not found in vault"},
+                "status": "error",
+            },
+        )
+
+    return FileContentResponse(
+        status="ok",
+        data=FileContentData(content=content, file_path="MEMORY.md"),
+    )
+
+
 def _handle_memu_error(exc: MemuError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,

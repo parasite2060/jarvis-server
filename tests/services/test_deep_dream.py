@@ -142,21 +142,30 @@ async def test_validate_passes_valid_output() -> None:
 
 
 @pytest.mark.asyncio
-async def test_validate_truncates_over_200_lines() -> None:
+async def test_validate_warns_when_memory_md_over_5000_chars() -> None:
     from app.services.deep_dream import validate_consolidated_output
 
-    long_md = "\n".join(f"- Line {i}" for i in range(250))
+    big_memory = "x" * 5001
     consolidation = {
-        "memory_md": long_md,
-        "daily_summary": "Summary here.",
-        "stats": {},
+        "memory_md": big_memory,
+        "daily_summary": "summary",
     }
-
     result = await validate_consolidated_output(consolidation)
 
-    assert result["line_count"] == 200
-    assert len(result["memory_md"].splitlines()) == 200
-    assert any("truncat" in w.lower() for w in result["warnings"])
+    assert any("memory_md exceeded 5000 chars" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_validate_no_warning_when_memory_md_under_5000_chars() -> None:
+    from app.services.deep_dream import validate_consolidated_output
+
+    consolidation = {
+        "memory_md": "x" * 4999,
+        "daily_summary": "summary",
+    }
+    result = await validate_consolidated_output(consolidation)
+
+    assert not any("exceeded 5000 chars" in w for w in result["warnings"])
 
 
 @pytest.mark.asyncio
@@ -1627,7 +1636,7 @@ async def test_validate_vault_post_fix_happy_path() -> None:
 
 @pytest.mark.asyncio
 async def test_validate_vault_post_fix_overflow() -> None:
-    memory_md = "\n".join(f"- entry {i}" for i in range(250))
+    memory_md = "x" * 5001
     daily_md = "## Session 1\nNotes."
 
     async def fake_read(path: str) -> str | None:
@@ -1643,7 +1652,7 @@ async def test_validate_vault_post_fix_overflow() -> None:
         result = await validate_vault_post_fix(date(2026, 4, 18))
 
     assert result["validation_failed"] is True
-    assert any("250" in w for w in result["warnings"])
+    assert any("5001" in w for w in result["warnings"])
     assert any("MEMORY.md" in w for w in result["warnings"])
 
 
@@ -1681,6 +1690,64 @@ async def test_validate_vault_post_fix_empty_memory() -> None:
 
     assert result["validation_failed"] is True
     assert any("MEMORY.md" in w and "empty" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_post_fix_warns_when_soul_over_1500_chars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.deep_dream import validate_vault_post_fix
+
+    monkeypatch.setattr(
+        "app.services.memory_files.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
+    monkeypatch.setattr(
+        "app.services.deep_dream.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
+
+    (tmp_path / "MEMORY.md").write_text("ok\n", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text("x" * 1501, encoding="utf-8")
+    (tmp_path / "dailys").mkdir()
+    (tmp_path / "dailys" / "2026-04-26.md").write_text("daily\n", encoding="utf-8")
+
+    result = await validate_vault_post_fix(date(2026, 4, 26))
+
+    assert any("SOUL.md exceeds 1500 chars" in w for w in result["warnings"])
+    # SOUL overflow is warning-only, not validation_failed
+    assert result["validation_failed"] is False or all(
+        "SOUL.md" not in w for w in result["warnings"] if "validation_failed" in w
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_fix_warns_when_identity_over_1500_chars(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.deep_dream import validate_vault_post_fix
+
+    monkeypatch.setattr(
+        "app.services.memory_files.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
+    monkeypatch.setattr(
+        "app.services.deep_dream.settings",
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
+
+    (tmp_path / "MEMORY.md").write_text("ok\n", encoding="utf-8")
+    (tmp_path / "IDENTITY.md").write_text("x" * 1501, encoding="utf-8")
+    (tmp_path / "dailys").mkdir()
+    (tmp_path / "dailys" / "2026-04-26.md").write_text("daily\n", encoding="utf-8")
+
+    result = await validate_vault_post_fix(date(2026, 4, 26))
+
+    assert any("IDENTITY.md exceeds 1500 chars" in w for w in result["warnings"])
+    # IDENTITY overflow is warning-only, not validation_failed
+    assert result["validation_failed"] is False
 
 
 # ---------------------------------------------------------------------------

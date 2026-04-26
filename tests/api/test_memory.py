@@ -78,6 +78,18 @@ async def test_identity_returns_401_with_invalid_key(
     assert response.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_memory_returns_401_with_invalid_key(
+    client: AsyncClient,
+) -> None:
+    response = await client.get(
+        "/memory/memory",
+        headers={"Authorization": "Bearer wrong-key"},
+    )
+
+    assert response.status_code == 401
+
+
 # --- Context endpoint tests ---
 
 
@@ -159,5 +171,35 @@ async def test_identity_returns_404_when_missing(
     )
 
     response = await client.get("/memory/identity", headers=AUTH_HEADER)
+
+    assert response.status_code == 404
+
+
+# --- Memory endpoint tests ---
+
+
+@pytest.mark.asyncio
+async def test_memory_returns_content(client: AsyncClient, mock_vault: Path) -> None:
+    response = await client.get("/memory/memory", headers=AUTH_HEADER)
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert "Entry 1" in body["data"]["content"]
+    assert body["data"]["filePath"] == "MEMORY.md"
+
+
+@pytest.mark.asyncio
+async def test_memory_returns_404_when_missing(
+    client: AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        SETTINGS_MODULE,
+        type("_S", (), {"ai_memory_repo_path": str(tmp_path)})(),
+    )
+
+    response = await client.get("/memory/memory", headers=AUTH_HEADER)
 
     assert response.status_code == 404
