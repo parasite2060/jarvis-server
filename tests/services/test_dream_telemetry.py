@@ -6,7 +6,11 @@ import pytest
 from pydantic_ai.usage import RunUsage
 
 from app.models.tables import DreamPhase
-from app.services.dream_telemetry import _serialize_messages, store_phase_telemetry
+from app.services.dream_telemetry import (
+    _serialize_messages,
+    format_conversation,
+    store_phase_telemetry,
+)
 
 
 class TestSerializeMessages:
@@ -159,6 +163,178 @@ async def test_store_phase_telemetry_processing_status_no_completed_at() -> None
     row: DreamPhase = factory.session.added[0]
     assert row.status == "processing"
     assert row.completed_at is None
+
+
+class TestFormatConversation:
+    def test_empty_history_returns_marker(self) -> None:
+        assert format_conversation(None) == "_(no conversation recorded)_"
+        assert format_conversation([]) == "_(no conversation recorded)_"
+
+    def test_standard_extraction_trace(self) -> None:
+        system_text = "You are an extraction agent. " * 50
+        history = [
+            {
+                "kind": "request",
+                "instructions": None,
+                "parts": [
+                    {"part_kind": "system-prompt", "content": system_text},
+                    {"part_kind": "user-prompt", "content": "Extract from today"},
+                ],
+            },
+            {
+                "kind": "response",
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": "search_memory",
+                        "args": {"query": "today", "limit": 5},
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+            {
+                "kind": "request",
+                "parts": [
+                    {
+                        "part_kind": "tool-return",
+                        "tool_name": "search_memory",
+                        "content": "found 3 hits",
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+            {
+                "kind": "request",
+                "parts": [
+                    {"part_kind": "system-prompt", "content": system_text},
+                ],
+            },
+            {
+                "kind": "response",
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": "save_candidate",
+                        "args": {"text": "candidate one"},
+                        "tool_call_id": "c2",
+                    },
+                ],
+            },
+        ]
+
+        rendered = format_conversation(history)
+
+        assert rendered.count("system [hash:") == 1
+        assert "user prompt:" in rendered
+        assert rendered.count("Extract from today") == 1
+        assert "turn 1  assistant  → search_memory(" in rendered
+        assert "turn 2  assistant  → save_candidate(" in rendered
+        assert "search_memory → found 3 hits" in rendered
+        idx_turn1 = rendered.index("turn 1")
+        idx_turn2 = rendered.index("turn 2")
+        assert idx_turn1 < idx_turn2
+
+    def test_long_tool_return_truncated(self) -> None:
+        long_content = "x" * 500
+        history = [
+            {
+                "kind": "request",
+                "parts": [
+                    {
+                        "part_kind": "tool-return",
+                        "tool_name": "fetch_dump",
+                        "content": long_content,
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+        ]
+
+        rendered = format_conversation(history)
+
+        assert "[500 chars total]" in rendered
+        assert "x" * 500 not in rendered
+        assert "x" * 80 in rendered
+
+    def test_malformed_serialization_failed_entry(self) -> None:
+        history = [
+            {"error": "serialization_failed", "type": "MagicMock"},
+            {
+                "kind": "response",
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": "search",
+                        "args": {"q": "after"},
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+        ]
+
+        rendered = format_conversation(history)
+
+        assert "[unrenderable: serialization_failed]" in rendered
+        assert "turn 1  assistant  → search(" in rendered
+
+    def test_malformed_string_entry_continues(self) -> None:
+        history = [
+            "raw string entry",
+            {
+                "kind": "response",
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": "ping",
+                        "args": {},
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+        ]
+
+        rendered = format_conversation(history)
+
+        assert "[unrenderable:" in rendered
+        assert "ping(" in rendered
+
+    def test_dict_missing_kind_renders_unrenderable(self) -> None:
+        history = [{"parts": []}]
+        rendered = format_conversation(history)
+        assert "[unrenderable: missing_kind]" in rendered
+
+    def test_instructions_field_used_when_no_system_part(self) -> None:
+        history = [
+            {
+                "kind": "request",
+                "instructions": "Long agent instructions block",
+                "parts": [
+                    {"part_kind": "user-prompt", "content": "go"},
+                ],
+            },
+        ]
+        rendered = format_conversation(history)
+        assert "system [hash:" in rendered
+        assert "user prompt:" in rendered
+
+    def test_args_value_truncated_to_60_chars(self) -> None:
+        long_value = "v" * 200
+        history = [
+            {
+                "kind": "response",
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": "store",
+                        "args": {"data": long_value},
+                        "tool_call_id": "c1",
+                    },
+                ],
+            },
+        ]
+        rendered = format_conversation(history)
+        assert "v" * 60 + "…" in rendered
+        assert "v" * 200 not in rendered
 
 
 class TestDreamPhaseModel:
