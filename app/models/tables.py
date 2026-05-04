@@ -22,6 +22,7 @@ DREAM_OUTCOMES = (
     "no_new_content",
     "extraction_empty",
     "record_soft_fail",
+    "extraction_under_yield",
 )
 
 

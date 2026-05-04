@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     record_tokens_limit: int = 1_500_000
     record_tool_calls_limit: int = 300
 
+    # ── Extraction Yield Check ──
+    # Token spend above which a dream is considered to have "had material to work with".
+    extraction_yield_token_floor: int = 100_000
+    # Tool-call count below which a dream is considered to have under-sampled.
+    extraction_yield_tool_call_floor: int = 20
+    # Extracted-item count (memories + lessons + decisions) below which yield is suspect.
+    extraction_yield_extraction_floor: int = 3
+
     @property
     def database_url(self) -> str:
         return (

@@ -1047,3 +1047,155 @@ async def test_light_dream_outcome_record_soft_fail() -> None:
 
     assert dream.status == "completed"
     assert dream.outcome == "record_soft_fail"
+
+
+# ── Extraction yield check (spec B2) ──────────────────────────────────────────
+
+from app.tasks.light_dream_task import (  # noqa: E402
+    _apply_yield_check,
+    _check_extraction_yield,
+)
+
+
+def _yield_session_log(items: int) -> SessionLogEntry:
+    """Build a SessionLogEntry whose memories+lessons+decisions sum to `items`."""
+    memories = [
+        MemoryItem(
+            content=f"m{i}",
+            reasoning=None,
+            vault_target="memory",
+            source_date="2026-05-04",
+        )
+        for i in range(items)
+    ]
+    return SessionLogEntry(memories=memories)
+
+
+def test_yield_check_dream_161_replay() -> None:
+    """Canonical case: 243k tokens, 9 tool calls, 1 item → override fires."""
+    session_log = _yield_session_log(items=1)
+
+    result = _apply_yield_check(
+        outcome="no_new_content",
+        dream_id=161,
+        total_tokens=243_375,
+        tool_calls=9,
+        session_log=session_log,
+    )
+
+    assert result == "extraction_under_yield"
+
+
+def test_yield_check_healthy_small_extraction() -> None:
+    """50k tokens, 8 tool calls, 2 items: token floor not crossed → outcome preserved."""
+    session_log = _yield_session_log(items=2)
+
+    result = _apply_yield_check(
+        outcome="wrote_files",
+        dream_id=1,
+        total_tokens=50_000,
+        tool_calls=8,
+        session_log=session_log,
+    )
+
+    assert result == "wrote_files"
+
+
+def test_yield_check_healthy_large_extraction() -> None:
+    """200k tokens, 45 tool calls, 12 items: tool/items floors not low enough."""
+    session_log = _yield_session_log(items=12)
+
+    result = _apply_yield_check(
+        outcome="wrote_files",
+        dream_id=1,
+        total_tokens=200_000,
+        tool_calls=45,
+        session_log=session_log,
+    )
+
+    assert result == "wrote_files"
+
+
+def test_yield_check_borderline() -> None:
+    """All three thresholds crossed by 1: tokens=100001, calls=19, items=2."""
+    session_log = _yield_session_log(items=2)
+
+    result = _apply_yield_check(
+        outcome="no_new_content",
+        dream_id=1,
+        total_tokens=100_001,
+        tool_calls=19,
+        session_log=session_log,
+    )
+
+    assert result == "extraction_under_yield"
+
+
+def test_yield_check_skipped_on_extraction_failed() -> None:
+    """outcome=None (hard failure) is never overridden."""
+    session_log = _yield_session_log(items=0)
+
+    result = _apply_yield_check(
+        outcome=None,
+        dream_id=1,
+        total_tokens=243_375,
+        tool_calls=9,
+        session_log=session_log,
+    )
+
+    assert result is None
+
+
+def test_yield_check_skipped_on_extraction_empty() -> None:
+    """outcome='extraction_empty' (no_extract path) is never overridden."""
+    session_log = _yield_session_log(items=0)
+
+    result = _apply_yield_check(
+        outcome="extraction_empty",
+        dream_id=1,
+        total_tokens=243_375,
+        tool_calls=9,
+        session_log=session_log,
+    )
+
+    assert result == "extraction_empty"
+
+
+def test_yield_check_soft_fails_on_exception() -> None:
+    """Synthetic exception in helper → original outcome preserved."""
+    broken_session_log = MagicMock()
+    type(broken_session_log).memories = property(
+        lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    result = _apply_yield_check(
+        outcome="wrote_files",
+        dream_id=1,
+        total_tokens=243_375,
+        tool_calls=9,
+        session_log=broken_session_log,
+    )
+
+    assert result == "wrote_files"
+
+
+def test_check_extraction_yield_all_thresholds_crossed() -> None:
+    assert (
+        _check_extraction_yield(
+            total_tokens=243_375,
+            tool_calls=9,
+            extracted_items_count=1,
+        )
+        is True
+    )
+
+
+def test_check_extraction_yield_token_floor_not_crossed() -> None:
+    assert (
+        _check_extraction_yield(
+            total_tokens=99_999,
+            tool_calls=5,
+            extracted_items_count=0,
+        )
+        is False
+    )
