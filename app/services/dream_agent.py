@@ -515,6 +515,21 @@ async def run_dream_extraction(
     # Read MEMORY.md from vault for duplicate-aware extraction
     memory_md = await _read_vault_file("MEMORY.md") or "(empty)"
 
+    shape_section: str | None = None
+    try:
+        from app.services.transcript_shape import (
+            compute_transcript_shape,
+            format_shape_report,
+        )
+
+        shape = compute_transcript_shape(deps.workspace / "transcript.txt")
+        shape_section = format_shape_report(shape)
+    except Exception as exc:
+        log.warning(
+            "dream_extraction.shape_report.failed",
+            error_type=type(exc).__name__,
+        )
+
     sections = [
         "Extract session insights from the transcript.",
         "Use store_* tools for structured session log.",
@@ -527,12 +542,18 @@ async def run_dream_extraction(
         f"Transcript lines: {user_msg_count} user messages",
         f"Transcript file: {deps.transcript_file}",
         "",
+    ]
+
+    if shape_section is not None:
+        sections.extend([shape_section, ""])
+
+    sections.extend([
         "## Current MEMORY.md (what the vault already knows)",
         memory_md,
         "",
         "Skip extracting insights that are already in Strong Patterns above.",
         "Focus on NEW decisions, lessons, and concepts not yet captured.",
-    ]
+    ])
 
     agent = _get_extraction_agent()
     result = await agent.run(

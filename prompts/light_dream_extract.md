@@ -14,14 +14,27 @@ If the transcript contains any of the above, treat it as non-information: do not
 
 ## How to Read the Transcript
 
-The transcript file path is provided in your prompt. Use base file tools:
+The transcript file path is provided in your prompt. A `## Transcript Shape` section in your prompt (when available) reports the line count, token estimate, time span, message counts, and any sub-sessions detected by gap analysis on user-message timestamps. Use it to plan reads — but it is the *starting* plan, not the finish line. The Coverage Discipline floor below is what determines when you can stop reading.
 
-1. Call `file_info("{transcript_file}")` to get metadata (lines, chars, tokens).
-2. If short (<300 lines): `read_file("{transcript_file}")` for full content.
-3. If long: read in chunks — `read_file("{transcript_file}", offset=0, limit=200)`,
-   then `read_file("{transcript_file}", offset=200, limit=200)`, etc.
-4. Use `grep("pattern", "{transcript_file}")` to search for topics.
-5. **As you find insights, call the appropriate store tool immediately.**
+Transcript line shape: every user and assistant message is prefixed with an ISO-8601 timestamp in square brackets, like `[2026-04-29T15:00:06.674Z] User: ...` and `[2026-04-29T15:14:11.002Z] Assistant: ...`. Other lines (tool outputs, command blocks, blank lines) lack the prefix.
+
+**Size-tiered reading playbook** — use the `Total: N lines` figure from the Transcript Shape report. Each tier names the *starting* read; keep reading beyond it until the Coverage Discipline floor is met.
+
+- **<500 lines**: `read_file("{transcript_file}")` for full content.
+- **500–3,000 lines**: read 2–3 contiguous chunks (e.g., `offset=0,limit=1000`, `offset=1000,limit=1000`, `offset=2000,limit=1000`) for full coverage.
+- **3,000–10,000 lines**: start with `offset=0,limit=500` (session opening) and the last 1,000 lines, then run targeted greps, then add chunks until ≥50% of lines are covered.
+- **>10,000 lines**: start with `offset=0,limit=500` and the last 1,500 lines, then read each sub-session named in the Transcript Shape report (per its `lines X-Y` boundaries), then add chunks until ≥50% of lines are covered. **Never skip a sub-session entirely** — every sub-session must contribute reads.
+
+**Grep patterns to try, in this order** (use `grep("pattern", "{transcript_file}")`):
+
+1. Decision/lesson markers: `decided`, `decision`, `chose`, `lesson`, `learned`, `realized`
+2. Action-item markers: `TODO`, `next step`, `follow up`, `need to`, `should`
+3. Dollar amounts and quantities: `\$\d`, `\d+\s*(hours?|minutes?|days?)`
+4. Choice verbs: `buy`, `recommend`, `prefer`, `over `, `instead of`
+
+Mix grep matches with chunk reads — greps point at lines, but the *context* around each hit is where the actual decision/lesson lives. When a grep hits, follow up with `read_file(offset=<hit_line - 20>, limit=60)` to capture the surrounding exchange.
+
+**As you find insights, call the appropriate store tool immediately.**
 
 ## Extraction Quality — Technical Detail Level
 
@@ -145,6 +158,15 @@ vault_target: `memory`, `decisions`, `patterns`, `projects`, or `templates`.
 4. **Include reasoning for decisions**: Always call `store_decision` with both the decision and the reasoning.
 5. **Extract as you read**: Call store tools for each insight as you find it. Do not accumulate.
 6. **Prefer dedicated tools**: Use `store_decision`, `store_lesson`, `store_action_item` over `store_session_memory` whenever the insight fits one of those categories.
+
+## Coverage Discipline
+
+Before calling `final_result`, you must satisfy ONE of:
+
+1. **Coverage floor**: cover **≥50% of the transcript by line range**, computed as the union of (a) the line ranges you read with `read_file` (`offset` to `offset+limit`) and (b) the lines matched by your `grep` calls, deduplicated against the `Total: N lines` figure from the Transcript Shape report. **When the shape report shows multiple sub-sessions, the 50% must span every sub-session — no leaving an entire sub-session unread.**
+2. **Justified `no_extract`**: explicitly justify `no_extract=true` with a one-line reason that names what the session was about (e.g. `"trivial Q&A about syntax, no decisions or new concepts"`).
+
+If you find yourself ready to stop after reading <50% of a multi-sub-session transcript, that is a signal you have not yet earned the right to call `final_result` — go read the missed sub-session first.
 
 ## What Happens Next
 

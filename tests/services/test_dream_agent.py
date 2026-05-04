@@ -1737,6 +1737,105 @@ class TestExtractionVaultAware:
             assert "(empty)" in prompt
 
 
+class TestTranscriptShapeInRunPrompt:
+    """Spec B1: shape report injected into the run prompt with soft-fail."""
+
+    def _clear_extraction_agent(self) -> None:
+        import app.services.dream_agent as module
+
+        module._extraction_agent = None
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_transcript_shape_section(
+        self, dream_deps: DreamDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        self._clear_extraction_agent()
+
+        transcript = dream_deps.workspace / "transcript.txt"
+        transcript.write_text(
+            "\n".join(
+                [
+                    "[2026-04-29T14:00:00Z] User: hello",
+                    "[2026-04-29T14:00:30Z] Assistant: hi",
+                    "[2026-04-29T14:05:00Z] User: ok",
+                    "[2026-04-29T14:05:30Z] Assistant: sure",
+                    "[2026-04-29T14:10:00Z] User: bye",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="(empty)",
+            ),
+            patch("app.services.dream_agent._get_extraction_agent") as mock_get_agent,
+        ):
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = ExtractionSummary(summary="t", no_extract=False)
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+
+            assert "## Transcript Shape" in prompt
+            metadata_idx = prompt.index("## Session Metadata")
+            shape_idx = prompt.index("## Transcript Shape")
+            memory_idx = prompt.index("## Current MEMORY.md")
+            assert metadata_idx < shape_idx < memory_idx
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_assembles_when_shape_computation_raises(
+        self, dream_deps: DreamDeps, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_dream_extraction
+
+        self._clear_extraction_agent()
+
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="(empty)",
+            ),
+            patch("app.services.dream_agent._get_extraction_agent") as mock_get_agent,
+            patch(
+                "app.services.transcript_shape.compute_transcript_shape",
+                side_effect=RuntimeError("synthetic shape failure"),
+            ),
+        ):
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = ExtractionSummary(summary="t", no_extract=False)
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            dream_deps.session_context = "test"
+            await run_dream_extraction(dream_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "## Transcript Shape" not in prompt
+            assert "## Session Metadata" in prompt
+            mock_agent.run.assert_called()
+
+
 # ---------------------------------------------------------------------------
 # Story 9.30: Simplify Extraction Tests
 # ---------------------------------------------------------------------------
