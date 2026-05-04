@@ -41,6 +41,64 @@ def _determine_light_dream_outcome(
     return "no_new_content"
 
 
+def _check_extraction_yield(
+    *,
+    total_tokens: int,
+    tool_calls: int,
+    extracted_items_count: int,
+) -> bool:
+    from app.config import settings as app_settings
+
+    return (
+        total_tokens > app_settings.extraction_yield_token_floor
+        and tool_calls < app_settings.extraction_yield_tool_call_floor
+        and extracted_items_count < app_settings.extraction_yield_extraction_floor
+    )
+
+
+def _apply_yield_check(
+    *,
+    outcome: str | None,
+    dream_id: int,
+    total_tokens: int | None,
+    tool_calls: int | None,
+    session_log: SessionLogEntry,
+) -> str | None:
+    if outcome not in ("wrote_files", "no_new_content"):
+        return outcome
+    try:
+        tokens = total_tokens or 0
+        calls = tool_calls or 0
+        items = (
+            len(session_log.memories)
+            + len(session_log.lessons_learned)
+            + len(session_log.decisions_made)
+        )
+        if _check_extraction_yield(
+            total_tokens=tokens,
+            tool_calls=calls,
+            extracted_items_count=items,
+        ):
+            log.warning(
+                "light_dream.extraction.under_yield",
+                dream_id=dream_id,
+                total_tokens=tokens,
+                tool_calls=calls,
+                extracted_items=items,
+                original_outcome=outcome,
+            )
+            return "extraction_under_yield"
+        return outcome
+    except Exception as exc:
+        log.warning(
+            "light_dream.extraction.yield_check_failed",
+            dream_id=dream_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return outcome
+
+
 async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
     log.info("light_dream.started", transcript_id=transcript_id)
     start_ms = time.monotonic_ns() // 1_000_000
@@ -346,6 +404,13 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             summary=summary,
             record_raised=record_raised,
             files_modified=files_modified,
+        )
+        outcome = _apply_yield_check(
+            outcome=outcome,
+            dream_id=dream_id,
+            total_tokens=usage_total_tokens,
+            tool_calls=usage_tool_calls,
+            session_log=session_log,
         )
         async with async_session_factory() as session:
             dream_result = await session.execute(select(Dream).where(Dream.id == dream_id))
