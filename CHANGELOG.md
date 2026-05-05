@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/parasite2060/jarvis-server/compare/v0.13.0...v0.13.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **record:** bullet format for daily-log session blocks ([e06142b](https://github.com/parasite2060/jarvis-server/commit/e06142ba0674841bc972771d3b25ed0100ee8719))
+* **record:** populate daily-log session-block timestamps from transcript ([3abc604](https://github.com/parasite2060/jarvis-server/commit/3abc604ec28550b576f76d6b0d25067a6110e527))
+
 ## [0.13.0](https://github.com/parasite2060/jarvis-server/compare/v0.12.0...v0.13.0) (2026-05-04)
 
 
