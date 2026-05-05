@@ -1912,6 +1912,29 @@ class TestRecordAgentSessionStartTime:
             assert "Session start time: unknown" in prompt
 
 
+class TestRecordAgentBulletFormatPrompt:
+    """Spec D: record-agent prompt directs bullet-list structure for non-Context sections."""
+
+    def test_record_prompt_drops_old_narrative_rule(self) -> None:
+        from app.services.dream_agent import _load_record_prompt
+
+        prompt = _load_record_prompt()
+        assert "narrative sentences, not" not in prompt
+
+    def test_record_prompt_directs_bullet_structure(self) -> None:
+        from app.services.dream_agent import _load_record_prompt
+
+        prompt = _load_record_prompt()
+        assert "Each bullet is one logical item" in prompt
+
+    def test_record_prompt_continuation_uses_sub_heading(self) -> None:
+        from app.services.dream_agent import _load_record_prompt
+
+        prompt = _load_record_prompt()
+        assert "sub-heading on its own line" in prompt
+        assert "Do NOT inline the marker" in prompt
+
+
 # ---------------------------------------------------------------------------
 # Story 9.30: Simplify Extraction Tests
 # ---------------------------------------------------------------------------

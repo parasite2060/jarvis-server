@@ -520,7 +520,7 @@ Topic files capture detailed knowledge that doesn't fit in MEMORY.md's 200-line 
 
 ### dailys/ — Session Log Format
 
-Each daily log captures rich, technical detail — not summaries. The record agent writes narrative prose with specific code references, architectural reasoning, and concrete lessons.
+Each daily log captures rich, technical detail — not summaries. The record agent writes one bullet per logical item (one decision, one lesson, one exchange, one memory) with specific code references, architectural reasoning, and concrete lessons.
 
 ```markdown
 # Daily Log: YYYY-MM-DD
@@ -530,35 +530,41 @@ Each daily log captures rich, technical detail — not summaries. The record age
 ### Session 1 (HH:MM) - [Session Title]
 <!-- session_id: {id} -->
 
-**Context:** [1-3 narrative sentences describing what the session was about and why]
+**Context:** [1-3 narrative sentences describing what the session was about and why. This is the only section that stays as prose.]
 
 **Key Exchanges:**
-[Narrative prose summarizing the most important discussions, questions, and answers. Include specific code references, folder structures, and architectural discussions — not vague summaries.]
+- One bullet per pivotal exchange. Each bullet is a full narrative item (1-3 sentences) capturing the question, the answer, and why it shaped outcomes. Include code snippets and library names inline.
+- Add another bullet per additional exchange.
 
 **Decisions Made:**
-[Full sentences including rationale: "Chose X over Y because Z"]
+- One bullet per decision. State the choice with rationale ("X over Y because Z"). **Revisit if**: [condition].
+- Add another bullet per additional decision.
 
 **Lessons Learned:**
-[Specific gotchas with exact code patterns, library behaviors, and workarounds — the kind of thing you'd forget and hit again]
+- One bullet per lesson with the specific gotcha. **Why this matters**: [future impact]. **Watch for**: [symptom/trigger to recall this lesson].
+- Add another bullet per additional lesson.
 
 **Memory:**
-[General observations, patterns, preferences, and facts noted during the session]
+- [pattern|fact|preference|correction] One bullet per memory item with its `[type]` prefix. **Matters because**: [how this fact affects future decisions].
+- Add another bullet per additional memory item.
 
 **Action Items:**
-- [ ] [Concrete checkbox items]
+- [ ] Concrete checkbox item.
 ```
 
 #### Daily Log Writing Rules
 
+- **Each section except Context is a bulleted list with one bullet per logical item.** Each bullet may span multiple sentences, code blocks, and reasoning markers — but stays on its own `- ` line. Do NOT collapse bullets into a single paragraph.
+- **Context** stays as 1-3 sentences of prose because it is one continuous thought.
 - Session blocks use `<!-- session_id: {id} -->` HTML comments for continuation tracking
 - **Key Exchanges** capture back-and-forth with specific technical details, code snippets, and architectural discussions — not vague summaries
 - **Decisions Made** include rationale ("X over Y because Z") AND a **"Revisit if"** condition — when should this decision be re-evaluated?
 - **Lessons Learned** include the specific gotcha AND **"Why this matters"** (future impact) AND **"Watch for"** (the symptom/trigger to recall this lesson)
-- **Memory** captures observations with **"Matters because"** reasoning — why this fact helps future decisions, not just what it is
+- **Memory** bullets keep their `[type]` prefix (`[pattern]`, `[fact]`, `[preference]`, `[correction]`) and include **"Matters because"** reasoning — why this fact helps future decisions, not just what it is
 - Code references use backticks: `createServerClient`, `app/auth/callback/route.ts`
 - Include code blocks for folder structures, config snippets, or command examples when they add clarity
 - If a section has no content, omit it entirely
-- Continuation sessions append to the matching `<!-- session_id -->` block
+- Continuation sessions append to the matching `<!-- session_id -->` block. Inside each affected section, add a `**Continued at HH:MM:**` sub-heading on its own line below the existing bullets, then add new bullets underneath. Do NOT inline the marker inside an existing bullet.
 - Each session is a self-contained record
 
 ### reviews/ — Weekly Review Format
