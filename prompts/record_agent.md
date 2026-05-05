@@ -69,21 +69,29 @@ The run prompt provides a `Session start time:` field in 24-hour `HH:MM` UTC for
 ### Session 1: [HH:MM] - [Session Title]
 <!-- session_id: {session_id from prompt} -->
 
-**Context**: Write 1-3 narrative sentences describing what the session was about and why it started.
+**Context**: Write 1-3 narrative sentences describing what the session was about and why it started. Context is the only section that stays as prose.
 
-**Key Exchanges**: Summarize the most important back-and-forth moments of the session in narrative prose. Focus on questions asked, answers given, and pivotal discussion points that shaped outcomes.
+**Key Exchanges:**
+- One bullet per pivotal exchange. Each bullet is a full narrative item (1-3 sentences) capturing the question, the answer, and why it shaped outcomes.
+- Add another bullet per additional exchange. Include code snippets, file paths, or library names inline when they sharpen the point.
 
-**Decisions Made**: Describe each decision in a full sentence including the rationale. For example: "Chose PydanticAI over LangChain because it offers native structured output validation without additional parsing layers."
+**Decisions Made:**
+- One bullet per decision. State the choice with rationale: "Chose PydanticAI over LangChain because it offers native structured output validation without additional parsing layers." **Revisit if**: [condition].
+- Add another bullet per additional decision.
 
-**Lessons Learned**: State each lesson as a narrative sentence explaining what was learned and why it matters. For example: "Discovered that mock-based database tests can silently pass when the real migration has a breaking column rename."
+**Lessons Learned:**
+- One bullet per lesson. State the gotcha. **Why this matters**: [future impact]. **Watch for**: [symptom that should trigger recall].
+- Add another bullet per additional lesson.
 
-**Memory**: General observations, patterns, preferences, and facts noted during the session.
+**Memory:**
+- [pattern|fact|preference|correction] One bullet per memory item with its `[type]` prefix. **Matters because**: [how this fact affects future decisions or actions].
+- Add another bullet per additional memory item.
 
-**Action Items**:
-- [From session log action items -- these remain as bullet points]
+**Action Items:**
+- [ ] Concrete checkbox item from the session log action items.
 ```
 
-**Important**: Write all sections except Action Items as **narrative sentences**, not `[type] content` bullet lists. The daily log should read like a concise journal entry, not a structured data dump.
+**Important**: Each non-Context section is a bulleted list. Each bullet is one logical item (one decision, one lesson, one exchange, one memory) and may span multiple sentences, code blocks, and reasoning markers. `**Context**` is the only section that stays as 1-3 sentences of prose. Do NOT collapse bullets into a single paragraph. Each bullet stays on its own `- ` line so a future agent can split on bullet boundaries.
 
 When appending to an existing daily log, increment the session number and preserve all existing session blocks. If a section has no content (e.g., no lessons learned), omit that section entirely rather than leaving it empty.
 
@@ -169,7 +177,17 @@ When the prompt says "CONTINUATION MODE", this session is a resumed conversation
 2. APPEND new context, exchanges, decisions, lessons, and action items to the existing block.
 3. Do NOT create a new `### Session N` heading.
 4. Merge action items (avoid duplicates).
-5. Add a `**Continued at [HH:MM]**:` marker before new content in each section. Substitute the run prompt's `Session start time:` value for `[HH:MM]`; use `00:00` if it is `unknown`.
+5. For each section receiving new content, add a `**Continued at [HH:MM]:**` sub-heading on its own line below the existing bullets, then add the new bullets underneath that sub-heading. Substitute the run prompt's `Session start time:` value for `[HH:MM]`; use `00:00` if it is `unknown`. Do NOT inline the marker inside an existing bullet or paragraph — it must stand alone as its own line so the section reads like: original bullets, blank line, `**Continued at HH:MM:**` line, new bullets.
+
+   Example (inside `**Decisions Made:**`):
+
+   ```markdown
+   **Decisions Made:**
+   - Use FastAPI over Flask because async-first design. **Revisit if**: GraphQL becomes load-bearing.
+
+   **Continued at 14:30:**
+   - Switch from class-based views to function decorators. **Revisit if**: project grows past ~100 endpoints.
+   ```
 
 If no matching session block is found (e.g., daily log was reset), create a new session block as normal.
 
