@@ -1199,3 +1199,87 @@ def test_check_extraction_yield_token_floor_not_crossed() -> None:
         )
         is False
     )
+
+
+# ── Session-start derivation chain (spec C) ──────────────────────────────────
+
+from datetime import datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from app.tasks import light_dream_task  # noqa: E402
+from app.tasks.light_dream_task import _derive_session_start_iso  # noqa: E402
+
+
+class TestDeriveSessionStartIso:
+    """Spec C: derivation chain for RecordDeps.session_start_iso."""
+
+    def test_uses_transcript_first_user_ts_when_provided(self, tmp_path: Path) -> None:
+        transcript_path = tmp_path / "transcript.txt"
+        transcript_path.write_text("no timestamps here\n", encoding="utf-8")
+
+        result = _derive_session_start_iso(
+            transcript_first_user_ts=datetime(2026, 4, 29, 14, 59),
+            transcript_path=transcript_path,
+            transcript_created_at=datetime(2026, 5, 4, 12, 16),
+            transcript_id=42,
+        )
+
+        assert result == "14:59"
+
+    def test_falls_back_to_created_at_when_shape_and_file_miss(
+        self, tmp_path: Path
+    ) -> None:
+        transcript_path = tmp_path / "transcript.txt"
+        transcript_path.write_text(
+            "User: hello\nAssistant: hi\nUser: bye\n",
+            encoding="utf-8",
+        )
+
+        result = _derive_session_start_iso(
+            transcript_first_user_ts=None,
+            transcript_path=transcript_path,
+            transcript_created_at=datetime(2026, 5, 4, 12, 16),
+            transcript_id=42,
+        )
+
+        assert result == "12:16"
+
+    def test_returns_none_and_warns_when_all_sources_missing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        transcript_path = tmp_path / "transcript.txt"
+        transcript_path.write_text("User: nothing parseable\n", encoding="utf-8")
+
+        with patch.object(light_dream_task.log, "warning") as mock_warn:
+            result = _derive_session_start_iso(
+                transcript_first_user_ts=None,
+                transcript_path=transcript_path,
+                transcript_created_at=None,
+                transcript_id=99,
+            )
+
+        assert result is None
+        mock_warn.assert_called_once()
+        args, kwargs = mock_warn.call_args
+        assert args[0] == "light_dream.record.session_time_unknown"
+        assert kwargs.get("transcript_id") == 99
+
+    def test_re_parses_transcript_file_when_shape_is_none(
+        self, tmp_path: Path
+    ) -> None:
+        transcript_path = tmp_path / "transcript.txt"
+        transcript_path.write_text(
+            "[2026-04-29T14:59:18Z] User: hello\n"
+            "[2026-04-29T15:00:00Z] Assistant: hi\n",
+            encoding="utf-8",
+        )
+
+        result = _derive_session_start_iso(
+            transcript_first_user_ts=None,
+            transcript_path=transcript_path,
+            transcript_created_at=datetime(2026, 5, 4, 12, 16),
+            transcript_id=7,
+        )
+
+        assert result == "14:59"
