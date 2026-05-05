@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0](https://github.com/parasite2060/jarvis-server/compare/v0.12.0...v0.13.0) (2026-05-04)
+
+
+### Features
+
+* **dream:** conversation log renderer for phase telemetry ([ab4c927](https://github.com/parasite2060/jarvis-server/commit/ab4c9278bbd79ad49bf22c3e0661aa97d215f7be))
+* **extraction:** transcript shape report + 50% coverage prompt rule ([319b341](https://github.com/parasite2060/jarvis-server/commit/319b341a6ef426ec66398ea3c2c3a22c2054b94b))
+* **extraction:** yield check + extraction_under_yield outcome ([ea987ac](https://github.com/parasite2060/jarvis-server/commit/ea987ac059772e492d145699881ca90ebec8fa23))
+
 ## [0.12.0](https://github.com/parasite2060/jarvis-server/compare/v0.11.0...v0.12.0) (2026-04-26)
 
 
