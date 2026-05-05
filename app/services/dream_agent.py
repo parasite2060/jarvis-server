@@ -307,6 +307,7 @@ class DreamDeps:
     token_count: int | None = None
     created_at: datetime | None = None
     transcript_file: str = ""
+    transcript_first_user_ts: datetime | None = None
     # Session log sections (populated by store tools; collapsed into SessionLogEntry at end-of-run)
     session_context: str = ""
     session_key_exchanges: list[str] = field(default_factory=list)
@@ -524,6 +525,7 @@ async def run_dream_extraction(
 
         shape = compute_transcript_shape(deps.workspace / "transcript.txt")
         shape_section = format_shape_report(shape)
+        deps.transcript_first_user_ts = shape.span_start
     except Exception as exc:
         log.warning(
             "dream_extraction.shape_report.failed",
@@ -622,6 +624,7 @@ class RecordDeps:
     summary: str = ""
     session_log: SessionLogEntry = field(default_factory=SessionLogEntry)
     is_continuation: bool = False
+    session_start_iso: str | None = None
 
 
 def _load_record_prompt() -> str:
@@ -804,6 +807,7 @@ async def run_record(
         "Record the session to the daily log and track reinforcement signals.",
         "",
         f"Session ID: {deps.session_id}",
+        f"Session start time: {deps.session_start_iso or 'unknown'}",
     ]
 
     if deps.is_continuation:
@@ -820,7 +824,9 @@ async def run_record(
             "— do NOT create a new ### Session heading."
         )
         sections.append(
-            "Add a `**Continued at [HH:MM]**:` marker before new content in each section."
+            "Add a `**Continued at [HH:MM]**:` marker before new content in each section. "
+            "Substitute the `Session start time:` value above for `[HH:MM]` "
+            "(use `00:00` if the value is `unknown`)."
         )
 
     sections.extend(

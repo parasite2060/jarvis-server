@@ -1,3 +1,4 @@
+import re
 import shutil
 import tempfile
 import time
@@ -21,6 +22,48 @@ from app.services.git_ops import git_ops_service
 from app.services.memory_files import append_vault_log
 
 log = get_logger("jarvis.tasks.light_dream")
+
+_TRANSCRIPT_USER_TS_LINE = re.compile(
+    r"^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\]\s+User:"
+)
+
+
+def _parse_first_user_ts_from_file(path: Path) -> datetime | None:
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                match = _TRANSCRIPT_USER_TS_LINE.match(line)
+                if match:
+                    raw = match.group(1)
+                    cleaned = raw[:-1] if raw.endswith("Z") else raw
+                    return datetime.fromisoformat(cleaned)
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _derive_session_start_iso(
+    *,
+    transcript_first_user_ts: datetime | None,
+    transcript_path: Path,
+    transcript_created_at: datetime | None,
+    transcript_id: int,
+) -> str | None:
+    if transcript_first_user_ts is not None:
+        return transcript_first_user_ts.strftime("%H:%M")
+
+    parsed = _parse_first_user_ts_from_file(transcript_path)
+    if parsed is not None:
+        return parsed.strftime("%H:%M")
+
+    if transcript_created_at is not None:
+        return transcript_created_at.strftime("%H:%M")
+
+    log.warning(
+        "light_dream.record.session_time_unknown",
+        transcript_id=transcript_id,
+    )
+    return None
 
 
 def _determine_light_dream_outcome(
@@ -299,6 +342,12 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
             try:
                 from app.config import settings as app_settings
 
+                session_start_iso = _derive_session_start_iso(
+                    transcript_first_user_ts=deps.transcript_first_user_ts,
+                    transcript_path=transcript_path,
+                    transcript_created_at=getattr(transcript, "created_at", None),
+                    transcript_id=transcript_id,
+                )
                 record_deps = RecordDeps(
                     workspace=Path(app_settings.jarvis_memory_path),
                     source_date=source_date_for_git,
@@ -306,6 +355,7 @@ async def light_dream_task(ctx: dict[str, Any], transcript_id: int) -> None:
                     summary=summary.summary if hasattr(summary, "summary") else "",
                     session_log=session_log,
                     is_continuation=getattr(transcript, "is_continuation", False),
+                    session_start_iso=session_start_iso,
                 )
                 record_run_prompt = (
                     f"Record session to daily log. Session: {deps.session_id}, "

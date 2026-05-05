@@ -1836,6 +1836,82 @@ class TestTranscriptShapeInRunPrompt:
             mock_agent.run.assert_called()
 
 
+class TestRecordAgentSessionStartTime:
+    """Spec C: `Session start time:` line injected into the record run prompt."""
+
+    def _clear_record_agent(self) -> None:
+        import app.services.dream_agent as module
+
+        module._record_agent = None
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_session_start_time_when_provided(
+        self, record_deps: RecordDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_record
+
+        self._clear_record_agent()
+        record_deps.session_start_iso = "14:59"
+
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="(empty)",
+            ),
+            patch("app.services.dream_agent._get_record_agent") as mock_get_agent,
+        ):
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = RecordResult(summary="recorded", files=[])
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_record(record_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "Session start time: 14:59" in prompt
+            session_id_idx = prompt.index(f"Session ID: {record_deps.session_id}")
+            start_time_idx = prompt.index("Session start time: 14:59")
+            assert session_id_idx < start_time_idx
+
+    @pytest.mark.asyncio
+    async def test_run_prompt_contains_unknown_when_session_start_iso_is_none(
+        self, record_deps: RecordDeps
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services.dream_agent import run_record
+
+        self._clear_record_agent()
+        record_deps.session_start_iso = None
+
+        with (
+            patch(
+                "app.services.dream_agent._read_vault_file",
+                new_callable=AsyncMock,
+                return_value="(empty)",
+            ),
+            patch("app.services.dream_agent._get_record_agent") as mock_get_agent,
+        ):
+            mock_agent = MagicMock()
+            mock_run_result = MagicMock()
+            mock_run_result.output = RecordResult(summary="recorded", files=[])
+            mock_run_result.usage.return_value = MagicMock()
+            mock_run_result.all_messages.return_value = []
+            mock_agent.run = AsyncMock(return_value=mock_run_result)
+            mock_get_agent.return_value = mock_agent
+
+            await run_record(record_deps)
+
+            prompt = mock_agent.run.call_args[0][0]
+            assert "Session start time: unknown" in prompt
+
+
 # ---------------------------------------------------------------------------
 # Story 9.30: Simplify Extraction Tests
 # ---------------------------------------------------------------------------

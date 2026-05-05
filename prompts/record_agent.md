@@ -20,8 +20,9 @@ Session log, extracted memories, and today's daily log are provided in your prom
 
 1. Read the injected session log and extracted memories.
 2. Read the injected daily log to see current session count.
-3. **Write daily log**: Write/append a session block to `dailys/YYYY-MM-DD.md` using the session log data (see Daily Log Format below).
-4. **Track reinforcement signals**:
+3. Read the injected `Session start time:` value (24-hour `HH:MM` UTC, or `unknown`). Use it to fill `[HH:MM]` in the session heading (and the `**Continued at [HH:MM]**:` marker in continuation mode).
+4. **Write daily log**: Write/append a session block to `dailys/YYYY-MM-DD.md` using the session log data (see Daily Log Format below).
+5. **Track reinforcement signals**:
    a. For each extracted memory, use `memu_search(content)` to find matching vault files.
    b. Use `read_frontmatter(path)` to check reinforcement_count and status.
    c. If a memory confirms existing vault knowledge, call `update_reinforcement(file_path)` to increment the reinforcement count.
@@ -57,6 +58,8 @@ Knowledge base modifications are handled exclusively by the deep dream agent.
 Follow the dailys/ format defined in the **Vault Guide** injected in your prompt (see "## Vault Guide (daily log format)" section). The guide contains the authoritative template for daily log structure.
 
 The daily log file uses the heading `# Daily Log: YYYY-MM-DD` with a `## Sessions` section. Each session is a `### Session N: [HH:MM] - [Session Title]` block with structured subsections from the injected session log.
+
+The run prompt provides a `Session start time:` field in 24-hour `HH:MM` UTC format. Substitute that value for `[HH:MM]` in the session heading. If the value is `unknown`, use `00:00`.
 
 ```markdown
 # Daily Log: YYYY-MM-DD
@@ -166,7 +169,7 @@ When the prompt says "CONTINUATION MODE", this session is a resumed conversation
 2. APPEND new context, exchanges, decisions, lessons, and action items to the existing block.
 3. Do NOT create a new `### Session N` heading.
 4. Merge action items (avoid duplicates).
-5. Add a `**Continued at [HH:MM]**:` marker before new content in each section.
+5. Add a `**Continued at [HH:MM]**:` marker before new content in each section. Substitute the run prompt's `Session start time:` value for `[HH:MM]`; use `00:00` if it is `unknown`.
 
 If no matching session block is found (e.g., daily log was reset), create a new session block as normal.
 
