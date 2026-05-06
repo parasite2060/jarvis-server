@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # ── MemU ──
     memu_base_url: str = "http://memu-server:8000"
 
+    # ── Temporal ──
+    temporal_address: str = "192.168.50.129:7233"
+    temporal_namespace: str = "jarvis"
+    temporal_task_queue: str = "jarvis-dream"
+
     # ── Usage Limits ──
     phase1_tokens_limit: int = 1_500_000
     phase1_tool_calls_limit: int = 300
