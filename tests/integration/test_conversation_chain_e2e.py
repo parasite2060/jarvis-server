@@ -247,11 +247,30 @@ def _make_arq() -> AsyncMock:
     return pool
 
 
+def _make_signal_mock() -> AsyncMock:
+    """Track signal_coordinator calls; exposes ._jobs for backward compat with test assertions."""
+    mock = AsyncMock()
+    jobs: list[dict] = []
+
+    async def _signal(kind: str, payload: dict) -> None:
+        jobs.append({"kind": kind, **payload})
+
+    mock.side_effect = _signal
+    mock._jobs = jobs  # compatible with existing arq._jobs assertions
+    return mock
+
+
 async def _make_client_and_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[AsyncClient, StatefulFakeSession, AsyncMock, "FastAPI"]:  # type: ignore[name-defined]  # noqa: F821
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
     monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
+
+    signal_mock = _make_signal_mock()
+    monkeypatch.setattr(
+        "app.api.routes.conversations.signal_coordinator",
+        signal_mock,
+    )
 
     app = create_app()
     state = StatefulFakeSession()
@@ -261,7 +280,7 @@ async def _make_client_and_state(
     return (
         AsyncClient(transport=ASGITransport(app=app), base_url="http://test"),
         state,
-        arq,
+        signal_mock,  # replaces arq as third element; ._jobs tracks signals
         app,
     )
 

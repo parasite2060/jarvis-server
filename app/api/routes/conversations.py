@@ -15,6 +15,7 @@ from app.models.conversation_schemas import (
 from app.models.tables import Transcript
 from app.services.secret_scrubber import scrub
 from app.services.transcript_parser import count_tokens_approximate, parse_transcript
+from app.temporal_client import signal_coordinator
 
 log = get_logger("jarvis.api.conversations")
 
@@ -112,8 +113,10 @@ async def ingest_conversation(
     )
 
     try:
-        arq_pool = request.app.state.redis_pool
-        await arq_pool.enqueue_job("light_dream_task", transcript_id=transcript.id)
+        await signal_coordinator(
+            "light",
+            {"transcript_id": transcript.id, "session_id": str(body.session_id)},
+        )
         transcript.status = "queued"
         await db.commit()
         log.info(
