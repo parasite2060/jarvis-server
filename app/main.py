@@ -15,6 +15,8 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.services.context_cache import invalidate_context_cache
 from app.services.file_manifest import scan_vault_files, sync_file_manifest_to_db
+from app.temporal_client import close_temporal_client, get_temporal_client
+from app.temporal_worker import build_temporal_worker
 
 log = get_logger("jarvis.app")
 
@@ -72,6 +74,21 @@ async def _start_dream_scheduler(app: FastAPI) -> None:
     log.info("dream_scheduler.started")
 
 
+async def _start_temporal_worker(app: FastAPI) -> None:
+    client = await get_temporal_client()
+    app.state.temporal_client = client
+    worker = build_temporal_worker(client)
+    app.state.temporal_worker = worker
+    if worker is not None:
+        app.state.temporal_worker_task = asyncio.create_task(worker.run())
+    log.info(
+        "temporal.worker.started",
+        address=settings.temporal_address,
+        namespace=settings.temporal_namespace,
+        task_queue=settings.temporal_task_queue,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("jarvis.startup.begin")
@@ -79,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _run_migrations()
     await _start_arq_pool(app)
     await _start_dream_scheduler(app)
+    await _start_temporal_worker(app)
 
     app.state.vault_sync_task = asyncio.create_task(_vault_sync_loop())
     log.info("vault_sync.started", interval_seconds=VAULT_SYNC_INTERVAL_SECONDS)
@@ -94,6 +112,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await app.state.vault_sync_task
         except asyncio.CancelledError:
             pass
+
+    if hasattr(app.state, "temporal_worker_task"):
+        app.state.temporal_worker_task.cancel()
+        try:
+            await app.state.temporal_worker_task
+        except asyncio.CancelledError:
+            pass
+
+    await close_temporal_client()
+    log.info("temporal.worker.stopped")
 
     if hasattr(app.state, "scheduler_task"):
         app.state.scheduler_task.cancel()
