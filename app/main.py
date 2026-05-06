@@ -5,6 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.activities.light.commit_and_pr import commit_and_pr
+from app.activities.light.invalidate_cache import invalidate_cache
+from app.activities.light.load_transcript import load_transcript
+from app.activities.light.persist_session_log import persist_session_log
+from app.activities.light.run_extraction import run_extraction
+from app.activities.light.run_record import run_record
+from app.activities.light.update_transcript_position import update_transcript_position
 from app.api.routes.config import router as config_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.dream import router as dream_router
@@ -22,6 +29,7 @@ from app.temporal_client import (
 )
 from app.temporal_worker import build_temporal_worker
 from app.workflows.coordinator import DreamCoordinatorWorkflow
+from app.workflows.light_dream_workflow import LightDreamWorkflow
 
 log = get_logger("jarvis.app")
 
@@ -82,7 +90,19 @@ async def _start_dream_scheduler(app: FastAPI) -> None:
 async def _start_temporal_worker(app: FastAPI) -> None:
     client = await get_temporal_client()
     app.state.temporal_client = client
-    worker = build_temporal_worker(client, workflows=[DreamCoordinatorWorkflow])
+    worker = build_temporal_worker(
+        client,
+        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow],
+        activities=[
+            load_transcript,
+            run_extraction,
+            persist_session_log,
+            run_record,
+            update_transcript_position,
+            commit_and_pr,
+            invalidate_cache,
+        ],
+    )
     app.state.temporal_worker = worker
     if worker is not None:
         app.state.temporal_worker_task = asyncio.create_task(worker.run())

@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -68,6 +68,7 @@ async def conversation_client(
     app = create_app()
     mock_db = _make_mock_db()
     mock_arq = _make_mock_arq()
+    mock_signal = AsyncMock()
 
     async def fake_refresh(obj: object) -> None:
         obj.id = 42  # type: ignore[attr-defined]
@@ -80,11 +81,12 @@ async def conversation_client(
     app.dependency_overrides[get_db_session] = override_db
     app.state.redis_pool = mock_arq
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as ac:
-        yield ac, mock_db, mock_arq
+    with patch("app.api.routes.conversations.signal_coordinator", mock_signal):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            yield ac, mock_db, mock_signal
 
 
 class TestPostConversations:
@@ -192,22 +194,29 @@ class TestPostConversations:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_arq_task_enqueued(
+    async def test_temporal_signal_sent(
         self,
         conversation_client: tuple[AsyncClient, AsyncMock, AsyncMock],
     ) -> None:
-        client, _, mock_arq = conversation_client
+        client, _, mock_signal = conversation_client
         await client.post("/conversations", json=_valid_body(), headers=AUTH_HEADER)
 
-        mock_arq.enqueue_job.assert_called_once_with("light_dream_task", transcript_id=42)
+        mock_signal.assert_called_once_with(
+            "light",
+            {"transcript_id": 42, "session_id": "abc123-def456"},
+        )
 
     @pytest.mark.asyncio
-    async def test_returns_202_when_arq_enqueue_fails(
+    async def test_returns_202_when_signal_coordinator_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
         monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
+        monkeypatch.setattr(
+            "app.api.routes.conversations.signal_coordinator",
+            AsyncMock(side_effect=ConnectionError("Temporal unreachable")),
+        )
 
         app = create_app()
         mock_db = _make_mock_db()
@@ -216,14 +225,12 @@ class TestPostConversations:
             obj.id = 5  # type: ignore[attr-defined]
 
         mock_db.refresh = fake_refresh
-        mock_arq = AsyncMock()
-        mock_arq.enqueue_job = AsyncMock(side_effect=ConnectionError("Redis down"))
 
         async def override_db() -> AsyncGenerator[AsyncMock, None]:
             yield mock_db
 
         app.dependency_overrides[get_db_session] = override_db
-        app.state.redis_pool = mock_arq
+        app.state.redis_pool = _make_mock_arq()
 
         async with AsyncClient(
             transport=ASGITransport(app=app),
