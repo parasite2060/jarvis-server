@@ -15,8 +15,13 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.services.context_cache import invalidate_context_cache
 from app.services.file_manifest import scan_vault_files, sync_file_manifest_to_db
-from app.temporal_client import close_temporal_client, get_temporal_client
+from app.temporal_client import (
+    close_temporal_client,
+    ensure_coordinator_running,
+    get_temporal_client,
+)
 from app.temporal_worker import build_temporal_worker
+from app.workflows.coordinator import DreamCoordinatorWorkflow
 
 log = get_logger("jarvis.app")
 
@@ -77,7 +82,7 @@ async def _start_dream_scheduler(app: FastAPI) -> None:
 async def _start_temporal_worker(app: FastAPI) -> None:
     client = await get_temporal_client()
     app.state.temporal_client = client
-    worker = build_temporal_worker(client)
+    worker = build_temporal_worker(client, workflows=[DreamCoordinatorWorkflow])
     app.state.temporal_worker = worker
     if worker is not None:
         app.state.temporal_worker_task = asyncio.create_task(worker.run())
@@ -87,6 +92,8 @@ async def _start_temporal_worker(app: FastAPI) -> None:
         namespace=settings.temporal_namespace,
         task_queue=settings.temporal_task_queue,
     )
+    await ensure_coordinator_running(client)
+    log.info("temporal.coordinator.started", workflow_id="coord-singleton")
 
 
 @asynccontextmanager
