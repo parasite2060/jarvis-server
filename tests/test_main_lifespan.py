@@ -56,6 +56,7 @@ async def test_lifespan_temporal_worker_task_cancelled_on_shutdown(
         "app.main.build_temporal_worker",
         lambda client, **kw: mock_worker,
     )
+    monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
 
     from app.main import create_app
 
@@ -87,6 +88,7 @@ async def test_lifespan_shutdown_raises_no_exceptions(
         "app.main.build_temporal_worker",
         lambda client, **kw: mock_worker,
     )
+    monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
 
     from app.main import create_app
 
@@ -101,21 +103,31 @@ async def test_lifespan_shutdown_raises_no_exceptions(
             assert response.status_code == 200
 
 
-async def test_lifespan_empty_registries_no_worker_task(
+async def test_lifespan_worker_task_created_with_coordinator_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With empty registries, temporal_worker_task is NOT created (SDK constraint)."""
+    """DreamCoordinatorWorkflow is registered; worker task is created unconditionally."""
     mock_client = MagicMock()
+    mock_worker = MagicMock()
+
+    async def fake_worker_run() -> None:
+        await asyncio.sleep(9999)
+
+    mock_worker.run = fake_worker_run
 
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
     monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
     monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.temporal_client.Client.connect", AsyncMock(return_value=mock_client))
+    monkeypatch.setattr(
+        "app.main.build_temporal_worker",
+        lambda client, **kw: mock_worker,
+    )
+    monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
 
     from app.main import create_app
 
     application = create_app()
 
     async with _run_lifespan(application):
-        assert hasattr(application.state, "temporal_client")
-        assert not hasattr(application.state, "temporal_worker_task")
+        assert hasattr(application.state, "temporal_worker_task")
