@@ -44,6 +44,7 @@
     "@keyvhq/core": "^2.1.11",
     "@nestjs-redis/kit": "^0.13.1",
     "@nestjs/axios": "^4.0.0",
+    "@nestjs/cache-manager": "^3.1.2",
     "@nestjs/common": "^11.0.12",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.12",
@@ -53,6 +54,7 @@
     "@nestjs/platform-express": "^11.0.12",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/typeorm": "^11.0.0",
+    "cache-manager": "^7.2.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "dotenv": "^17.2.3",
@@ -67,7 +69,8 @@
     "reflect-metadata": "^0.2.1",
     "rimraf": "^3.0.2",
     "rxjs": "^7.2.0",
-    "typeorm": "^0.3.17"
+    "typeorm": "^0.3.17",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.0",

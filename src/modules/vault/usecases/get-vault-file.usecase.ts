@@ -1,5 +1,5 @@
 /**
- * GetVaultFileUseCase (Story 13.4 / Q1 — VaultModule stub).
+ * GetVaultFileUseCase (Story 13.4 / Q1 — VaultModule stub; extended Story 13.5 / Q2+Q4).
  *
  * Mirrors Python `app/services/memory_files.py :: read_vault_file(relative_path)`:
  *   - Resolves `<vaultPath>/<relativePath>`; rejects paths that escape the vault root.
@@ -10,6 +10,11 @@
  *     traversal) by inspecting which branch was logged; for the in-scope routes
  *     (`SOUL.md` / `IDENTITY.md` / `MEMORY.md`) the path is hardcoded so the
  *     traversal branch is unreachable from the controller.
+ *
+ * Story 13.5 extension: optional `maxLines` truncates content to first N lines
+ * via `split('\n').slice(0, N).join('\n')` — mirrors Python
+ * `read_vault_file_lines()` at `memory_files.py:62-69`. Truncation runs only
+ * when `maxLines` is provided AND content is non-null.
  *
  * Story 13.6 retrofits this module with manifest + file-by-path endpoints + the
  * full path-traversal centralisation. This stub ships ONLY the read path.
@@ -26,7 +31,7 @@ export class GetVaultFileUseCase {
 
   constructor(private readonly appConfig: AppConfigService) {}
 
-  async execute(relativePath: string): Promise<GetVaultFileResult> {
+  async execute(relativePath: string, maxLines?: number): Promise<GetVaultFileResult> {
     const vaultRoot = path.resolve(this.appConfig.vaultPath);
     const candidate = path.resolve(vaultRoot, relativePath);
     if (!isWithin(vaultRoot, candidate)) {
@@ -38,7 +43,8 @@ export class GetVaultFileUseCase {
       return { content: null, file_path: relativePath };
     }
     try {
-      const content = await fs.readFile(candidate, 'utf-8');
+      const raw = await fs.readFile(candidate, 'utf-8');
+      const content = maxLines !== undefined ? truncateLines(raw, maxLines) : raw;
       this.logger.log({
         message: 'vault read succeeded',
         event: 'vault.readFile.completed',
@@ -64,4 +70,9 @@ export class GetVaultFileUseCase {
 function isWithin(root: string, candidate: string): boolean {
   const rel = path.relative(root, candidate);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+// Mirrors Python `read_vault_file_lines()` — `content.splitlines()[:max_lines]` joined by '\n'.
+function truncateLines(content: string, maxLines: number): string {
+  return content.split('\n').slice(0, maxLines).join('\n');
 }

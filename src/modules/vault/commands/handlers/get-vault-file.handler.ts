@@ -13,6 +13,6 @@ export class GetVaultFileHandler implements ICommandHandler<GetVaultFileCommand,
   constructor(private readonly usecase: GetVaultFileUseCase) {}
 
   async execute(command: GetVaultFileCommand): Promise<GetVaultFileResult> {
-    return this.usecase.execute(command.payload.path);
+    return this.usecase.execute(command.payload.path, command.payload.max_lines);
   }
 }

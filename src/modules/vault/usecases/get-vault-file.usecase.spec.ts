@@ -81,4 +81,46 @@ describe('GetVaultFileUseCase', () => {
     // Assert
     expect(result).toEqual({ content: null, file_path: 'subdir' });
   });
+
+  // Story 13.5 / Q2+Q4 — backward-compatible max_lines extension.
+  describe('maxLines truncation (Story 13.5)', () => {
+    it('maxLines not provided — returns full content (backward-compat)', async () => {
+      // Arrange — file with 5 lines.
+      const lines = Array.from({ length: 5 }, (_, i) => `line-${i + 1}`).join('\n');
+      await fs.writeFile(path.join(vaultRoot, 'short.md'), lines, 'utf-8');
+
+      // Act
+      const result = await target.execute('short.md');
+
+      // Assert
+      expect(result.content).toBe(lines);
+    });
+
+    it('maxLines=200 with 250-line content — returns exactly 200 lines joined by \\n', async () => {
+      // Arrange
+      const allLines = Array.from({ length: 250 }, (_, i) => `line-${i + 1}`);
+      await fs.writeFile(path.join(vaultRoot, 'big.md'), allLines.join('\n'), 'utf-8');
+
+      // Act
+      const result = await target.execute('big.md', 200);
+
+      // Assert
+      const expected = allLines.slice(0, 200).join('\n');
+      expect(result.content).toBe(expected);
+      expect(result.content!.split('\n')).toHaveLength(200);
+    });
+
+    it('maxLines=200 with 50-line content — returns full 50 lines (no padding)', async () => {
+      // Arrange
+      const allLines = Array.from({ length: 50 }, (_, i) => `line-${i + 1}`);
+      await fs.writeFile(path.join(vaultRoot, 'small.md'), allLines.join('\n'), 'utf-8');
+
+      // Act
+      const result = await target.execute('small.md', 200);
+
+      // Assert
+      expect(result.content).toBe(allLines.join('\n'));
+      expect(result.content!.split('\n')).toHaveLength(50);
+    });
+  });
 });

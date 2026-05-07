@@ -144,4 +144,53 @@ describe('DreamRepositoryImpl', () => {
       expect(result).toBeNull();
     });
   });
+
+  // Story 13.5 / Q9 — extends the repo for the context module's health-report read.
+  describe('findLatestCompletedDeep', () => {
+    it('should return null when no completed deep dream exists', async () => {
+      // Arrange — only a non-deep + non-completed row.
+      const light = await target.createDream({ type: 'light', trigger: 'plugin' });
+      await target.updateDreamOutcome(light.id, 'wrote_files', 'completed');
+      const queuedDeep = await target.createDream({ type: 'deep', trigger: 'cron' });
+      expect(queuedDeep.status).toBe('queued');
+
+      // Act
+      const result = await target.findLatestCompletedDeep();
+
+      // Assert
+      expect(result).toBeNull();
+    });
+
+    it('should return the latest completed deep dream by completed_at DESC', async () => {
+      // Arrange — two completed deeps with distinct completed_at timestamps.
+      const olderId = (await target.createDream({ type: 'deep', trigger: 'cron' })).id;
+      await target.updateDreamOutcome(olderId, 'wrote_files', 'completed');
+      const newerId = (await target.createDream({ type: 'deep', trigger: 'cron' })).id;
+      await target.updateDreamOutcome(newerId, 'wrote_files', 'completed');
+      const repo = dataSource.getRepository(PgMemDreamSchema);
+      await repo.update({ id: olderId }, { completedAt: new Date('2026-05-01T00:00:00.000Z') });
+      await repo.update({ id: newerId }, { completedAt: new Date('2026-05-08T00:00:00.000Z') });
+
+      // Act
+      const result = await target.findLatestCompletedDeep();
+
+      // Assert
+      expect(result?.id).toBe(newerId);
+    });
+
+    it('should return only one row even when many completed deeps match', async () => {
+      // Arrange — five completed deep dreams.
+      for (let i = 0; i < 5; i++) {
+        const d = await target.createDream({ type: 'deep', trigger: 'cron' });
+        await target.updateDreamOutcome(d.id, 'wrote_files', 'completed');
+      }
+
+      // Act
+      const result = await target.findLatestCompletedDeep();
+
+      // Assert — single row (findOne semantics).
+      expect(result).not.toBeNull();
+      expect(typeof result?.id).toBe('number');
+    });
+  });
 });
