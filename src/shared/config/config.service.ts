@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NodeEnvironment, RuntimeEnvironment } from './environment';
+import { UsageLimits } from './usage-limits';
 
 @Injectable()
 export class AppConfigService {
@@ -17,6 +18,11 @@ export class AppConfigService {
 
   get nodeEnv(): NodeEnvironment {
     return this.configService.get<NodeEnvironment>('NODE_ENV', NodeEnvironment.DEVELOPMENT);
+  }
+
+  // Logger config
+  get logLevel(): string {
+    return this.configService.get<string>('LOG_LEVEL', 'info');
   }
 
   // GRPC config
@@ -151,5 +157,126 @@ export class AppConfigService {
 
   get kafkaDefaultConcurrently(): number {
     return this.configService.get<number>('KAFKA_DEFAULT_CONCURRENTLY', 1);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Jarvis-specific accessors (Story 13.1 AC #3)
+  // Source of truth: `_bmad-output/planning-artifacts/design/config-and-env.md §3`.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Auth
+  get apiKey(): string {
+    return this.configService.getOrThrow<string>('API_KEY');
+  }
+
+  // Vault
+  get vaultPath(): string {
+    return this.configService.getOrThrow<string>('VAULT_PATH');
+  }
+
+  get vaultGitRemote(): string {
+    return this.configService.getOrThrow<string>('VAULT_GIT_REMOTE');
+  }
+
+  // GitHub
+  get ghToken(): string {
+    return this.configService.getOrThrow<string>('GH_TOKEN');
+  }
+
+  // Temporal (defaults declared in Joi schema)
+  get temporalAddress(): string {
+    return this.configService.get<string>('TEMPORAL_ADDRESS', '192.168.50.129:7233');
+  }
+
+  get temporalNamespace(): string {
+    return this.configService.get<string>('TEMPORAL_NAMESPACE', 'jarvis');
+  }
+
+  get temporalTaskQueue(): string {
+    return this.configService.get<string>('TEMPORAL_TASK_QUEUE', 'jarvis-dream');
+  }
+
+  // Azure OpenAI
+  get azureOpenAIApiKey(): string {
+    return this.configService.getOrThrow<string>('AZURE_OPENAI_API_KEY');
+  }
+
+  get azureOpenAIApiInstanceName(): string {
+    return this.configService.getOrThrow<string>('AZURE_OPENAI_API_INSTANCE_NAME');
+  }
+
+  get azureOpenAIApiDeploymentName(): string {
+    return this.configService.getOrThrow<string>('AZURE_OPENAI_API_DEPLOYMENT_NAME');
+  }
+
+  get azureOpenAIApiVersion(): string {
+    return this.configService.getOrThrow<string>('AZURE_OPENAI_API_VERSION');
+  }
+
+  get azureOpenAIEmbeddingDeploymentName(): string {
+    return this.configService.getOrThrow<string>('AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME');
+  }
+
+  get llmModel(): string | undefined {
+    return this.configService.get<string>('LLM_MODEL');
+  }
+
+  // MemU
+  get memuApiUrl(): string {
+    return this.configService.getOrThrow<string>('MEMU_API_URL');
+  }
+
+  get memuApiKey(): string | undefined {
+    return this.configService.get<string>('MEMU_API_KEY');
+  }
+
+  // Phase budgets — one getter per phase. Defaults mirror Joi schema.
+  get lightExtractionLimits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_LIGHT_EXTRACTION_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_LIGHT_EXTRACTION_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get lightRecordLimits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_LIGHT_RECORD_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_LIGHT_RECORD_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get deepPhase1Limits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_DEEP_PHASE1_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_DEEP_PHASE1_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get deepPhase2Limits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_DEEP_PHASE2_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_DEEP_PHASE2_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get deepPhase3Limits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_DEEP_PHASE3_MAX_TOKENS', 2_000_000),
+      maxIterations: this.configService.get<number>('JARVIS_DEEP_PHASE3_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get healthFixLimits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_HEALTH_FIX_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_HEALTH_FIX_MAX_ITERATIONS', 300),
+    };
+  }
+
+  get weeklyReviewLimits(): UsageLimits {
+    return {
+      maxTokens: this.configService.get<number>('JARVIS_WEEKLY_REVIEW_MAX_TOKENS', 1_500_000),
+      maxIterations: this.configService.get<number>('JARVIS_WEEKLY_REVIEW_MAX_ITERATIONS', 300),
+    };
   }
 }
