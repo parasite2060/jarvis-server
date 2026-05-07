@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 # ── Path constants ──
 
 _ROOT = Path(__file__).resolve().parents[1]

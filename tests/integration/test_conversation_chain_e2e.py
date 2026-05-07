@@ -296,7 +296,6 @@ async def _post_conversation(
     *,
     force_no_dedup: bool = False,
 ) -> dict:
-    from app.api.deps import get_db_session
 
     mock_db = state._make_session_mock(session_id, source, force_no_dedup=force_no_dedup)
 
@@ -316,7 +315,6 @@ async def _get_position(
     state: StatefulFakeSession,
     session_id: str,
 ) -> dict:
-    from app.api.deps import get_db_session
 
     mock_db = state._make_session_mock(session_id, "")
 
