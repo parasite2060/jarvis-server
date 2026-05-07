@@ -1,19 +1,8 @@
 name: Release
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      prerelease:
-        description: "Pre-release identifier (e.g., alpha.1, beta.2, rc.1). Leave empty for dry run."
-        required: false
-        type: string
+    branches: [variant/clean-architecture-with-bun]
 
 permissions:
   contents: write
@@ -23,105 +12,83 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-jobs:
-  # === PR: build-only validation ===
-  docker-build:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
-  # === Automatic release (push to main) ===
+jobs:
   release-please:
-    if: github.event_name == 'push'
+    name: Release Please
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: variant/clean-architecture-with-bun
 
-  # === Manual pre-release (workflow_dispatch) ===
-  manual-release:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease != ''
+  publish-image:
+    name: Publish Release Image
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag_name: ${{ steps.version.outputs.tag_name }}
-    steps:
-      - uses: actions/checkout@v6
-      - name: Compute pre-release version
-        id: version
-        run: |
-          BASE_VERSION=$(grep 'version' pyproject.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          PRERELEASE="${{ github.event.inputs.prerelease }}"
-          VERSION="${BASE_VERSION}-${PRERELEASE}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=v${VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Create pre-release tag and GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.version.outputs.tag_name }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          git tag "$TAG"
-          git push origin "$TAG"
-          gh release create "$TAG" --title "v${VERSION}" --notes "Pre-release v${VERSION}" --prerelease
-
-  # === Docker publish (runs after either release type) ===
-  docker-publish:
-    needs: [release-please, manual-release]
-    if: |
-      always() && (
-        needs.release-please.outputs.release_created == 'true' ||
-        (needs.manual-release.result == 'success' && needs.manual-release.outputs.version != '')
-      )
-    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Resolve version
-        id: resolve
-        run: |
-          VERSION="${{ needs.release-please.outputs.version || needs.manual-release.outputs.version }}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" == *-* ]]; then
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@v4
         with:
-          registry: ghcr.io
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
-        id: meta
-        with:
-          images: ghcr.io/parasite2060/jarvis-server
-          tags: |
-            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.resolve.outputs.is_prerelease == 'false' }}
+      - name: Check if image tag already exists
+        id: check
+        run: |
+          TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.version }}"
+          if docker manifest inspect "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image $TAG already exists; skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - uses: docker/build-push-action@v7
+      - name: Extract metadata
+        if: steps.check.outputs.exists == 'false'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.release-please.outputs.version }}
+            type=raw,value=${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}
+            type=raw,value=${{ needs.release-please.outputs.major }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.version=${{ needs.release-please.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push image
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -129,3 +96,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "## 📦 Release Image Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Version** | \`${{ needs.release-please.outputs.version }}\` |"
+            echo "| **Tag** | \`${{ needs.release-please.outputs.tag_name }}\` |"
+            echo "| **Registry** | \`${{ env.REGISTRY }}\` |"
+            echo "| **Skipped** | \`${{ steps.check.outputs.exists }}\` |"
+            echo ""
+            echo "Pull with:"
+            echo "\`\`\`bash"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.version }}"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,124 @@
+name: Prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Base version (e.g. v1.2.7) — the stable version this prerelease leads up to'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish-prerelease:
+    name: Publish Prerelease Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate and extract base version
+        id: base
+        run: |
+          INPUT="${{ github.event.inputs.version }}"
+          VERSION="${INPUT#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: $INPUT (expected vX.Y.Z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next prerelease number
+        id: prerelease
+        run: |
+          BASE="${{ steps.base.outputs.version }}"
+          git fetch --tags
+
+          MAX=-1
+          for tag in $(git tag -l "v${BASE}-prerelease.*"); do
+            NUM="${tag##*.}"
+            if [[ "$NUM" =~ ^[0-9]+$ ]] && [ "$NUM" -gt "$MAX" ]; then
+              MAX="$NUM"
+            fi
+          done
+
+          NEXT=$((MAX + 1))
+          PRERELEASE_VERSION="${BASE}-prerelease.${NEXT}"
+          PRERELEASE_TAG="v${PRERELEASE_VERSION}"
+
+          echo "prerelease_version=$PRERELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease_tag=$PRERELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.prerelease.outputs.prerelease_version }}
+            type=raw,value=prerelease
+          labels: |
+            org.opencontainers.image.version=${{ steps.prerelease.outputs.prerelease_version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.prerelease.outputs.prerelease_tag }}"
+          git push origin "${{ steps.prerelease.outputs.prerelease_tag }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "## 🧪 Prerelease Image Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Version** | \`${{ steps.prerelease.outputs.prerelease_version }}\` |"
+            echo "| **Tag** | \`${{ steps.prerelease.outputs.prerelease_tag }}\` |"
+            echo "| **Base** | \`${{ steps.base.outputs.version }}\` |"
+            echo "| **Source ref** | \`${{ github.ref_name }}\` @ \`${{ github.sha }}\` |"
+            echo "| **Registry** | \`${{ env.REGISTRY }}\` |"
+            echo "| **Dist-tag** | \`prerelease\` |"
+            echo ""
+            echo "Pull with:"
+            echo "\`\`\`bash"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.prerelease.outputs.prerelease_version }}"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prerelease"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"

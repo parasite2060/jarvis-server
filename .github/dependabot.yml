@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      nestjs:
+        patterns:
+          - '@nestjs/*'
+      typescript-tooling:
+        patterns:
+          - typescript
+          - ts-jest
+          - ts-node
+          - tsc-alias
+          - tsconfig-paths
+      testing:
+        patterns:
+          - jest
+          - jest-*
+          - '@types/jest'
+          - supertest
+          - '@types/supertest'
+          - '@golevelup/ts-jest'
+      eslint:
+        patterns:
+          - eslint
+          - eslint-*
+          - '@typescript-eslint/*'
+          - '@stylistic/*'
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5

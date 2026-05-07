@@ -1,21 +1,56 @@
-FROM python:3.12-slim AS builder
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir .
+# syntax=docker/dockerfile:1.7
+FROM dhi.io/bun:1 AS dependencies
 
-FROM python:3.12-slim
-RUN apt-get update -qq && apt-get install -y --no-install-recommends git curl \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-       > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update -qq && apt-get install -y --no-install-recommends gh \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-COPY . .
-RUN useradd -m -r jarvis && chown -R jarvis:jarvis /app
-USER jarvis
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+WORKDIR /usr/src/app
+
+COPY --chown=bun:bun package.json bun.lock* ./
+
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+
+# ==========================================
+
+FROM dhi.io/bun:1 AS build
+
+WORKDIR /usr/src/app
+
+COPY --from=dependencies /usr/src/app/node_modules ./node_modules
+COPY --chown=bun:bun package.json bun.lock* ./
+COPY --chown=bun:bun . .
+
+RUN bun run build
+
+# ==========================================
+
+FROM dhi.io/bun:1 AS production-deps
+
+WORKDIR /usr/src/app
+
+ENV HUSKY=0
+
+COPY --chown=bun:bun package.json bun.lock* ./
+
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --production --ignore-scripts
+
+# ==========================================
+
+FROM dhi.io/bun:1 AS production
+
+WORKDIR /usr/src/app
+
+ENV NODE_ENV=production \
+    HUSKY=0
+
+COPY --from=production-deps --chown=bun:bun /usr/src/app/node_modules ./node_modules
+COPY --from=build --chown=bun:bun /usr/src/app/dist ./dist
+COPY --chown=bun:bun package.json ./
+
+USER bun
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD bun -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" || exit 1
+
+CMD ["bun", "run", "dist/main.js"]

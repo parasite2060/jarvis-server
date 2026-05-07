@@ -1,5 +1,0 @@
-# Backup files created during consolidation
-.backups/
-
-# Ephemeral transcript files (cleaned up after extraction)
-transcripts/

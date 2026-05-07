@@ -1,0 +1,88 @@
+# E2E Test Infrastructure
+# Usage: docker compose -f docker-compose.e2e.yml up -d --wait
+# Note: Uses different ports from local development to allow running simultaneously
+
+name: service-template-e2e-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: e2e_test_db
+    ports:
+      - 5433:5432 # E2E: 5433, Local: 5432
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d e2e_test_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - 27018:27017 # E2E: 27018, Local: 27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: test123
+    volumes:
+      - mongo_e2e_data:/data/db
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.15
+    hostname: redpanda-e2e
+    restart: unless-stopped
+    ports:
+      - 9093:9092 # E2E internal: 9093, Local: 9092
+      - 9095:9094 # E2E external: 9095, Local: 9094
+      - 9645:9644 # E2E admin: 9645, Local: 9644
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9094
+      - --advertise-kafka-addr internal://redpanda-e2e:9092,external://localhost:9095
+      - --smp 1
+      - --memory 1G
+      - --mode dev-container
+      - --default-log-level=warn
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'rpk', 'cluster', 'health']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - 6380:6379 # E2E: 6380, Local: 6379
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_e2e_data:
+  mongo_e2e_data:
