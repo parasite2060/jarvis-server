@@ -1,0 +1,507 @@
+name: CI
+
+on:
+  push:
+    branches: [variant/clean-architecture-with-node, variant/clean-architecture-with-bun]
+  pull_request:
+    branches: [variant/clean-architecture-with-node, variant/clean-architecture-with-bun]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1: Quality — lint, format, typecheck
+  # ─────────────────────────────────────────────────────────────
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      lint: ${{ steps.lint.outcome }}
+      format: ${{ steps.format.outcome }}
+      typecheck: ${{ steps.typecheck.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+
+      - name: Lint
+        id: lint
+        continue-on-error: true
+        run: bun run lint
+
+      - name: Lint (CI report)
+        if: always()
+        continue-on-error: true
+        run: bun run lint:ci
+
+      - name: Format check
+        id: format
+        continue-on-error: true
+        run: bunx prettier --check "{src,test}/**/*.ts"
+
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: true
+        run: bun run typecheck
+
+      - name: Upload ESLint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: eslint.json
+          if-no-files-found: ignore
+          retention-days: 5
+
+      - name: Quality gate
+        if: steps.lint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.typecheck.outcome == 'failure'
+        run: |
+          echo "::error::Quality gate failed"
+          echo "  Lint:      ${{ steps.lint.outcome }}"
+          echo "  Format:    ${{ steps.format.outcome }}"
+          echo "  Typecheck: ${{ steps.typecheck.outcome }}"
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2: Unit Tests
+  # ─────────────────────────────────────────────────────────────
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun run test:ci
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            report/
+          retention-days: 5
+
+      - name: Test Reporter
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Test Results
+          path: report/unit/test-report.xml
+          reporter: jest-junit
+          fail-on-error: false
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./report/coverage/jest.json
+          flags: unit
+          fail_ci_if_error: false
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 3: Security Audit
+  # ─────────────────────────────────────────────────────────────
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+
+      - name: Audit (JSON report)
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          bun audit --json > reports/audit-results.json 2>&1 || true
+
+      - name: Audit (production only)
+        continue-on-error: true
+        run: bun audit --prod || true
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: reports/audit-results.json
+          if-no-files-found: ignore
+          retention-days: 5
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 4: Build — depends on quality + unit-test
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [quality, unit-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - name: Verify build outputs
+        run: |
+          test -f dist/main.js && echo "✓ dist/main.js"
+          test -d dist/src && echo "✓ dist/src"
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 5: Docker Image Scan — depends on build
+  # ─────────────────────────────────────────────────────────────
+  docker-scan:
+    name: Docker Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: app:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: app:scan
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 6: E2E Tests — depends on build
+  # ─────────────────────────────────────────────────────────────
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+
+      - name: Create env file
+        run: cp .env.example .env.e2e
+
+      - name: Start E2E infrastructure
+        timeout-minutes: 5
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --wait-timeout 120
+
+      - name: Verify services health
+        run: |
+          echo "Checking PostgreSQL..."
+          docker compose -f docker-compose.e2e.yml exec -T postgres pg_isready -U postgres -d e2e_test_db
+
+          echo "Checking MongoDB..."
+          docker compose -f docker-compose.e2e.yml exec -T mongo mongosh --eval "db.adminCommand('ping')"
+
+          echo "Checking Redpanda..."
+          docker compose -f docker-compose.e2e.yml exec -T redpanda rpk cluster health
+
+          echo "Checking Redis..."
+          docker compose -f docker-compose.e2e.yml exec -T redis redis-cli ping
+
+      - name: Run database migrations
+        run: bun run migration:run
+
+      - name: Run E2E tests
+        timeout-minutes: 20
+        run: bun run test:e2e --coverage --forceExit --detectOpenHandles
+
+      - name: Upload E2E coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/e2e/lcov.info
+          flags: e2e
+          fail_ci_if_error: false
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-reports
+          path: |
+            ./coverage/e2e/
+            ./logs/e2e-test.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop infrastructure
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v --remove-orphans
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 7: Report — always runs, depends on all jobs
+  # ─────────────────────────────────────────────────────────────
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    needs: [quality, unit-test, security-audit, build, docker-scan, e2e-test]
+    if: always()
+    steps:
+      - name: Download unit test reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-reports
+          path: unit-test-reports
+
+      - name: Download E2E reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-test-reports
+          path: e2e-test-reports
+
+      - name: Download security reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: security-reports
+          path: security-reports
+
+      - name: Generate report
+        id: report
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          UNIT_TEST_RESULT: ${{ needs.unit-test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          E2E_RESULT: ${{ needs.e2e-test.result }}
+          DOCKER_RESULT: ${{ needs.docker-scan.result }}
+          SECURITY_RESULT: ${{ needs.security-audit.result }}
+          QUALITY_LINT: ${{ needs.quality.outputs.lint }}
+          QUALITY_FORMAT: ${{ needs.quality.outputs.format }}
+          QUALITY_TYPECHECK: ${{ needs.quality.outputs.typecheck }}
+        run: |
+          status_emoji() {
+            case "$1" in
+              success) echo "✅" ;;
+              failure) echo "❌" ;;
+              cancelled) echo "⏭️" ;;
+              skipped) echo "⏭️" ;;
+              *) echo "⚠️" ;;
+            esac
+          }
+
+          QUALITY_EMOJI=$(status_emoji "$QUALITY_RESULT")
+          UNIT_EMOJI=$(status_emoji "$UNIT_TEST_RESULT")
+          BUILD_EMOJI=$(status_emoji "$BUILD_RESULT")
+          E2E_EMOJI=$(status_emoji "$E2E_RESULT")
+          DOCKER_EMOJI=$(status_emoji "$DOCKER_RESULT")
+          SECURITY_EMOJI=$(status_emoji "$SECURITY_RESULT")
+
+          # Parse unit test results
+          UNIT_DETAIL="—"
+          UNIT_JUNIT="unit-test-reports/unit/test-report.xml"
+          if [ -f "$UNIT_JUNIT" ]; then
+            UNIT_TESTS=$(grep -o 'tests="[0-9]*"' "$UNIT_JUNIT" | head -1 | grep -o '[0-9]*' || echo "0")
+            UNIT_FAILURES=$(grep -o 'failures="[0-9]*"' "$UNIT_JUNIT" | head -1 | grep -o '[0-9]*' || echo "0")
+            UNIT_TIME=$(grep -o 'time="[0-9.]*"' "$UNIT_JUNIT" | head -1 | grep -o '[0-9.]*' || echo "0")
+            UNIT_PASSED=$((UNIT_TESTS - UNIT_FAILURES))
+            UNIT_DETAIL="${UNIT_PASSED}/${UNIT_TESTS} passed (${UNIT_TIME}s)"
+          fi
+
+          # Parse audit results
+          AUDIT_DETAIL="—"
+          AUDIT_SECTION=""
+          if [ -f security-reports/audit-results.json ]; then
+            if command -v jq >/dev/null 2>&1; then
+              AUDIT_TOTAL=$(jq -r '[.. | objects | select(has("severity")) | .severity] | length' security-reports/audit-results.json 2>/dev/null || echo "0")
+              if [ -z "$AUDIT_TOTAL" ] || [ "$AUDIT_TOTAL" = "0" ]; then
+                AUDIT_DETAIL="No vulnerabilities found"
+              else
+                AUDIT_DETAIL="${AUDIT_TOTAL} advisories"
+              fi
+            fi
+          fi
+
+          # Quality details
+          LINT_EMOJI=$(status_emoji "$QUALITY_LINT")
+          FORMAT_EMOJI=$(status_emoji "$QUALITY_FORMAT")
+          TC_EMOJI=$(status_emoji "$QUALITY_TYPECHECK")
+          QUALITY_DETAIL="${LINT_EMOJI} Lint, ${FORMAT_EMOJI} Format, ${TC_EMOJI} Typecheck"
+
+          # Build coverage report (jest coverage-summary.json lives under report/coverage)
+          COVERAGE_SECTION=""
+          COV_SUMMARY="unit-test-reports/coverage/coverage-summary.json"
+          if [ -f "$COV_SUMMARY" ] && command -v jq >/dev/null 2>&1; then
+            LINES=$(jq -r '.total.lines.pct' "$COV_SUMMARY" 2>/dev/null || echo "—")
+            BRANCHES=$(jq -r '.total.branches.pct' "$COV_SUMMARY" 2>/dev/null || echo "—")
+            FUNCTIONS=$(jq -r '.total.functions.pct' "$COV_SUMMARY" 2>/dev/null || echo "—")
+            STATEMENTS=$(jq -r '.total.statements.pct' "$COV_SUMMARY" 2>/dev/null || echo "—")
+
+            cov_status() {
+              if [ "$1" = "—" ]; then echo "⚠️"; elif [ "$(awk "BEGIN {print ($1 >= 80)}")" = "1" ]; then echo "✅"; else echo "❌"; fi
+            }
+
+            COVERAGE_SECTION="
+          <details>
+          <summary><strong>Coverage Report</strong> (threshold: 80%)</summary>
+
+          | Metric | Coverage | Threshold | Status |
+          |--------|----------|-----------|--------|
+          | Lines | ${LINES}% | 80% | $(cov_status "$LINES") |
+          | Branches | ${BRANCHES}% | 80% | $(cov_status "$BRANCHES") |
+          | Functions | ${FUNCTIONS}% | 80% | $(cov_status "$FUNCTIONS") |
+          | Statements | ${STATEMENTS}% | 80% | $(cov_status "$STATEMENTS") |
+
+          </details>"
+          fi
+
+          {
+            echo "## CI Pipeline Report"
+            echo ""
+            echo "### Summary"
+            echo ""
+            echo "| Check | Status | Details |"
+            echo "|-------|--------|---------|"
+            echo "| **Quality** | ${QUALITY_EMOJI} | ${QUALITY_DETAIL} |"
+            echo "| **Unit Tests** | ${UNIT_EMOJI} | ${UNIT_DETAIL} |"
+            echo "| **Build** | ${BUILD_EMOJI} | NestJS dist |"
+            echo "| **E2E Tests** | ${E2E_EMOJI} | Postgres + Mongo + Redpanda + Redis |"
+            echo "| **Docker Scan** | ${DOCKER_EMOJI} | Trivy CRITICAL/HIGH gate |"
+            echo "| **Security** | ${SECURITY_EMOJI} | ${AUDIT_DETAIL} |"
+            if [ -n "$COVERAGE_SECTION" ]; then
+              echo "$COVERAGE_SECTION"
+            fi
+            echo ""
+            echo "[View full run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } > /tmp/ci-report.md
+
+          cat /tmp/ci-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ci-report
+          path: /tmp/ci-report.md
+
+      - name: Create Quality Gate check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Quality Gate
+          conclusion: ${{ needs.quality.result }}
+          output: |
+            {"summary": "Lint: ${{ needs.quality.outputs.lint }}, Format: ${{ needs.quality.outputs.format }}, Typecheck: ${{ needs.quality.outputs.typecheck }}"}
+
+      - name: Create Test Suite check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Test Suite
+          conclusion: ${{ needs.unit-test.result }}
+          output: |
+            {"summary": "Unit tests via bun run test:ci"}
+
+      - name: Create Build check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Build Verification
+          conclusion: ${{ needs.build.result }}
+          output: |
+            {"summary": "NestJS build with tsc-alias"}
+
+      - name: Create E2E Tests check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: E2E Tests
+          conclusion: ${{ needs.e2e-test.result }}
+          output: |
+            {"summary": "End-to-end tests with Postgres, Mongo, Redpanda, Redis"}
+
+      - name: Create Security Audit check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Security Audit
+          conclusion: ${{ needs.security-audit.result }}
+          output: |
+            {"summary": "bun audit for dependency vulnerabilities"}
+
+      - name: Create Docker Scan check
+        if: always()
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Docker Image Scan
+          conclusion: ${{ needs.docker-scan.result }}
+          output: |
+            {"summary": "Trivy scan on built image (CRITICAL/HIGH gate)"}

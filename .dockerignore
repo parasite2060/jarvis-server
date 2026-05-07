@@ -1,0 +1,44 @@
+# Version control
+.git
+.gitignore
+
+# Documentation
+docs
+*.md
+!package.json
+
+# Development configs
+.env*
+!.env.example
+.husky
+
+# Test files
+test
+**/*.spec.ts
+**/*.e2e-spec.ts
+jest*.json
+jest.config.*
+coverage
+
+# Build artifacts
+dist
+node_modules
+
+# Editor / OS
+.vscode
+.idea
+*.log
+*.tgz
+*.tar.gz
+
+# CI
+.github
+
+# Tooling
+tools
+_bmad
+_bmad-output
+sonar-project.properties
+eslintoutput.config.js
+docker-compose*.yml
+Dockerfile

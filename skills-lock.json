@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "release-please": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/release-please/SKILL.md",
+      "computedHash": "673dee55683e087b76153e409c6613cdff7d9842efed77b152ba27de0fb2d8dc"
+    }
+  }
+}
