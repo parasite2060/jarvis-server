@@ -8,6 +8,10 @@ import {
   DefaultValidateExceptionFilter,
   DefaultUnauthorizedExceptionFilter,
   HttpExceptionFilter,
+  VaultFileNotFoundExceptionFilter,
+  VaultPathTraversalExceptionFilter,
+  MemuErrorExceptionFilter,
+  MemuUnavailableExceptionFilter,
 } from './utils/filter/exception.filter';
 import { CustomLoggerService } from './shared/logger/services/custom-logger.service';
 import { ClsService } from 'nestjs-cls';
@@ -67,6 +71,11 @@ function configure(app: INestApplication) {
   app.useGlobalFilters(new DefaultInternalExceptionFilter(httpAdapter));
   app.useGlobalFilters(new DefaultUnauthorizedExceptionFilter(httpAdapter));
   app.useGlobalFilters(new HttpExceptionFilter(httpAdapter));
+  // Story 13.4 — vault read + MemU client typed exceptions.
+  app.useGlobalFilters(new VaultFileNotFoundExceptionFilter(httpAdapter));
+  app.useGlobalFilters(new VaultPathTraversalExceptionFilter(httpAdapter));
+  app.useGlobalFilters(new MemuErrorExceptionFilter(httpAdapter));
+  app.useGlobalFilters(new MemuUnavailableExceptionFilter(httpAdapter));
 
   app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
 

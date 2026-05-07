@@ -230,6 +230,14 @@ export class AppConfigService {
     return this.configService.get<string>('MEMU_API_KEY');
   }
 
+  get memuUserId(): string {
+    return this.configService.get<string>('MEMU_USER_ID', 'jarvis');
+  }
+
+  get memuAgentId(): string {
+    return this.configService.get<string>('MEMU_AGENT_ID', 'claude');
+  }
+
   // Phase budgets — one getter per phase. Defaults mirror Joi schema.
   get lightExtractionLimits(): UsageLimits {
     return {

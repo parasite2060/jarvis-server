@@ -185,7 +185,7 @@ src/modules/
 | Module | Why it exists | Bounded context |
 |---|---|---|
 | `conversation` | Owns transcript ingestion + position tracking. Single producer of `ConversationIngestedEvent`. | Inbound writes from the plugin. |
-| `memory` | Owns the MemU proxy + the simple read endpoints (SOUL/IDENTITY raw). Leaf node — does not call any other business module. | Semantic search facade. |
+| `memory` | Owns the MemU proxy + the simple read endpoints (SOUL/IDENTITY/MEMORY raw). Calls `vault` via `GetVaultFileCommand` (CommandBus) for SOUL/IDENTITY/MEMORY raw reads. | Semantic search facade. |
 | `context` | Owns the assembled session-start payload + its cache + the cache-invalidation command. | Read-side composition. |
 | `vault` | Owns vault file I/O (manifest + read + write). Wraps `VAULT_PATH` filesystem access. | Filesystem boundary. |
 | `dream` | Owns dream pipelines (light/deep/weekly) — Temporal workflows + activities + deepagents agents + scoring. | Async processing core. |
@@ -481,6 +481,18 @@ Every typed cross-module hop, source/target, payload shape, return type, sync vs
 | **Handler** | `dream` module's `CronChangedEventsHandler` → calls `TemporalClientService.updateSchedule(...)` |
 | **Return** | void (fire-and-forget — schedule re-registration is idempotent and self-healing) |
 | **Defines** | `src/modules/config/events/cron-changed.event.ts` |
+
+#### 5.2.8 `memory` → `vault`: read vault file
+
+| Field | Value |
+|---|---|
+| **Command** | `GetVaultFileCommand({ path: 'SOUL.md' \| 'IDENTITY.md' \| 'MEMORY.md' })` |
+| **Payload** | `{ path: string }` (relative to `AppConfigService.vaultPath`) |
+| **Source** | `GetSoulUseCase`, `GetIdentityUseCase`, `GetMemoryFileUseCase` (all in `src/modules/memory/usecases/`) |
+| **Handler** | `GetVaultFileHandler` in `src/modules/vault/commands/handlers/` (forwards to `GetVaultFileUseCase`) |
+| **Return** | `{ content: string \| null, file_path: string }` — `null` content when missing or path-traversal-blocked (mirrors Python `read_vault_file`) |
+| **Why CommandBus, not direct injection?** | Business-module → business-module direct injection forbidden (architecture.md §1.4 principle 8 + §8.9). VaultModule owns path resolution from `AppConfigService.vaultPath`. |
+| **Defines** | `src/modules/vault/commands/get-vault-file.command.ts` (Story 13.4 stub; Story 13.6 retrofits the full vault module with manifest + file-by-path endpoints) |
 
 ### 5.3 What's NOT a cross-module call (don't get confused)
 

@@ -7,6 +7,9 @@ import { HttpApiResponse } from '../api-http.response';
 import { RpcApiResponse } from '../api-rpc.response';
 import { ErrorCode } from '../error.code';
 import { ValidateException, InternalException } from 'src/shared/common/models/exception';
+import { VaultFileNotFoundError } from 'src/shared/common/exceptions/vault-file-not-found.error';
+import { VaultPathTraversalError } from 'src/shared/common/exceptions/vault-path-traversal.error';
+import { MemuError, MemuUnavailableError } from 'src/shared/api/errors/memu.errors';
 
 /**
  * Validate exception filter.
@@ -69,6 +72,79 @@ export class HttpExceptionFilter implements RpcExceptionFilter<HttpException> {
     }
 
     return rpcUnknownExceptionHandler(host.switchToRpc(), exception);
+  }
+}
+
+/**
+ * Vault read 404 — `GetSoul`/`GetIdentity`/`GetMemoryFile` use cases throw
+ * `VaultFileNotFoundError` (Story 13.4). Mapped to HTTP 404 with the boilerplate-flat
+ * envelope (Decision B). The Python wire on this 404 was the legacy nested
+ * `{ error: { code, message }, status: 'error' }` shape (memory.py:92-98), but the
+ * plugin's `getSoul`/`getIdentity`/`getMemory` only checks `!response.ok` and returns
+ * `null` — so MC1 holds via the plugin's parse contract (story file N1).
+ */
+@Catch(VaultFileNotFoundError)
+export class VaultFileNotFoundExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: VaultFileNotFoundError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(exception.code, exception.message);
+    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.NOT_FOUND);
+    return null;
+  }
+}
+
+/**
+ * Vault read 403 — `GetVaultFileUseCase` throws `VaultPathTraversalError`
+ * (Story 13.4). NOT 404 — security: the caller learns the path is rejected
+ * but not whether the file would have existed.
+ */
+@Catch(VaultPathTraversalError)
+export class VaultPathTraversalExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: VaultPathTraversalError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(exception.code, exception.message);
+    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.FORBIDDEN);
+    return null;
+  }
+}
+
+/**
+ * MemU upstream error (Story 13.4 / AC #3 / AC #4). Preserves upstream HTTP status —
+ * mirrors Python `_handle_memu_error` (memory.py:142-149).
+ */
+@Catch(MemuError)
+export class MemuErrorExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: MemuError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(ErrorCode.MEMU_ERROR, exception.detail);
+    this.httpAdapter.reply(ctx.getResponse(), body, exception.statusCode);
+    return null;
+  }
+}
+
+/**
+ * MemU unavailable (transport / 5xx exhausted). Always HTTP 502 — matches Python
+ * `_handle_memu_unavailable` (memory.py:152-159).
+ */
+@Catch(MemuUnavailableError)
+export class MemuUnavailableExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: MemuUnavailableError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(ErrorCode.MEMU_UNAVAILABLE, exception.detail);
+    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.BAD_GATEWAY);
+    return null;
   }
 }
 
