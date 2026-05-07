@@ -6,7 +6,10 @@ name: service-template-e2e-test
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 — Postgres 16 with the `pgvector` extension preinstalled.
+    # Story 13.2 ships migration `0002-pgvector.ts` that runs `CREATE EXTENSION IF NOT EXISTS vector`;
+    # production homelab Postgres has the extension (used by MemU). The e2e image must match.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: test123
@@ -15,6 +18,11 @@ services:
       - 5433:5432 # E2E: 5433, Local: 5432
     volumes:
       - postgres_e2e_data:/var/lib/postgresql/data
+      # Init script — pre-creates the `jarvis` schema so the boilerplate's
+      # `synchronize: true` (e2e env) can place schema-qualified entities
+      # introduced in Story 13.2. Production uses migrations and creates the
+      # schema explicitly in `0001-init-jarvis.ts`.
+      - ./test/setup/postgres-init.sql:/docker-entrypoint-initdb.d/01-jarvis-schema.sql:ro
     security_opt:
       - no-new-privileges:true
     healthcheck:

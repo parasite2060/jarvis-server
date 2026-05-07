@@ -157,7 +157,8 @@ export class E2ETestSetup {
     const entities = this.dataSource.entityMetadatas;
     for (const entity of entities) {
       const repository = this.dataSource.getRepository(entity.name);
-      await repository.query(`TRUNCATE TABLE "${entity.tableName}" RESTART IDENTITY CASCADE`);
+      const qualifiedTable = entity.schema ? `"${entity.schema}"."${entity.tableName}"` : `"${entity.tableName}"`;
+      await repository.query(`TRUNCATE TABLE ${qualifiedTable} RESTART IDENTITY CASCADE`);
     }
 
     const collections = await this.mongoConnection.db.collections();
