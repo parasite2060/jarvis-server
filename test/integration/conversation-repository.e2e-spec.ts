@@ -155,4 +155,77 @@ describe('ConversationRepositoryImpl (integration)', () => {
       }),
     ).rejects.toThrow(/foreign key/i);
   });
+
+  // Story 13.3 / Q1.d — integration coverage for the corrected
+  // `getLastProcessedLine` semantic (MAX, not most-recent; filter > 0).
+
+  it('getLastProcessedLine returns the MAX last_processed_line, not the most-recent createdAt', async () => {
+    // Given two transcripts where the older one has higher progress.
+    const repo: Repository<Conversation> = dataSource.getRepository(TranscriptSchema);
+    const older = await target.insertTranscript({ sessionId: 'sess-int-6', rawContent: 'a', lastProcessedLine: 500 });
+    const newer = await target.insertTranscript({ sessionId: 'sess-int-6', rawContent: 'b', lastProcessedLine: 120 });
+    await repo.update({ id: older.id }, { createdAt: new Date(Date.now() - 5 * 60_000) });
+    await repo.update({ id: newer.id }, { createdAt: new Date(Date.now() - 10_000) });
+
+    // When asking for the position
+    const result = await target.getLastProcessedLine('sess-int-6');
+
+    // Then MAX wins (500), not the most-recent (120).
+    expect(result).toBe(500);
+  });
+
+  it('getLastProcessedLine ignores rows where last_processed_line = 0', async () => {
+    // Given one unset row and one set row
+    await target.insertTranscript({ sessionId: 'sess-int-7', rawContent: 'a', lastProcessedLine: 0 });
+    await target.insertTranscript({ sessionId: 'sess-int-7', rawContent: 'b', lastProcessedLine: 200 });
+
+    // When asking for the position
+    const result = await target.getLastProcessedLine('sess-int-7');
+
+    // Then the > 0 filter applies; 200 wins.
+    expect(result).toBe(200);
+  });
+
+  // Story 13.3 / Q1.a-c — integration coverage for the new methods.
+
+  it('findRecentBySessionAndSource narrows the dedup window by session and source', async () => {
+    // Given two transcripts in the same session with different sources, both fresh.
+    const stop = await target.insertTranscript({ sessionId: 'sess-int-8', rawContent: 'a', source: 'stop' });
+    await target.insertTranscript({ sessionId: 'sess-int-8', rawContent: 'b', source: 'compact' });
+
+    // When asking for the dedup-window match for source 'stop'
+    const result = await target.findRecentBySessionAndSource('sess-int-8', 'stop', 60_000);
+
+    // Then only the `stop` transcript is returned.
+    expect(result.map((r) => r.id)).toEqual([stop.id]);
+  });
+
+  it('countBySessionId returns the total transcript count for a session', async () => {
+    // Given three transcripts across two sessions
+    await target.insertTranscript({ sessionId: 'sess-int-9', rawContent: '1' });
+    await target.insertTranscript({ sessionId: 'sess-int-9', rawContent: '2' });
+    await target.insertTranscript({ sessionId: 'sess-int-9-other', rawContent: '3' });
+
+    // When counting
+    const result = await target.countBySessionId('sess-int-9');
+
+    // Then 2 is returned.
+    expect(result).toBe(2);
+  });
+
+  it('setStatus updates the status column on the targeted transcript only', async () => {
+    // Given two transcripts with `received` status
+    const a = await target.insertTranscript({ sessionId: 'sess-int-10', rawContent: 'a', status: 'received' });
+    const b = await target.insertTranscript({ sessionId: 'sess-int-10', rawContent: 'b', status: 'received' });
+
+    // When marking only `a` as queued
+    await target.setStatus(a.id, 'queued');
+
+    // Then `a.status = 'queued'` and `b.status = 'received'`.
+    const repo = dataSource.getRepository(TranscriptSchema);
+    const reloadedA = (await repo.findOneBy({ id: a.id })) as Conversation | null;
+    const reloadedB = (await repo.findOneBy({ id: b.id })) as Conversation | null;
+    expect(reloadedA?.status).toBe('queued');
+    expect(reloadedB?.status).toBe('received');
+  });
 });
