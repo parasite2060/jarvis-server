@@ -5,6 +5,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.activities.deep.align_memu import align_memu
+from app.activities.deep.commit_and_pr import commit_and_pr as deep_commit_and_pr
+from app.activities.deep.gather_inputs import gather_inputs
+from app.activities.deep.health_check import health_check
+from app.activities.deep.health_fix import health_fix
+from app.activities.deep.invalidate_cache import invalidate_cache as deep_invalidate_cache
+from app.activities.deep.phase1_light_sleep import phase1_light_sleep
+from app.activities.deep.phase2_rem_sleep import phase2_rem_sleep
+from app.activities.deep.phase3_deep_sleep import phase3_deep_sleep
+from app.activities.deep.score_candidates import score_candidates
+from app.activities.deep.write_files import write_files
 from app.activities.light.commit_and_pr import commit_and_pr
 from app.activities.light.invalidate_cache import invalidate_cache
 from app.activities.light.load_transcript import load_transcript
@@ -29,6 +40,7 @@ from app.temporal_client import (
 )
 from app.temporal_worker import build_temporal_worker
 from app.workflows.coordinator import DreamCoordinatorWorkflow
+from app.workflows.deep_dream_workflow import DeepDreamWorkflow
 from app.workflows.light_dream_workflow import LightDreamWorkflow
 
 log = get_logger("jarvis.app")
@@ -92,8 +104,9 @@ async def _start_temporal_worker(app: FastAPI) -> None:
     app.state.temporal_client = client
     worker = build_temporal_worker(
         client,
-        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow],
+        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow, DeepDreamWorkflow],
         activities=[
+            # Light dream activities (7)
             load_transcript,
             run_extraction,
             persist_session_log,
@@ -101,6 +114,18 @@ async def _start_temporal_worker(app: FastAPI) -> None:
             update_transcript_position,
             commit_and_pr,
             invalidate_cache,
+            # Deep dream activities (11)
+            gather_inputs,
+            phase1_light_sleep,
+            score_candidates,
+            phase2_rem_sleep,
+            phase3_deep_sleep,
+            health_check,
+            health_fix,
+            write_files,
+            deep_commit_and_pr,
+            align_memu,
+            deep_invalidate_cache,
         ],
     )
     app.state.temporal_worker = worker

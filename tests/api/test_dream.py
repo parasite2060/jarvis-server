@@ -1,17 +1,11 @@
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 API_KEY = "test-api-key"
 AUTH_HEADER = {"Authorization": f"Bearer {API_KEY}"}
-
-
-def _make_mock_arq() -> AsyncMock:
-    pool = AsyncMock()
-    pool.enqueue_job = AsyncMock(return_value=AsyncMock(job_id="test-job-id"))
-    return pool
 
 
 @pytest.fixture
@@ -26,7 +20,8 @@ async def dream_client(
     from app.main import create_app
 
     app = create_app()
-    mock_arq = _make_mock_arq()
+    # Keep ARQ pool mock for coexistence (not used by /dream route anymore)
+    mock_arq = AsyncMock()
     app.state.redis_pool = mock_arq
 
     async with AsyncClient(
@@ -40,90 +35,98 @@ async def dream_client(
 async def test_dream_no_body_still_works(
     dream_client: tuple[AsyncClient, AsyncMock],
 ) -> None:
-    client, mock_arq = dream_client
+    client, _ = dream_client
 
-    response = await client.post("/dream", headers=AUTH_HEADER)
+    with patch("app.api.routes.dream.signal_coordinator", new_callable=AsyncMock) as mock_signal:
+        response = await client.post("/dream", headers=AUTH_HEADER)
 
     assert response.status_code == 202
     assert response.json() == {"data": {"status": "queued"}, "status": "ok"}
-    mock_arq.enqueue_job.assert_awaited_once_with(
-        "deep_dream_task",
-        trigger="manual",
-        source_date_iso=None,
-    )
+    mock_signal.assert_awaited_once()
+    call_args = mock_signal.call_args
+    assert call_args[0][0] == "deep"
+    payload = call_args[0][1]
+    assert payload["trigger"] == "manual"
+    assert payload["source_date_iso"] is None
+    assert "target_date" in payload
 
 
 @pytest.mark.asyncio
 async def test_dream_with_source_date(
     dream_client: tuple[AsyncClient, AsyncMock],
 ) -> None:
-    client, mock_arq = dream_client
+    client, _ = dream_client
 
-    response = await client.post(
-        "/dream",
-        json={"source_date": "2026-04-20"},
-        headers=AUTH_HEADER,
-    )
+    with patch("app.api.routes.dream.signal_coordinator", new_callable=AsyncMock) as mock_signal:
+        response = await client.post(
+            "/dream",
+            json={"source_date": "2026-04-20"},
+            headers=AUTH_HEADER,
+        )
 
     assert response.status_code == 202
     assert response.json() == {"data": {"status": "queued"}, "status": "ok"}
-    mock_arq.enqueue_job.assert_awaited_once_with(
-        "deep_dream_task",
-        trigger="manual-backfill",
-        source_date_iso="2026-04-20",
-    )
+    mock_signal.assert_awaited_once()
+    call_args = mock_signal.call_args
+    assert call_args[0][0] == "deep"
+    payload = call_args[0][1]
+    assert payload["trigger"] == "manual-backfill"
+    assert payload["source_date_iso"] == "2026-04-20"
+    assert payload["target_date"] == "2026-04-20"
 
 
 @pytest.mark.asyncio
 async def test_dream_invalid_source_date(
     dream_client: tuple[AsyncClient, AsyncMock],
 ) -> None:
-    client, mock_arq = dream_client
+    client, _ = dream_client
 
-    response = await client.post(
-        "/dream",
-        json={"source_date": "not-a-date"},
-        headers=AUTH_HEADER,
-    )
+    with patch("app.api.routes.dream.signal_coordinator", new_callable=AsyncMock) as mock_signal:
+        response = await client.post(
+            "/dream",
+            json={"source_date": "not-a-date"},
+            headers=AUTH_HEADER,
+        )
 
     assert response.status_code == 422
-    mock_arq.enqueue_job.assert_not_awaited()
+    mock_signal.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_dream_empty_json_body(
     dream_client: tuple[AsyncClient, AsyncMock],
 ) -> None:
-    client, mock_arq = dream_client
+    client, _ = dream_client
 
-    response = await client.post("/dream", json={}, headers=AUTH_HEADER)
+    with patch("app.api.routes.dream.signal_coordinator", new_callable=AsyncMock) as mock_signal:
+        response = await client.post("/dream", json={}, headers=AUTH_HEADER)
 
     assert response.status_code == 202
-    mock_arq.enqueue_job.assert_awaited_once_with(
-        "deep_dream_task",
-        trigger="manual",
-        source_date_iso=None,
-    )
+    mock_signal.assert_awaited_once()
+    payload = mock_signal.call_args[0][1]
+    assert payload["trigger"] == "manual"
+    assert payload["source_date_iso"] is None
 
 
 @pytest.mark.asyncio
 async def test_dream_future_date_accepted(
     dream_client: tuple[AsyncClient, AsyncMock],
 ) -> None:
-    client, mock_arq = dream_client
+    client, _ = dream_client
 
-    response = await client.post(
-        "/dream",
-        json={"source_date": "2099-01-01"},
-        headers=AUTH_HEADER,
-    )
+    with patch("app.api.routes.dream.signal_coordinator", new_callable=AsyncMock) as mock_signal:
+        response = await client.post(
+            "/dream",
+            json={"source_date": "2099-01-01"},
+            headers=AUTH_HEADER,
+        )
 
     assert response.status_code == 202
-    mock_arq.enqueue_job.assert_awaited_once_with(
-        "deep_dream_task",
-        trigger="manual-backfill",
-        source_date_iso="2099-01-01",
-    )
+    mock_signal.assert_awaited_once()
+    payload = mock_signal.call_args[0][1]
+    assert payload["trigger"] == "manual-backfill"
+    assert payload["source_date_iso"] == "2099-01-01"
+    assert payload["target_date"] == "2099-01-01"
 
 
 @pytest.mark.asyncio
