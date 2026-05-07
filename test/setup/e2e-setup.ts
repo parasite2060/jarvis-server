@@ -21,6 +21,10 @@ import {
   DefaultValidateExceptionFilter,
   DefaultUnauthorizedExceptionFilter,
   HttpExceptionFilter,
+  VaultFileNotFoundExceptionFilter,
+  VaultPathTraversalExceptionFilter,
+  MemuErrorExceptionFilter,
+  MemuUnavailableExceptionFilter,
 } from '../../src/utils/filter/exception.filter';
 import { HttpRequestLoggingInterceptor } from '../../src/shared/logger/interceptors/http-request-logging.interceptor';
 import { KafkaRequestLoggingInterceptor } from '../../src/shared/logger/interceptors/kafka-request-logging.interceptor';
@@ -99,6 +103,10 @@ export class E2ETestSetup {
     this.app.useGlobalFilters(new DefaultInternalExceptionFilter(httpAdapter));
     this.app.useGlobalFilters(new DefaultUnauthorizedExceptionFilter(httpAdapter));
     this.app.useGlobalFilters(new HttpExceptionFilter(httpAdapter));
+    this.app.useGlobalFilters(new VaultFileNotFoundExceptionFilter(httpAdapter));
+    this.app.useGlobalFilters(new VaultPathTraversalExceptionFilter(httpAdapter));
+    this.app.useGlobalFilters(new MemuErrorExceptionFilter(httpAdapter));
+    this.app.useGlobalFilters(new MemuUnavailableExceptionFilter(httpAdapter));
 
     this.app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
 

@@ -101,6 +101,9 @@ export const configValidationSchema = Joi.object({
   // MemU
   MEMU_API_URL: Joi.string().uri().required(),
   MEMU_API_KEY: Joi.string().optional(),
+  // Defaults match Python `memu_client.py:64-65` (Story 13.4 / Q11).
+  MEMU_USER_ID: Joi.string().default('jarvis'),
+  MEMU_AGENT_ID: Joi.string().default('claude'),
 
   // Phase budget overrides — defaults match design/config-and-env.md §2.
   JARVIS_LIGHT_EXTRACTION_MAX_TOKENS: Joi.number().default(1_500_000),

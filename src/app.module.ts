@@ -17,6 +17,8 @@ import { BlogModule } from './modules/blog/blog.module';
 import { CommentModule } from './modules/comment/comment.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
+import { MemoryModule } from './modules/memory/memory.module';
+import { VaultModule } from './modules/vault/vault.module';
 import { RedisModule } from '@nestjs-redis/kit';
 
 // Shared (global) modules — Story 13.3 stubs
@@ -46,6 +48,8 @@ import { TemporalModule } from './shared/temporal/temporal.module';
     CommentModule,
     AuditLogModule,
     ConversationModule,
+    MemoryModule,
+    VaultModule,
   ],
   controllers: [],
   providers: [],
