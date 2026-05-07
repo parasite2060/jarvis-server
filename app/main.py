@@ -23,6 +23,11 @@ from app.activities.light.persist_session_log import persist_session_log
 from app.activities.light.run_extraction import run_extraction
 from app.activities.light.run_record import run_record
 from app.activities.light.update_transcript_position import update_transcript_position
+from app.activities.weekly.commit_and_pr import commit_and_pr as weekly_commit_and_pr
+from app.activities.weekly.gather_dailys import gather_dailys
+from app.activities.weekly.gather_indexes import gather_indexes
+from app.activities.weekly.run_weekly_review_agent import run_weekly_review_agent
+from app.activities.weekly.write_review_file import write_review_file
 from app.api.routes.config import router as config_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.dream import router as dream_router
@@ -42,6 +47,7 @@ from app.temporal_worker import build_temporal_worker
 from app.workflows.coordinator import DreamCoordinatorWorkflow
 from app.workflows.deep_dream_workflow import DeepDreamWorkflow
 from app.workflows.light_dream_workflow import LightDreamWorkflow
+from app.workflows.weekly_review_workflow import WeeklyReviewWorkflow
 
 log = get_logger("jarvis.app")
 
@@ -104,7 +110,7 @@ async def _start_temporal_worker(app: FastAPI) -> None:
     app.state.temporal_client = client
     worker = build_temporal_worker(
         client,
-        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow, DeepDreamWorkflow],
+        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow, DeepDreamWorkflow, WeeklyReviewWorkflow],
         activities=[
             # Light dream activities (7)
             load_transcript,
@@ -126,6 +132,12 @@ async def _start_temporal_worker(app: FastAPI) -> None:
             deep_commit_and_pr,
             align_memu,
             deep_invalidate_cache,
+            # Weekly review activities (5)
+            gather_dailys,
+            gather_indexes,
+            run_weekly_review_agent,
+            write_review_file,
+            weekly_commit_and_pr,
         ],
     )
     app.state.temporal_worker = worker
