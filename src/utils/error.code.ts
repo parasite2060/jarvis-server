@@ -46,4 +46,8 @@ export enum ErrorCode {
   MEMU_ERROR = -400086,
   VAULT_FILE_NOT_FOUND = -400087,
   VAULT_PATH_TRAVERSAL = -400088,
+
+  // Context Module (-400101 to -400120) — reserved block for future Context errors.
+  // GET /memory/context has no validation surface in 13.5; slot anchors the range.
+  CONTEXT_RESERVED = -400101,
 }

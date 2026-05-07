@@ -42,4 +42,13 @@ export class DreamRepositoryImpl implements IDreamRepository {
   async findById(id: number): Promise<Dream | null> {
     return await this.repository.findOne({ where: { id } });
   }
+
+  async findLatestCompletedDeep(): Promise<Dream | null> {
+    // Story 13.5 / Q9 — mirrors Python `context_assembly.py:42-49`. Latest deep
+    // dream by `completed_at` DESC; returns null when no rows match.
+    return await this.repository.findOne({
+      where: { type: 'deep', status: 'completed' },
+      order: { completedAt: 'DESC' },
+    });
+  }
 }

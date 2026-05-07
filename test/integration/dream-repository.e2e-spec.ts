@@ -168,4 +168,24 @@ describe('DreamRepositoryImpl (integration)', () => {
     // Then the repo returns null (not throws)
     expect(result).toBeNull();
   });
+
+  // Story 13.5 / Q9 — context module's health-summary integration relies on this.
+  it('findLatestCompletedDeep returns the latest completed deep dream by completed_at DESC', async () => {
+    // Given two completed deep dreams + one light dream + one queued deep dream
+    const repo: Repository<Dream> = dataSource.getRepository(DreamSchema);
+    const olderDeep = await target.createDream({ type: 'deep', trigger: 'cron' });
+    await target.updateDreamOutcome(olderDeep.id, 'wrote_files', 'completed');
+    const newerDeep = await target.createDream({ type: 'deep', trigger: 'cron' });
+    await target.updateDreamOutcome(newerDeep.id, 'wrote_files', 'completed');
+    await target.createDream({ type: 'light', trigger: 'plugin' }); // ignored — wrong type
+    await target.createDream({ type: 'deep', trigger: 'cron' }); // ignored — queued
+    await repo.update({ id: olderDeep.id }, { completedAt: new Date('2026-05-01T00:00:00.000Z') });
+    await repo.update({ id: newerDeep.id }, { completedAt: new Date('2026-05-08T00:00:00.000Z') });
+
+    // When asking for the latest completed deep dream
+    const result = await target.findLatestCompletedDeep();
+
+    // Then the repo returns the most recent completed deep dream
+    expect(result?.id).toBe(newerDeep.id);
+  });
 });
