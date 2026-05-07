@@ -63,7 +63,6 @@ async def conversation_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[tuple[AsyncClient, AsyncMock, AsyncMock], None]:
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
     app = create_app()
     mock_db = _make_mock_db()
@@ -130,7 +129,6 @@ class TestPostConversations:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         existing = MagicMock()
@@ -212,7 +210,6 @@ class TestPostConversations:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
         monkeypatch.setattr(
             "app.api.routes.conversations.signal_coordinator",
             AsyncMock(side_effect=ConnectionError("Temporal unreachable")),
@@ -250,7 +247,6 @@ class TestGetConversationPosition:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = AsyncMock()
@@ -284,7 +280,6 @@ class TestGetConversationPosition:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = AsyncMock()
@@ -318,7 +313,6 @@ class TestGetConversationPosition:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
 
@@ -341,7 +335,6 @@ class TestGetConversationPosition:
         """When multiple transcripts exist with different last_processed_line values,
         the endpoint returns the highest (ordered DESC, LIMIT 1)."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = AsyncMock()
@@ -377,7 +370,6 @@ class TestGetConversationPosition:
         """When transcript exists but last_processed_line=0, the query filters it out
         (WHERE last_processed_line > 0), so result is None -> returns 0."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = AsyncMock()
@@ -413,7 +405,6 @@ class TestPostConversationsSegmentFields:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db()
@@ -457,7 +448,6 @@ class TestPostConversationsSegmentFields:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db()
@@ -500,7 +490,6 @@ class TestPostConversationsSegmentFields:
         """Edge case: segment_end_line < segment_start_line should still be accepted
         (validation is not enforced at API level, values are stored as-is)."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db()
@@ -545,7 +534,6 @@ class TestPostConversationsSegmentFields:
     ) -> None:
         """Edge case: very large segment line numbers should be accepted."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db()
@@ -591,7 +579,6 @@ class TestConversationChainSupport:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db(chain_count=0)
@@ -630,7 +617,6 @@ class TestConversationChainSupport:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db(chain_count=1)
@@ -669,7 +655,6 @@ class TestConversationChainSupport:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         existing = MagicMock()
@@ -700,7 +685,6 @@ class TestConversationChainSupport:
     ) -> None:
         """Submit at 59s within dedup window should be detected as duplicate."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         existing = MagicMock()
@@ -731,7 +715,6 @@ class TestConversationChainSupport:
     ) -> None:
         """Submit at 61s outside dedup window should create a new transcript."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         app = create_app()
         mock_db = _make_mock_db(existing_transcript=None, chain_count=0)
@@ -765,7 +748,6 @@ class TestConversationChainSupport:
     ) -> None:
         """Submit 3 transcripts for same session_id, verify chain_count drives is_continuation."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         added_objects: list[object] = []
         transcript_id_seq = iter([10, 11, 12])
@@ -785,7 +767,7 @@ class TestConversationChainSupport:
             mock_db.refresh = fake_refresh
 
             async def override_db() -> AsyncGenerator[AsyncMock, None]:
-                yield mock_db
+                yield mock_db  # noqa: B023
 
             app.dependency_overrides[get_db_session] = override_db
             app.state.redis_pool = _make_mock_arq()
@@ -807,9 +789,8 @@ class TestConversationChainSupport:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Submit pre-compact then stop for same session, both should be stored (different sources)."""
+        """Pre-compact then stop for same session — both stored (different sources)."""
         monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-        monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
         added_objects: list[object] = []
 
@@ -828,7 +809,7 @@ class TestConversationChainSupport:
             mock_db.refresh = fake_refresh
 
             async def override_db() -> AsyncGenerator[AsyncMock, None]:
-                yield mock_db
+                yield mock_db  # noqa: B023
 
             app.dependency_overrides[get_db_session] = override_db
             app.state.redis_pool = _make_mock_arq()

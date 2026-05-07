@@ -29,7 +29,6 @@ async def trigger_dream(
     response: Response,
     body: Annotated[DreamRequest | None, Body()] = None,
 ) -> dict[str, object]:
-    # ARQ pool kept on app.state for coexistence until Story 12.7 removes ARQ
     source_date = body.source_date if body is not None else None
     trigger = "manual-backfill" if source_date else "manual"
     source_date_iso = source_date.isoformat() if source_date else None

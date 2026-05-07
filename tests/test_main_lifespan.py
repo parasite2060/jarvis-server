@@ -47,8 +47,6 @@ async def test_lifespan_temporal_worker_task_cancelled_on_shutdown(
     mock_worker.run = fake_worker_run
 
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
-    monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.temporal_client.Client.connect", AsyncMock(return_value=mock_client))
     monkeypatch.setattr("app.temporal_worker.Worker", lambda *a, **kw: mock_worker)
     # Inject a non-empty workflow list so the worker is actually created
@@ -82,8 +80,6 @@ async def test_lifespan_shutdown_raises_no_exceptions(
     mock_worker.run = fake_worker_run
 
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
-    monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.temporal_client.Client.connect", AsyncMock(return_value=mock_client))
     monkeypatch.setattr(
         "app.main.build_temporal_worker",
@@ -118,8 +114,6 @@ async def test_lifespan_worker_task_created_with_coordinator_workflow(
     mock_worker.run = fake_worker_run
 
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
-    monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.temporal_client.Client.connect", AsyncMock(return_value=mock_client))
     monkeypatch.setattr(
         "app.main.build_temporal_worker",

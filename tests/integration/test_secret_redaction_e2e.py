@@ -157,7 +157,6 @@ async def test_post_transcript_redacts_all_secrets_before_db_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
     app = create_app()
 
@@ -207,7 +206,6 @@ async def test_post_transcript_without_secrets_is_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
     app = create_app()
     arq = AsyncMock()

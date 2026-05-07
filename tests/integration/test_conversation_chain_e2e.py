@@ -79,7 +79,7 @@ class FakeSession:
         fake = self
         call_counter = {"n": 0}
 
-        async def _execute(stmt, *args, **kwargs):  # noqa: ANN001, ANN003, ANN002
+        async def _execute(stmt, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
             call_counter["n"] += 1
             r = MagicMock()
 
@@ -94,7 +94,8 @@ class FakeSession:
             idx = call_counter["n"]
             if idx % 2 == 1:
                 session_id = _extract_session_id_from_calls(stmt)
-                existing = fake._find_dedup(session_id, _extract_source_from_calls(stmt)) if dedup_active else None
+                source = _extract_source_from_calls(stmt)
+                existing = fake._find_dedup(session_id, source) if dedup_active else None
                 r.scalar_one_or_none.return_value = existing
                 return r
             else:
@@ -102,16 +103,16 @@ class FakeSession:
                 r.scalar.return_value = fake._chain_count(session_id)
                 return r
 
-        def _add(obj):  # noqa: ANN001
+        def _add(obj) -> None:  # noqa: ANN001
             obj.id = fake._next_id
             obj._dedup_active = dedup_active
             fake._next_id += 1
             fake.transcripts.append(obj)
 
-        async def _refresh(obj):  # noqa: ANN001
+        async def _refresh(obj) -> None:  # noqa: ANN001
             pass
 
-        async def _commit():
+        async def _commit() -> None:
             pass
 
         session.execute = AsyncMock(side_effect=_execute)
@@ -148,7 +149,8 @@ class StatefulFakeSession:
 
     def _find_recent_dedup(self, session_id: str, source: str) -> MagicMock | None:
         for t in reversed(self.transcripts):
-            if t.session_id == session_id and t.source == source and getattr(t, "_dedup_active", True):
+            dedup_ok = getattr(t, "_dedup_active", True)
+            if t.session_id == session_id and t.source == source and dedup_ok:
                 return t
         return None
 
@@ -194,7 +196,7 @@ class StatefulFakeSession:
         call_idx = {"n": 0}
         state = self
 
-        async def _execute(stmt, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        async def _execute(stmt, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
             call_idx["n"] += 1
             r = MagicMock()
 
@@ -213,16 +215,16 @@ class StatefulFakeSession:
                 r.scalar.return_value = state._chain_count(session_id)
                 return r
 
-        def _add(obj):  # noqa: ANN001
+        def _add(obj) -> None:  # noqa: ANN001
             obj.id = state._next_id
             obj._dedup_active = True
             state._next_id += 1
             state.transcripts.append(obj)
 
-        async def _refresh(obj):  # noqa: ANN001
+        async def _refresh(obj) -> None:  # noqa: ANN001
             pass
 
-        async def _commit():
+        async def _commit() -> None:
             pass
 
         mock.execute = AsyncMock(side_effect=_execute)
@@ -264,7 +266,6 @@ async def _make_client_and_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[AsyncClient, StatefulFakeSession, AsyncMock, "FastAPI"]:  # type: ignore[name-defined]  # noqa: F821
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
 
     signal_mock = _make_signal_mock()
     monkeypatch.setattr(
