@@ -1,30 +1,13 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ExecutionContext } from '@nestjs/common';
-import { isSilentResponseBody } from '../decorators/silent-response-body.decorators';
 import { Reflector } from '@nestjs/core';
+import { isSilentResponseBody } from '../decorators/silent.decorator';
 
-export function transformHttpResponseBody(reflector: Reflector, context: ExecutionContext, body: any): any {
-  return transformSilentResponseBody(reflector, context, body);
+const SILENT_PLACEHOLDER = '(silent)';
+
+export function transformResponseBody(reflector: Reflector, context: ExecutionContext, body: unknown): unknown {
+  return isSilentResponseBody(reflector, context) ? SILENT_PLACEHOLDER : body;
 }
 
-export function transformKafkaResponseBody(reflector: Reflector, context: ExecutionContext, body: any): any {
-  return transformSilentResponseBody(reflector, context, body);
-}
-
-function transformSilentResponseBody(reflector: Reflector, context: ExecutionContext, body: any): any {
-  const isSilentBody = isSilentResponseBody(reflector, context);
-  if (!isSilentBody) {
-    return body;
-  }
-
-  return '(silent)';
-}
-
-export function transformGrpcResponseBody(reflector: Reflector, context: ExecutionContext, body: any): any {
-  const isSilentBody = isSilentResponseBody(reflector, context);
-  if (!isSilentBody) {
-    return body;
-  }
-
-  return '(silent)';
-}
+export const transformHttpResponseBody = transformResponseBody;
+export const transformKafkaResponseBody = transformResponseBody;
+export const transformGrpcResponseBody = transformResponseBody;

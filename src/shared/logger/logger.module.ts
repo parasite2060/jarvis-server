@@ -1,94 +1,56 @@
 import { DynamicModule, ExecutionContext, Module } from '@nestjs/common';
 import { ClsModule, ClsService } from 'nestjs-cls';
+import { randomId } from './internal/random-id';
+import { detectRequestType, RequestType } from './internal/transport-detector';
+import { CUSTOM_LOGGER_OPTION, LoggerModuleOptions } from './model/logger-options';
 import { CustomLoggerService } from './services/custom-logger.service';
-import { CUSTOM_LOGGER_OPTION, LoggerModuleOptions } from './model/logger.option';
-import { KafkaContext, Transport } from '@nestjs/microservices';
-import { randomBytes } from 'crypto';
-import { TRANSPORT_METADATA } from '@nestjs/microservices/constants';
 
 @Module({})
 export class LoggerModule {
   static forRoot(options?: LoggerModuleOptions): DynamicModule {
-    options = { ...new LoggerModuleOptions(), ...options };
+    const merged = { ...new LoggerModuleOptions(), ...options };
 
     return {
       module: LoggerModule,
       imports: [
         ClsModule.forRoot({
-          global: options.global,
+          global: merged.global,
           interceptor: {
             generateId: true,
-            idGenerator: (ctx) => idGenerator(ctx, options),
-            setup: (cls, context) => setup(cls, context, options),
+            idGenerator: (ctx) => generateId(ctx, merged),
+            setup: (cls, ctx) => runSetup(cls, ctx, merged),
             mount: true,
           },
         }),
       ],
-      providers: [
-        {
-          provide: CUSTOM_LOGGER_OPTION,
-          useValue: options,
-        },
-        CustomLoggerService,
-      ],
+      providers: [{ provide: CUSTOM_LOGGER_OPTION, useValue: merged }, CustomLoggerService],
       exports: [CustomLoggerService, ClsModule],
-      global: options.global,
+      global: merged.global,
     };
   }
 }
 
-function setup(cls: ClsService, context: ExecutionContext, options: LoggerModuleOptions) {
+function runSetup(cls: ClsService, context: ExecutionContext, options: LoggerModuleOptions): void {
+  const requestType = detectRequestType(context);
+  cls.set('requestType', requestType);
+
   const args = context.getArgs();
-  const transport = getCachedTransport(context);
+  const setupByType: Record<RequestType, () => void> = {
+    KAFKA: () => options.kafka!.setup(cls, args[1], args[0], options),
+    GRPC: () => options.grpc!.setup(cls, args[1], args[0], options),
+    HTTP: () => options.http!.setup(cls, args[0], args[1], options),
+  };
 
-  if (args.length >= 2 && args[1] instanceof KafkaContext) {
-    cls.set('requestType', 'KAFKA');
-    options.kafka!.setup(cls, args[1], args[0], options);
-  } else if (transport === Transport.GRPC) {
-    cls.set('requestType', 'GRPC');
-    options.gprc!.setup(cls, args[1], args[0], options);
-  } else {
-    cls.set('requestType', 'HTTP');
-    options.http!.setup(cls, args[0], args[1], options);
-  }
+  setupByType[requestType]();
 }
 
-function idGenerator(context: ExecutionContext, options: LoggerModuleOptions): string {
+function generateId(context: ExecutionContext, options: LoggerModuleOptions): string {
+  const requestType = detectRequestType(context);
   const args = context.getArgs();
-  if (args.length >= 2 && args[1] instanceof KafkaContext) {
-    return options.kafka!.idGenerator(args[1], args[0]);
-  }
 
-  const transport = getCachedTransport(context);
-  if (transport === Transport.GRPC) {
-    return options.gprc!.idGenerator(args[1], args[0]);
-  }
+  if (requestType === 'KAFKA') return options.kafka!.idGenerator(args[1], args[0]);
+  if (requestType === 'GRPC') return options.grpc!.idGenerator(args[1], args[0]);
+  if (args[0]?.url) return (args[0]['id'] = options.http!.idGenerator(args[0], args[1]));
 
-  if (args[0].url) {
-    return (args[0]['id'] = options.http!.idGenerator(args[0], args[1]));
-  }
-
-  return getRandomString();
-}
-
-function getRandomString(): string {
-  return randomBytes(8).toString('hex');
-}
-
-const cachedTransports = new WeakMap();
-
-function getCachedTransport(context: ExecutionContext): Transport {
-  const handler = context.getHandler();
-  const cachedTransport = cachedTransports.get(handler);
-  if (cachedTransport) {
-    return cachedTransport;
-  }
-
-  const transport = getTransport(context);
-  cachedTransports.set(handler, transport);
-  return transport;
-}
-
-function getTransport(context: ExecutionContext): Transport {
-  return Reflect.getMetadata(TRANSPORT_METADATA, context.getHandler()) as Transport;
+  return randomId();
 }

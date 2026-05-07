@@ -52,6 +52,7 @@ export const configValidationSchema = Joi.object({
   DATABASE_SCHEMA: Joi.string().required(),
   DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
   DATABASE_POOL_SIZE: Joi.number().default(10),
+  DB_POOL_STATS: Joi.boolean().default(false),
 
   // Kafka
   KAFKA_DEFAULT_BROKER_URL: Joi.string().required(),

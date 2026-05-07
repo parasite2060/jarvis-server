@@ -1,56 +1,44 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { Metadata } from '@grpc/grpc-js';
 import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { KafkaMessage } from 'kafkajs';
+import { isSilentRequestBody } from '../decorators/silent.decorator';
 import { serializeRequest } from './serializers.utils';
-import { isSilentRequestBody } from '../decorators/silent-request-body.decorators';
-import { Reflector } from '@nestjs/core';
-import { Metadata } from '@grpc/grpc-js';
 
-export function transformHttpRequest(reflector: Reflector, context: ExecutionContext, request: Request): any {
-  const isSilentBody = isSilentRequestBody(reflector, context);
-  const serializedRequest = serializeRequest(request);
+const SILENT_PLACEHOLDER = '(silent)';
 
-  if (isSilentBody && serializedRequest['body']) {
-    serializedRequest['body'] = '(silent)';
-  }
-
-  return serializedRequest;
+export interface GrpcPath {
+  service: string;
+  method: string;
 }
 
-export function transformKafkaRequest(reflector: Reflector, context: ExecutionContext, message: KafkaMessage): any {
-  const isSilentBody = isSilentRequestBody(reflector, context);
-  const serializedMessage = Object.assign({}, message);
-
-  if (isSilentBody && serializedMessage.value) {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    serializedMessage.value = '(silent)';
+export function transformHttpRequest(reflector: Reflector, context: ExecutionContext, request: Request): Record<string, any> {
+  const serialized = serializeRequest(request);
+  if (isSilentRequestBody(reflector, context) && serialized['body']) {
+    serialized['body'] = SILENT_PLACEHOLDER;
   }
-
-  return serializedMessage;
-}
-
-export function transformGrpcRequest(reflector: Reflector, context: ExecutionContext, path: GrPcPath): any {
-  const data = context.switchToRpc().getData();
-  const metadata = context.switchToRpc().getContext() as Metadata;
-  const isSilentBody = isSilentRequestBody(reflector, context);
-
-  const serialized = {
-    metadata: metadata.getMap(),
-    data: data,
-    service: path.service,
-    method: path.method,
-  };
-
-  if (isSilentBody && serialized['data']) {
-    serialized['data'] = '(silent)';
-  }
-
   return serialized;
 }
 
-export type GrPcPath = {
-  service: string;
-  method: string;
-};
+export function transformKafkaRequest(reflector: Reflector, context: ExecutionContext, message: KafkaMessage): Record<string, any> {
+  const cloned: Record<string, any> = { ...message };
+  if (isSilentRequestBody(reflector, context) && cloned['value']) {
+    cloned['value'] = SILENT_PLACEHOLDER;
+  }
+  return cloned;
+}
+
+export function transformGrpcRequest(reflector: Reflector, context: ExecutionContext, path: GrpcPath): Record<string, any> {
+  const data = context.switchToRpc().getData();
+  const metadata = context.switchToRpc().getContext() as Metadata;
+  const isSilent = isSilentRequestBody(reflector, context);
+
+  return {
+    metadata: metadata.getMap(),
+    data: isSilent && data ? SILENT_PLACEHOLDER : data,
+    service: path.service,
+    method: path.method,
+  };
+}

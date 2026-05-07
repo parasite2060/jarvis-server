@@ -58,6 +58,7 @@ function replaceMessageWithExposeName(error: ValidationError, message: string): 
 }
 
 function getExposeName(target: any, propertyKey: string): string {
+  if (!target) return propertyKey;
   const metadata = defaultMetadataStorage.findExposeMetadata(target.constructor, propertyKey);
   return metadata?.options?.name || propertyKey;
 }

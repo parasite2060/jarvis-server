@@ -25,7 +25,7 @@
     "test:e2e": "dotenv -e .env.e2e -- jest --config ./test/jest-e2e.json --runInBand",
     "test:e2e:watch": "dotenv -e .env.e2e -- jest --config ./test/jest-e2e.json --watch",
     "test:e2e:cov": "dotenv -e .env.e2e -- jest --config ./test/jest-e2e.json --coverage",
-    "test:e2e:docker": "docker compose -f docker-compose.e2e.yml up -d --wait && bun run test:e2e; docker compose -f docker-compose.e2e.yml down -v",
+    "test:e2e:docker": "docker compose -f docker-compose.e2e.yml up -d --wait && (bun run test:e2e; EXIT=$?; docker compose -f docker-compose.e2e.yml down -v; exit $EXIT)",
     "e2e:infra:up": "docker compose -f docker-compose.e2e.yml up -d --wait",
     "e2e:infra:down": "docker compose -f docker-compose.e2e.yml down -v",
     "e2e:logs": "tail -f logs/e2e-test.log",

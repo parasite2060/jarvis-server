@@ -1,14 +1,16 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AppConfigService } from 'src/shared/config/config.service';
-import { DataSource } from 'typeorm';
+import { configValidationSchema } from 'src/shared/config/config.schema';
+import { DataSource, DataSourceOptions } from 'typeorm';
 import DatabaseLogger from './utils/database.logger';
 import { DBConnections } from 'src/shared/postgres/utils/constaint';
 import { CacheType } from 'src/shared/postgres/cache/cache-type.enum';
 import { MemoryCacheProvider } from 'src/shared/postgres/cache/memory-cache.provider';
 import { MultiCacheProvider } from 'src/shared/postgres/cache/multi-cache.provider';
 import { QueryResultCache } from 'typeorm/cache/QueryResultCache';
-import { RedisQueryResultCache } from 'typeorm/cache/RedisQueryResultCache';
+import { RedisCacheProvider } from 'src/shared/postgres/cache/redis-cache.provider';
 
 const internalLogger = new Logger('PG-INTERNAL');
 
@@ -46,11 +48,16 @@ export function optionsFactory(configs: AppConfigService): TypeOrmModuleOptions 
     },
     cache: {
       ignoreErrors: true,
-      provider(connection: DataSource): QueryResultCache {
+      provider(_connection: DataSource): QueryResultCache {
         return new MultiCacheProvider([
           {
             type: CacheType.REDIS,
-            provider: new RedisQueryResultCache(connection, 'redis'),
+            provider: new RedisCacheProvider({
+              host: configs.redisHost,
+              port: configs.redisPort,
+              password: configs.redisPass || undefined,
+              db: configs.redisDb,
+            }),
           },
           {
             type: CacheType.INMEMORY,
@@ -58,37 +65,23 @@ export function optionsFactory(configs: AppConfigService): TypeOrmModuleOptions 
           },
         ]);
       },
-      options: {
-        host: configs.redisHost,
-        port: configs.redisPort,
-        username: 'default',
-        password: configs.redisPass,
-        db: configs.redisDb,
-      },
     },
   };
 }
 
-// Manual load config when run from the cli
-if (!process.env['DATABASE_HOST'] && (!process.env['NODE_ENV'] || process.env['NODE_ENV'] === 'local' || process.env['NODE_ENV'] === 'test')) {
-  // eslint-disable-next-line
-  require('dotenv').config();
-}
-
-// For cli migration
-export const AppDataSource = new DataSource({
-  name: DBConnections.INTERNAL,
-  type: 'postgres',
-  host: process.env['DATABASE_HOST'],
-  port: parseInt(process.env['DATABASE_PORT'] || '5432'),
-  username: process.env['DATABASE_USER'],
-  password: process.env['DATABASE_PASSWORD'],
-  database: process.env['DATABASE_NAME'],
-  schema: process.env['DATABASE_SCHEMA'],
-  entities: [__dirname + '/schema/*.schema.ts'],
-  synchronize: JSON.parse(process.env['DATABASE_SYNCHRONIZE'] || 'false'),
-  logger: new DatabaseLogger(),
-  migrationsRun: false,
-  migrationsTableName: 'migrations',
-  migrations: [__dirname + '/migration/*{.ts,.js}'],
+// For cli migration — validate env via the same joi schema the app uses,
+// then build AppConfigService manually (no DI container available here).
+const { value: validatedEnv, error: configError } = configValidationSchema.validate(process.env, {
+  allowUnknown: true,
+  stripUnknown: false,
 });
+if (configError) {
+  throw new Error(`Config validation error: ${configError.message}`);
+}
+const cliConfig = new AppConfigService(new ConfigService(validatedEnv));
+
+export const AppDataSource = new DataSource({
+  ...optionsFactory(cliConfig),
+  migrationsRun: false,
+  entities: [__dirname + '/schema/*.schema.ts'],
+} as DataSourceOptions);

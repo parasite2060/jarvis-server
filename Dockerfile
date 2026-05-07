@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM dhi.io/bun:1 AS dependencies
+FROM oven/bun:1-alpine AS dependencies
 
 WORKDIR /usr/src/app
 
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 
 # ==========================================
 
-FROM dhi.io/bun:1 AS build
+FROM oven/bun:1-alpine AS build
 
 WORKDIR /usr/src/app
 
@@ -22,7 +22,7 @@ RUN bun run build
 
 # ==========================================
 
-FROM dhi.io/bun:1 AS production-deps
+FROM oven/bun:1-alpine AS production-deps
 
 WORKDIR /usr/src/app
 
@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 
 # ==========================================
 
-FROM dhi.io/bun:1 AS production
+FROM oven/bun:1-alpine AS production
 
 WORKDIR /usr/src/app
 

@@ -191,7 +191,9 @@ jobs:
       - name: Verify build outputs
         run: |
           test -f dist/main.js && echo "✓ dist/main.js"
-          test -d dist/src && echo "✓ dist/src"
+          test -f dist/app.module.js && echo "✓ dist/app.module.js"
+          test -d dist/modules && echo "✓ dist/modules"
+          test -d dist/shared && echo "✓ dist/shared"
 
   # ─────────────────────────────────────────────────────────────
   # Job 5: Docker Image Scan — depends on build
@@ -248,9 +250,6 @@ jobs:
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
 
-      - name: Create env file
-        run: cp .env.example .env.e2e
-
       - name: Start E2E infrastructure
         timeout-minutes: 5
         run: docker compose -f docker-compose.e2e.yml up -d --wait --wait-timeout 120
@@ -270,7 +269,7 @@ jobs:
           docker compose -f docker-compose.e2e.yml exec -T redis redis-cli ping
 
       - name: Run database migrations
-        run: bun run migration:run
+        run: bun run migration:run --env .env.e2e
 
       - name: Run E2E tests
         timeout-minutes: 20

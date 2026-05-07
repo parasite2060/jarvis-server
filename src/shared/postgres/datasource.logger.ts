@@ -6,7 +6,7 @@ import { DBConnections } from './utils/constaint';
 
 @Injectable()
 export class DataSourceLogger implements OnModuleInit, OnModuleDestroy {
-  private internalTimer!: NodeJS.Timeout;
+  private internalTimer?: NodeJS.Timeout;
 
   constructor(
     @InjectDataSource(DBConnections.INTERNAL)
@@ -14,6 +14,8 @@ export class DataSourceLogger implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env['DB_POOL_STATS'] !== 'true') return;
+
     const internalLogger = new Logger('PG-INTERNAL');
     this.internalTimer = setInterval(() => {
       const pool = (this.internalDataSource.driver as any).master;
@@ -23,6 +25,7 @@ export class DataSourceLogger implements OnModuleInit, OnModuleDestroy {
         }, Tasks: ${pool._pendingQueue.length}]`,
       );
     }, 30000);
+    this.internalTimer.unref();
   }
 
   onModuleDestroy() {
