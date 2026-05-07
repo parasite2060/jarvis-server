@@ -39,9 +39,11 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not e2e_temporal'"
 markers = [
     "integration: marks tests that require a real LLM (skip by default)",
     "llm_dependent: marks tests that exercise real LLM behaviour; opt-in, non-deterministic, run manually with a majority-pass expectation",
+    "e2e_temporal: end-to-end tests against Docker Temporal (requires Docker; excluded by default)",
 ]
 
 [tool.mypy]
