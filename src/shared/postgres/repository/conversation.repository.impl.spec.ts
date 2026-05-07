@@ -104,7 +104,11 @@ describe('ConversationRepositoryImpl', () => {
   });
 
   describe('getLastProcessedLine', () => {
-    it('should return 0 when no transcripts exist for the session', async () => {
+    // Story 13.3 / Q1.d — drift fix. Python returns the MAX `last_processed_line`
+    // for the session, filtering out rows where the value is `0`. Earlier
+    // ordering by `created_at` was incorrect.
+
+    it('should return 0 when no transcripts exist for the session (empty fallback)', async () => {
       // Act
       const result = await target.getLastProcessedLine('missing');
 
@@ -112,24 +116,51 @@ describe('ConversationRepositoryImpl', () => {
       expect(result).toBe(0);
     });
 
-    it('should return the lastProcessedLine of the most recent transcript', async () => {
-      // Arrange
-      await target.insertTranscript({
+    it('should return the MAX last_processed_line, not the most recent createdAt', async () => {
+      // Arrange — newer transcript has SMALLER last_processed_line; MAX must win.
+      const older = await target.insertTranscript({
         sessionId: 'sess-3',
-        rawContent: 'older',
-        lastProcessedLine: 50,
+        rawContent: 'older with high progress',
+        lastProcessedLine: 500,
       });
-      await target.insertTranscript({
+      const newer = await target.insertTranscript({
         sessionId: 'sess-3',
-        rawContent: 'newer',
+        rawContent: 'newer with lower progress',
         lastProcessedLine: 120,
       });
+      // Force the newer row to look more recently created than the older one.
+      await dataSource.getRepository(PgMemTranscriptSchema).update({ id: older.id }, { createdAt: new Date(Date.now() - 5 * 60_000) });
+      await dataSource.getRepository(PgMemTranscriptSchema).update({ id: newer.id }, { createdAt: new Date(Date.now() - 10_000) });
 
       // Act
       const result = await target.getLastProcessedLine('sess-3');
 
+      // Assert — MAX wins (500), not most-recently-created (120).
+      expect(result).toBe(500);
+    });
+
+    it('should ignore rows where last_processed_line = 0', async () => {
+      // Arrange
+      await target.insertTranscript({ sessionId: 'sess-3b', rawContent: 'unset', lastProcessedLine: 0 });
+      await target.insertTranscript({ sessionId: 'sess-3b', rawContent: 'set', lastProcessedLine: 100 });
+
+      // Act
+      const result = await target.getLastProcessedLine('sess-3b');
+
+      // Assert — 100 wins; the `0` row is filtered.
+      expect(result).toBe(100);
+    });
+
+    it('should return 0 when every transcript in the session has last_processed_line = 0', async () => {
+      // Arrange
+      await target.insertTranscript({ sessionId: 'sess-3c', rawContent: 'a', lastProcessedLine: 0 });
+      await target.insertTranscript({ sessionId: 'sess-3c', rawContent: 'b', lastProcessedLine: 0 });
+
+      // Act
+      const result = await target.getLastProcessedLine('sess-3c');
+
       // Assert
-      expect(result).toBe(120);
+      expect(result).toBe(0);
     });
   });
 
@@ -164,6 +195,66 @@ describe('ConversationRepositoryImpl', () => {
       // Assert
       expect(result).toHaveLength(1);
       expect(result[0]!.rawContent).toBe('fresh');
+    });
+  });
+
+  // Story 13.3 / Q1.a-c — new repository methods.
+
+  describe('findRecentBySessionAndSource', () => {
+    it('should narrow the dedup window by both sessionId and source', async () => {
+      // Arrange — two transcripts in the same session, different sources, both fresh.
+      const now = Date.now();
+      const stop = await target.insertTranscript({ sessionId: 'sess-fr', rawContent: 'a', source: 'stop' });
+      const compact = await target.insertTranscript({ sessionId: 'sess-fr', rawContent: 'b', source: 'compact' });
+      await dataSource.getRepository(PgMemTranscriptSchema).update({ id: stop.id }, { createdAt: new Date(now - 10_000) });
+      await dataSource.getRepository(PgMemTranscriptSchema).update({ id: compact.id }, { createdAt: new Date(now - 5_000) });
+
+      // Act
+      const result = await target.findRecentBySessionAndSource('sess-fr', 'stop', 60_000);
+
+      // Assert — only the `stop`-sourced transcript matches.
+      expect(result).toHaveLength(1);
+      expect(result[0]!.id).toBe(stop.id);
+    });
+  });
+
+  describe('countBySessionId', () => {
+    it('should return the total count of transcripts for a session, ignoring time window', async () => {
+      // Arrange
+      await target.insertTranscript({ sessionId: 'sess-cnt', rawContent: '1' });
+      await target.insertTranscript({ sessionId: 'sess-cnt', rawContent: '2' });
+      await target.insertTranscript({ sessionId: 'sess-other', rawContent: '3' });
+
+      // Act
+      const result = await target.countBySessionId('sess-cnt');
+
+      // Assert
+      expect(result).toBe(2);
+    });
+
+    it('should return 0 for an unknown session', async () => {
+      // Act
+      const result = await target.countBySessionId('missing');
+
+      // Assert
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('setStatus', () => {
+    it('should update the status column on the matching transcript only', async () => {
+      // Arrange
+      const a = await target.insertTranscript({ sessionId: 'sess-st', rawContent: 'a', status: 'received' });
+      const b = await target.insertTranscript({ sessionId: 'sess-st', rawContent: 'b', status: 'received' });
+
+      // Act
+      await target.setStatus(a.id, 'queued');
+
+      // Assert
+      const reloadedA = await dataSource.getRepository(PgMemTranscriptSchema).findOneBy({ id: a.id });
+      const reloadedB = await dataSource.getRepository(PgMemTranscriptSchema).findOneBy({ id: b.id });
+      expect((reloadedA as Conversation | null)?.status).toBe('queued');
+      expect((reloadedB as Conversation | null)?.status).toBe('received');
     });
   });
 });

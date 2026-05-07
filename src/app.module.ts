@@ -16,7 +16,12 @@ import { AppConfigService } from './shared/config/config.service';
 import { BlogModule } from './modules/blog/blog.module';
 import { CommentModule } from './modules/comment/comment.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { ConversationModule } from './modules/conversation/conversation.module';
 import { RedisModule } from '@nestjs-redis/kit';
+
+// Shared (global) modules — Story 13.3 stubs
+import { SecretRedactionModule } from './shared/secret-redaction/secret-redaction.module';
+import { TemporalModule } from './shared/temporal/temporal.module';
 
 @Module({
   imports: [
@@ -33,10 +38,14 @@ import { RedisModule } from '@nestjs-redis/kit';
     HealthModule,
     ApiModule,
     EventModule,
+    // Shared globals (Story 13.3 stubs — 13.8 / 13.15 retrofit)
+    SecretRedactionModule,
+    TemporalModule,
     // Business modules
     BlogModule,
     CommentModule,
     AuditLogModule,
+    ConversationModule,
   ],
   controllers: [],
   providers: [],
