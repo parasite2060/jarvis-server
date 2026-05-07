@@ -10,6 +10,7 @@ from app.api.deps import get_db_session, verify_api_key
 from app.core.logging import get_logger
 from app.models.tables import DreamPhase
 from app.services.dream_telemetry import format_conversation
+from app.temporal_client import signal_coordinator
 
 log = get_logger("jarvis.api.dream")
 
@@ -28,15 +29,22 @@ async def trigger_dream(
     response: Response,
     body: Annotated[DreamRequest | None, Body()] = None,
 ) -> dict[str, object]:
-    pool = request.app.state.redis_pool
+    # ARQ pool kept on app.state for coexistence until Story 12.7 removes ARQ
     source_date = body.source_date if body is not None else None
     trigger = "manual-backfill" if source_date else "manual"
     source_date_iso = source_date.isoformat() if source_date else None
 
-    await pool.enqueue_job(
-        "deep_dream_task",
-        trigger=trigger,
-        source_date_iso=source_date_iso,
+    # Compute target_date here (FastAPI request context; date.today() is fine here)
+    target_date = source_date if source_date is not None else date.today()
+    target_date_iso = target_date.isoformat()
+
+    await signal_coordinator(
+        "deep",
+        {
+            "trigger": trigger,
+            "source_date_iso": source_date_iso,
+            "target_date": target_date_iso,
+        },
     )
 
     if source_date_iso:

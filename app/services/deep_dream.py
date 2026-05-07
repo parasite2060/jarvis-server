@@ -229,8 +229,22 @@ def _extract_memory_entries(memory_md_content: str) -> list[dict[str, str]]:
 async def align_memu_with_memory(
     memory_md_content: str,
     source_date: date,
+    idempotency_key: str | None = None,
 ) -> dict[str, int]:
-    log.info("deep_dream.memu_align.started", source_date=source_date.isoformat())
+    log.info(
+        "deep_dream.memu_align.started",
+        source_date=source_date.isoformat(),
+        idempotency_key=idempotency_key,
+    )
+
+    # Idempotency: skip if this key was already processed
+    if idempotency_key is not None and await _check_idempotency_log(idempotency_key):
+        log.info(
+            "deep_dream.memu_align.skipped",
+            reason="idempotency_key_already_processed",
+            idempotency_key=idempotency_key,
+        )
+        return {"items_synced": 0, "errors": 0}
 
     entries = _extract_memory_entries(memory_md_content)
     if not entries:
@@ -269,7 +283,35 @@ async def align_memu_with_memory(
         total=len(entries),
     )
 
+    # Record the idempotency key after successful processing
+    if idempotency_key is not None:
+        await _write_idempotency_log(idempotency_key)
+
     return {"items_synced": items_synced, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Idempotency log for align_memu (file-based, lightweight)
+# ---------------------------------------------------------------------------
+
+_IDEMPOTENCY_LOG_PATH = ".backups/memu_align_idempotency.log"
+
+
+async def _check_idempotency_log(key: str) -> bool:
+    """Return True if this key was already processed (i.e., skip the call)."""
+    content = await read_vault_file(_IDEMPOTENCY_LOG_PATH)
+    if not content:
+        return False
+    return key in content.splitlines()
+
+
+async def _write_idempotency_log(key: str) -> None:
+    """Append key to the idempotency log."""
+    content = await read_vault_file(_IDEMPOTENCY_LOG_PATH) or ""
+    lines = content.splitlines()
+    if key not in lines:
+        lines.append(key)
+        await write_vault_file(_IDEMPOTENCY_LOG_PATH, "\n".join(lines) + "\n")
 
 
 # ---------------------------------------------------------------------------
