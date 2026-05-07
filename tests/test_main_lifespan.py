@@ -57,6 +57,7 @@ async def test_lifespan_temporal_worker_task_cancelled_on_shutdown(
         lambda client, **kw: mock_worker,
     )
     monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
+    monkeypatch.setattr("app.main.register_schedules", AsyncMock())
 
     from app.main import create_app
 
@@ -89,6 +90,7 @@ async def test_lifespan_shutdown_raises_no_exceptions(
         lambda client, **kw: mock_worker,
     )
     monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
+    monkeypatch.setattr("app.main.register_schedules", AsyncMock())
 
     from app.main import create_app
 
@@ -124,6 +126,7 @@ async def test_lifespan_worker_task_created_with_coordinator_workflow(
         lambda client, **kw: mock_worker,
     )
     monkeypatch.setattr("app.main.ensure_coordinator_running", AsyncMock())
+    monkeypatch.setattr("app.main.register_schedules", AsyncMock())
 
     from app.main import create_app
 

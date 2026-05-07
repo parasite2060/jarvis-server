@@ -103,7 +103,7 @@ class DreamScheduler:
             try:
                 await asyncio.wait_for(self._wake_event.wait(), timeout=sleep_seconds)
                 log.info("dream_scheduler.woke_early", reason="config_changed")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def notify_config_changed(self) -> None:

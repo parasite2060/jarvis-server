@@ -43,10 +43,12 @@ from app.temporal_client import (
     ensure_coordinator_running,
     get_temporal_client,
 )
+from app.temporal_schedules import register_schedules
 from app.temporal_worker import build_temporal_worker
 from app.workflows.coordinator import DreamCoordinatorWorkflow
 from app.workflows.deep_dream_workflow import DeepDreamWorkflow
 from app.workflows.light_dream_workflow import LightDreamWorkflow
+from app.workflows.schedule_relay import ScheduleSignalRelayWorkflow
 from app.workflows.weekly_review_workflow import WeeklyReviewWorkflow
 
 log = get_logger("jarvis.app")
@@ -110,7 +112,13 @@ async def _start_temporal_worker(app: FastAPI) -> None:
     app.state.temporal_client = client
     worker = build_temporal_worker(
         client,
-        workflows=[DreamCoordinatorWorkflow, LightDreamWorkflow, DeepDreamWorkflow, WeeklyReviewWorkflow],
+        workflows=[
+            DreamCoordinatorWorkflow,
+            LightDreamWorkflow,
+            DeepDreamWorkflow,
+            WeeklyReviewWorkflow,
+            ScheduleSignalRelayWorkflow,
+        ],
         activities=[
             # Light dream activities (7)
             load_transcript,
@@ -161,6 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _start_arq_pool(app)
     await _start_dream_scheduler(app)
     await _start_temporal_worker(app)
+    await register_schedules(app.state.temporal_client)
 
     app.state.vault_sync_task = asyncio.create_task(_vault_sync_loop())
     log.info("vault_sync.started", interval_seconds=VAULT_SYNC_INTERVAL_SECONDS)

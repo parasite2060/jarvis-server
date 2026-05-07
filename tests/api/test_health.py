@@ -1,6 +1,7 @@
+from importlib.metadata import version as pkg_version
+
 import pytest
 from httpx import AsyncClient
-from importlib.metadata import version as pkg_version
 
 
 @pytest.mark.asyncio
