@@ -9,9 +9,7 @@ GUIDE_PATH = _ROOT / "docs" / "deployment" / "templates-ai-memory" / "_guide.md"
 CONSOLIDATION_PROMPT_PATH = _ROOT / "prompts" / "deep_dream_consolidate.md"
 RECORD_PROMPT_PATH = _ROOT / "prompts" / "record_agent.md"
 WEEKLY_REVIEW_PROMPT_PATH = _ROOT / "prompts" / "weekly_review_agent.md"
-DEEP_DREAM_TASK_PATH = _ROOT / "app" / "tasks" / "deep_dream_task.py"
 DREAM_AGENT_PATH = _ROOT / "app" / "services" / "dream_agent.py"
-WEEKLY_REVIEW_TASK_PATH = _ROOT / "app" / "tasks" / "weekly_review_task.py"
 DREAM_MODELS_PATH = _ROOT / "app" / "services" / "dream_models.py"
 VAULT_UPDATER_PATH = _ROOT / "app" / "services" / "vault_updater.py"
 
@@ -170,26 +168,6 @@ class TestWeeklyReviewPromptReferencesVaultGuide:
 
 # ── AC1: Phase 3 code reads _guide.md ──
 
-
-class TestPhase3CodeReadsVaultGuide:
-
-    def setup_method(self) -> None:
-        self.content = DEEP_DREAM_TASK_PATH.read_text(encoding="utf-8")
-
-    def test_reads_guide_md(self) -> None:
-        assert 'read_vault_file("_guide.md")' in self.content
-
-    def test_injects_vault_guide_section(self) -> None:
-        assert "Vault Guide (file templates & structure)" in self.content
-
-    def test_guide_content_in_phase3_sections(self) -> None:
-        assert "vault_guide" in self.content
-        assert "phase3_sections" in self.content
-
-
-# ── AC2: record agent code reads _guide.md ──
-
-
 class TestRecordAgentCodeReadsVaultGuide:
 
     def setup_method(self) -> None:
@@ -205,38 +183,11 @@ class TestRecordAgentCodeReadsVaultGuide:
 # ── AC3: weekly review code reads _guide.md ──
 
 
-class TestWeeklyReviewCodeReadsVaultGuide:
-
-    def setup_method(self) -> None:
-        self.task_content = WEEKLY_REVIEW_TASK_PATH.read_text(encoding="utf-8")
-        self.agent_content = DREAM_AGENT_PATH.read_text(encoding="utf-8")
-
-    def test_task_reads_guide_md(self) -> None:
-        assert 'read_vault_file("_guide.md")' in self.task_content
-
-    def test_deps_has_vault_guide_field(self) -> None:
-        assert "vault_guide" in self.agent_content
-        assert "vault_guide: str" in self.agent_content
-
-    def test_injects_vault_guide_section(self) -> None:
-        assert "Vault Guide (review format)" in self.agent_content
-
-    def test_task_passes_vault_guide_to_deps(self) -> None:
-        assert "vault_guide=vault_guide" in self.task_content
-
-
-# ── AC7: VaultUpdates has topics field + routing ──
-
-
 class TestTopicsSupport:
 
     def test_vault_updates_has_topics_field(self) -> None:
         content = DREAM_MODELS_PATH.read_text(encoding="utf-8")
         assert "topics: list[VaultFileEntry]" in content
-
-    def test_deep_dream_task_routes_topics(self) -> None:
-        content = DEEP_DREAM_TASK_PATH.read_text(encoding="utf-8")
-        assert '"topics"' in content
 
     def test_vault_updater_includes_topics(self) -> None:
         content = VAULT_UPDATER_PATH.read_text(encoding="utf-8")

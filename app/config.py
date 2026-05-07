@@ -11,9 +11,6 @@ class Settings(BaseSettings):
     db_password: str
     db_name: str = "jarvis"
 
-    # ── Redis ──
-    redis_url: str = "redis://redis:6379/0"
-
     # ── LLM (OpenAI-compatible) ──
     llm_api_key: str = ""
     llm_endpoint: str = ""

@@ -33,8 +33,6 @@ async def trace_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[tuple[AsyncClient, dict[str, Any]], None]:
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
-    monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.main._vault_sync_loop", AsyncMock())
 
     from app.main import create_app

@@ -70,15 +70,6 @@ async def _run_migrations() -> None:
     log.info("jarvis.migrations.completed")
 
 
-async def _start_arq_pool(app: FastAPI) -> None:
-    from arq import create_pool
-    from arq.connections import RedisSettings
-
-    redis_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    app.state.redis_pool = redis_pool
-    log.info("arq.worker.connected", redis_url=str(settings.redis_url).split("@")[-1])
-
-
 async def _vault_sync_loop() -> None:
     from app.services.git_ops import git_ops_service
 
@@ -94,17 +85,6 @@ async def _vault_sync_loop() -> None:
             raise
         except Exception as exc:
             log.warning("vault_sync.failed", error=str(exc))
-
-
-async def _start_dream_scheduler(app: FastAPI) -> None:
-    from app.services.dream_scheduler import DreamScheduler
-    from app.services.git_ops import git_ops_service
-
-    scheduler = DreamScheduler(app.state.redis_pool)
-    app.state.dream_scheduler = scheduler
-    app.state.scheduler_task = asyncio.create_task(scheduler.run())
-    git_ops_service.set_config_change_callback(scheduler.notify_config_changed)
-    log.info("dream_scheduler.started")
 
 
 async def _start_temporal_worker(app: FastAPI) -> None:
@@ -166,8 +146,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("jarvis.startup.begin")
 
     await _run_migrations()
-    await _start_arq_pool(app)
-    await _start_dream_scheduler(app)
     await _start_temporal_worker(app)
     await register_schedules(app.state.temporal_client)
 
@@ -196,19 +174,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await close_temporal_client()
     log.info("temporal.worker.stopped")
 
-    if hasattr(app.state, "scheduler_task"):
-        app.state.scheduler_task.cancel()
-        try:
-            await app.state.scheduler_task
-        except asyncio.CancelledError:
-            pass
-
     from app.services.memu_client import close_client
 
     await close_client()
-
-    if hasattr(app.state, "redis_pool"):
-        await app.state.redis_pool.aclose()
 
     log.info("jarvis.shutdown.complete")
 

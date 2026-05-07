@@ -13,8 +13,6 @@ async def dream_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[tuple[AsyncClient, AsyncMock], None]:
     monkeypatch.setattr("app.main._run_migrations", AsyncMock())
-    monkeypatch.setattr("app.main._start_arq_pool", AsyncMock())
-    monkeypatch.setattr("app.main._start_dream_scheduler", AsyncMock())
     monkeypatch.setattr("app.main._vault_sync_loop", AsyncMock())
 
     from app.main import create_app
