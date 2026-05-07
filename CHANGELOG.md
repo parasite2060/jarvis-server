@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/parasite2060/jarvis-server/compare/v0.13.1...v0.14.0) (2026-05-07)
+
+
+### Features
+
+* **deep-dream:** decompose deep dream task into Temporal workflow + 11 activities ([45e3e1f](https://github.com/parasite2060/jarvis-server/commit/45e3e1f0db32ed21b416843b0243cb63d69d18c0))
+* **temporal:** add DreamCoordinatorWorkflow signal-driven serialiser ([bce7e38](https://github.com/parasite2060/jarvis-server/commit/bce7e38aebb341734acc1579d576deae055977b8))
+* **temporal:** add LightDreamWorkflow + 7 activities with stage-level retry ([dfad953](https://github.com/parasite2060/jarvis-server/commit/dfad953df872896e4edc06ab7aa4b0406e77ea36))
+* **temporal:** add temporal client singleton and co-located worker bootstrap ([9e032dc](https://github.com/parasite2060/jarvis-server/commit/9e032dc322bdc0b40af7dac8318ac6febb6c8ad0))
+* **temporal:** add Temporal Schedules to replace DreamScheduler at startup ([590b33a](https://github.com/parasite2060/jarvis-server/commit/590b33a1411beb62a32cfaa4477730b2270330b5))
+* **temporal:** add WeeklyReviewWorkflow + 5 activities ([00804a7](https://github.com/parasite2060/jarvis-server/commit/00804a7839d240c85e711a7910bcb3a2002a7cf4))
+* **temporal:** atomic cutover — remove ARQ + Redis + DreamScheduler + 3 task wrappers ([e8baa92](https://github.com/parasite2060/jarvis-server/commit/e8baa926d2b2a4d47450fd6392e345038a1a3869))
+
 ## [0.13.1](https://github.com/parasite2060/jarvis-server/compare/v0.13.0...v0.13.1) (2026-05-05)
 
 
