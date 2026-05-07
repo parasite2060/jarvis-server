@@ -1,128 +1,95 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
-import { ClsService } from 'nestjs-cls';
-import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
-import { transformGrpcRequest } from '../utils/request.transformer';
-import { transformGrpcResponseBody } from '../utils/response.transformer';
-import { Reflector } from '@nestjs/core';
-import { isSilentRequestLog } from '../decorators/silent-request-log.decorators';
-import { isSilentResponseLog } from '../decorators/silent-response-log.decorators';
+import { ExecutionContext, Injectable } from '@nestjs/common';
 import { PatternMetadata } from '@nestjs/microservices';
 import { PATTERN_METADATA } from '@nestjs/microservices/constants';
+import { logLevelByStatus } from '../internal/log-level-by-status';
+import { transformGrpcRequest } from '../utils/request.transformer';
+import { transformGrpcResponseBody } from '../utils/response.transformer';
+import { RequestLoggingInterceptor } from './request-logging.interceptor';
+
+interface GrpcPath {
+  service: string;
+  method: string;
+}
+
+const UNKNOWN_PATH: GrpcPath = { service: 'unknown', method: 'unknown' };
 
 @Injectable()
-export class GrpcRequestLoggingInterceptor implements NestInterceptor {
-  private readonly logger: Logger = new Logger(GrpcRequestLoggingInterceptor.name);
+export class GrpcRequestLoggingInterceptor extends RequestLoggingInterceptor {
+  private readonly pathCache = new Map<(...args: any[]) => any, GrpcPath>();
 
-  private readonly cachedPaths: Map<(...args: any[]) => any, GrPcPath> = new Map<(...args: any[]) => any, GrPcPath>();
-
-  constructor(
-    private readonly cls: ClsService,
-    private readonly reflector: Reflector,
-  ) {}
-
-  public intercept(context: ExecutionContext, call$: CallHandler): Observable<unknown> {
-    const requestType = this.cls.get('requestType');
-    if (requestType === 'GRPC') {
-      if (!isSilentRequestLog(this.reflector, context)) {
-        this.logRequest(context);
-      }
-
-      return call$.handle().pipe(
-        tap({
-          next: (val: unknown): void => {
-            if (!isSilentResponseLog(this.reflector, context)) {
-              this.logResponse(val, context);
-            }
-          },
-          error: (err: Error): void => {
-            this.logError(err, context);
-          },
-        }),
-      );
-    }
-
-    return call$.handle();
+  protected get transport(): 'GRPC' {
+    return 'GRPC';
   }
 
-  private logRequest(execution: ExecutionContext): void {
-    const path = this.getCachedGrpcPath(execution);
+  protected logRequest(context: ExecutionContext): void {
+    const path = this.pathOf(context);
 
     this.logger.log({
-      message: `[GRPC] Incoming request - ${path.service} - ${path.method}`,
-      request: transformGrpcRequest(this.reflector, execution, path),
+      message: this.formatMessage('Incoming request', path, undefined),
+      request: transformGrpcRequest(this.reflector, context, path),
     });
   }
 
-  private logResponse(body: any, execution: ExecutionContext): void {
-    const path = this.getCachedGrpcPath(execution);
+  protected logResponse(body: unknown, context: ExecutionContext): void {
+    const path = this.pathOf(context);
 
     this.logger.log({
-      message: `[GRPC] Outgoing response - ${path.service} - ${path.method}`,
+      message: this.formatMessage('Outgoing response', path, undefined),
       response: {
-        body: transformGrpcResponseBody(this.reflector, execution, body),
+        body: transformGrpcResponseBody(this.reflector, context, body),
         service: path.service,
         method: path.method,
       },
     });
   }
 
-  private logError(error: Error, execution: ExecutionContext): void {
-    const path = this.getCachedGrpcPath(execution);
+  protected logError(error: Error, context: ExecutionContext): void {
+    const path = this.pathOf(context);
+    const status = (error as any)['status'] as number | undefined;
 
-    if ((error as any)['status']) {
-      const statusCode: number = (error as any)['status'];
-      if (statusCode >= 500) {
-        this.logger.error({
-          message: `[GRPC] Outgoing response - ${statusCode} - ${path.service} - ${path.method}`,
-          error: error,
-        });
-      } else {
-        this.logger.warn({
-          message: `[GRPC] Outgoing response - ${statusCode} - ${path.service} - ${path.method}`,
-          error: {
-            message: error.message,
-          },
-        });
-      }
-    } else {
+    if (typeof status !== 'number') {
       this.logger.error({
-        message: `[GRPC] Outgoing response - ERROR - ${path.service} - ${path.method}`,
-        error: error,
+        message: this.formatMessage('Outgoing response', path, 'ERROR'),
+        error,
       });
+      return;
     }
+
+    if (logLevelByStatus(status) === 'error') {
+      this.logger.error({ message: this.formatMessage('Outgoing response', path, status), error });
+      return;
+    }
+
+    this.logger.warn({
+      message: this.formatMessage('Outgoing response', path, status),
+      error: { message: error.message },
+    });
   }
 
-  private getCachedGrpcPath(execution: ExecutionContext): GrPcPath {
-    const handler = execution.getHandler() as (...args: any[]) => any;
-    const cachedPath = this.cachedPaths.get(handler);
-    if (cachedPath) {
-      return cachedPath;
-    }
+  private pathOf(context: ExecutionContext): GrpcPath {
+    const handler = context.getHandler() as (...args: any[]) => any;
+    const cached = this.pathCache.get(handler);
+    if (cached) return cached;
 
-    const path = this.getGrpcPath(execution);
-    this.cachedPaths.set(handler, path);
+    const path = this.readPathFromMetadata(handler);
+    this.pathCache.set(handler, path);
     return path;
   }
 
-  private getGrpcPath(execution: ExecutionContext): GrPcPath {
-    const handler = execution.getHandler() as (...args: any[]) => any;
-    const patterns = Reflect.getMetadata(PATTERN_METADATA, handler) as PatternMetadata[];
+  private readPathFromMetadata(handler: (...args: any[]) => any): GrpcPath {
+    const patterns = Reflect.getMetadata(PATTERN_METADATA, handler) as PatternMetadata[] | undefined;
+    if (!patterns || patterns.length === 0) return UNKNOWN_PATH;
 
-    if (patterns && patterns.length > 0) {
-      const pattern = patterns[0] as any;
-      return {
-        service: pattern['service'],
-        method: pattern['rpc'],
-      };
-    }
+    const pattern = patterns[0] as { service?: string; rpc?: string };
+    return {
+      service: pattern.service ?? UNKNOWN_PATH.service,
+      method: pattern.rpc ?? UNKNOWN_PATH.method,
+    };
+  }
 
-    return { service: 'unknown', method: 'unknown' };
+  private formatMessage(phase: string, path: GrpcPath, status: number | string | null | undefined): string {
+    const statusPart = status === undefined ? '' : `${status} - `;
+    return `[GRPC] ${phase} - ${statusPart}${path.service} - ${path.method}`;
   }
 }
-
-type GrPcPath = {
-  service: string;
-  method: string;
-};

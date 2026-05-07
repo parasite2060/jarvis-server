@@ -1,11 +1,47 @@
 {
   "version": 1,
   "skills": {
+    "bmad-auto": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/bmad-auto/SKILL.md",
+      "computedHash": "df3db7b4c9e64f57f256e9a07bf33c714107706726927104ed40f1d72ddb674f"
+    },
+    "load-docs": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/load-docs/SKILL.md",
+      "computedHash": "b788eedefc89f2dcecf395d605098d9c7f2ab34199737dbdc0b70accf5a27df5"
+    },
+    "manual-testing": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/manual-testing/SKILL.md",
+      "computedHash": "e4c0573d4cb5007e00a956a7590064284a7828ad6455f46901cb8d849c898ccb"
+    },
     "release-please": {
       "source": "bmad-labs/skills",
       "sourceType": "github",
       "skillPath": "skills/release-please/SKILL.md",
       "computedHash": "673dee55683e087b76153e409c6613cdff7d9842efed77b152ba27de0fb2d8dc"
+    },
+    "typescript-clean-code": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-clean-code/SKILL.md",
+      "computedHash": "32dd11d590211d7098dfefe206e10acf929d6fcea28151a3994a1823b04df239"
+    },
+    "typescript-e2e-testing": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-e2e-testing/SKILL.md",
+      "computedHash": "bfddd43517751607b6f1554994de562912286046848e76b194861cabdcf225a1"
+    },
+    "typescript-unit-testing": {
+      "source": "bmad-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-unit-testing/SKILL.md",
+      "computedHash": "e1c9f96fe0e0823ff3b4c4a077583737bf6fd8061daf67ee65bc9543b39b9624"
     }
   }
 }

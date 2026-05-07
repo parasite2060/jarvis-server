@@ -1,43 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Inject, Injectable, LoggerService } from '@nestjs/common';
-import { CUSTOM_LOGGER_OPTION, CustomLoggerOptions } from '../model/logger.option';
 import { ClsService } from 'nestjs-cls';
+import pino, { Logger, stdTimeFunctions } from 'pino';
+import { LogMeta, NormalizeArgs, NormalizedLog, normalizeError, normalizeLog, normalizeWarn } from '../internal/message-normalizer';
+import { createPinoDestination } from '../internal/pino-destination.factory';
+import { CUSTOM_LOGGER_OPTION, CustomLoggerOptions } from '../model/logger-options';
 import { getCallerFile } from '../utils/caller.utils';
-import pino, { DestinationStream, Logger, stdTimeFunctions } from 'pino';
-import * as fs from 'fs';
 
-function getPinoDest(options: CustomLoggerOptions): DestinationStream | null {
-  if (options.logFile) {
-    const dest = pino.destination({
-      dest: options.logFile,
-      minLength: 8192,
-      maxWrite: 32768,
-      sync: false,
-    });
-
-    fs.writeFileSync(options.syncFile!, process.pid.toString());
-    process.on('SIGUSR2', () => dest.reopen());
-
-    setInterval(() => {
-      dest.flush();
-    }, 5000);
-
-    return dest;
-  }
-
-  if (options.output === 'text') {
-    return pino.transport({
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        messageKey: 'message',
-        ignore: 'hostname,severity',
-      },
-    });
-  }
-
-  return null;
-}
+const CALLER_STACK_DEPTH = 4;
 
 @Injectable()
 export class CustomLoggerService implements LoggerService {
@@ -56,130 +25,66 @@ export class CustomLoggerService implements LoggerService {
         messageKey: 'message',
         errorKey: 'error',
         formatters: {
-          level(label, number) {
-            return { severity: label, level: number };
-          },
+          level: (label, number) => ({ severity: label, level: number }),
         },
       },
-      getPinoDest(options) ?? undefined,
+      createPinoDestination(options),
     );
   }
 
-  public setContext(context: string): void {
+  setContext(context: string): void {
     this.context = context;
   }
 
-  public log(message: any, context?: string): any {
-    context = context || this.context;
-
-    if ('object' === typeof message) {
-      const { message: msg, ...meta } = message;
-      return this.logger.info({ ...this.addition(), caller: context, ...meta }, msg as string);
-    }
-
-    return this.logger.info({ ...this.addition(), caller: context }, message);
+  log(message: unknown, context?: string): void {
+    const normalized = this.normalize(normalizeLog, { payload: message, caller: context ?? this.context, baseMeta: this.baseMeta() });
+    this.logger.info(normalized.meta, normalized.message);
   }
 
-  public error(message: any, trace?: string, context?: string): any {
-    context = context || this.context;
-
-    if (message instanceof Error) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { message: msg, name, stack, ...meta } = message;
-      return this.logger.error({ ...this.addition(), caller: context ?? trace, stack: message.stack || trace, ...meta }, msg);
-    }
-
-    if ('object' === typeof message) {
-      const { message: msg, error, ...meta } = message;
-      if (error instanceof Error) {
-        return this.logger.error(
-          {
-            ...this.addition(),
-            caller: context ?? trace,
-            stack: error.stack || (context ? trace : null),
-            ...meta,
-          },
-          `${msg as string}`,
-        );
-      }
-
-      return this.logger.error(
-        {
-          ...this.addition(),
-          caller: context ?? trace,
-          stack: context ? trace : null,
-          error: error,
-          ...meta,
-        },
-        msg as string,
-      );
-    }
-
-    return this.logger.error({ ...this.addition(), caller: context ?? trace, stack: context ? trace : null }, message);
+  error(message: unknown, trace?: string, context?: string): void {
+    const normalized = this.normalize(normalizeError, {
+      payload: message,
+      caller: context ?? this.context,
+      trace,
+      baseMeta: this.baseMeta(),
+    });
+    this.logger.error(normalized.meta, normalized.message);
   }
 
-  public warn(message: any, context?: string): any {
-    context = context || this.context;
-
-    if ('object' === typeof message) {
-      const { message: msg, error, ...meta } = message;
-      if (error instanceof Error) {
-        return this.logger.warn({ ...this.addition(), caller: context, stack: error.stack, ...meta }, `${msg as string}`);
-      }
-
-      return this.logger.warn({ ...this.addition(), caller: context, ...meta }, msg as string);
-    }
-
-    return this.logger.warn({ ...this.addition(), caller: context }, message);
+  warn(message: unknown, context?: string): void {
+    const normalized = this.normalize(normalizeWarn, { payload: message, caller: context ?? this.context, baseMeta: this.baseMeta() });
+    this.logger.warn(normalized.meta, normalized.message);
   }
 
-  public debug?(message: any, context?: string): any {
-    context = context || this.context;
-
-    if ('object' === typeof message) {
-      const { message: msg, ...meta } = message;
-      return this.logger.debug({ ...this.addition(), caller: context, ...meta }, msg as string);
-    }
-
-    return this.logger.debug({ ...this.addition(), caller: context }, message);
+  debug(message: unknown, context?: string): void {
+    const normalized = this.normalize(normalizeLog, { payload: message, caller: context ?? this.context, baseMeta: this.baseMeta() });
+    this.logger.debug(normalized.meta, normalized.message);
   }
 
-  public verbose?(message: any, context?: string): any {
-    context = context || this.context;
-
-    if ('object' === typeof message) {
-      const { message: msg, ...meta } = message;
-      return this.logger.trace({ ...this.addition(), caller: context, ...meta }, msg as string);
-    }
-
-    return this.logger.trace({ ...this.addition(), caller: context }, message);
+  verbose(message: unknown, context?: string): void {
+    const normalized = this.normalize(normalizeLog, { payload: message, caller: context ?? this.context, baseMeta: this.baseMeta() });
+    this.logger.trace(normalized.meta, normalized.message);
   }
 
-  private addition(): any {
+  private normalize(fn: (args: NormalizeArgs) => NormalizedLog, args: NormalizeArgs): NormalizedLog {
+    return fn(args);
+  }
+
+  private baseMeta(): LogMeta {
     return {
       requestId: this.cls.getId(),
-      ...this.getGcpProperties(),
-      ...this.getSource(),
+      ...this.gcpFields(),
+      ...this.sourceField(),
     };
   }
 
-  private getGcpProperties(): any {
-    if (this.options.gcpProperties) {
-      return {
-        'logging.googleapis.com/spanId': this.cls.getId(),
-      };
-    }
-
-    return {};
+  private gcpFields(): LogMeta {
+    if (!this.options.gcpProperties) return {};
+    return { 'logging.googleapis.com/spanId': this.cls.getId() };
   }
 
-  private getSource(): any {
-    if (this.options.source) {
-      return {
-        source: getCallerFile(4, ['dist', 'node_modules'], 'dist'),
-      };
-    }
-
-    return {};
+  private sourceField(): LogMeta {
+    if (!this.options.source) return {};
+    return { source: getCallerFile(CALLER_STACK_DEPTH, ['dist', 'node_modules'], 'dist') };
   }
 }

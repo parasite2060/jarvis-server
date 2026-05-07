@@ -1,30 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { Injectable, LoggerService } from '@nestjs/common';
 
 @Injectable()
 export class MockLoggerService implements LoggerService {
-  public setContext(_context: string): void {
-    // This is default function, allow empty
-  }
-
-  public log(_message: any, _context?: string): any {
-    return {};
-  }
-
-  public error(_message: any, _trace?: string, _context?: string): any {
-    return {};
-  }
-
-  public warn(_message: any, _context?: string): any {
-    return {};
-  }
-
-  public debug?(_message: any, _context?: string): any {
-    return {};
-  }
-
-  public verbose?(_message: any, _context?: string): any {
-    return {};
-  }
+  setContext(_context: string): void {}
+  log(_message: unknown, _context?: string): void {}
+  error(_message: unknown, _trace?: string, _context?: string): void {}
+  warn(_message: unknown, _context?: string): void {}
+  debug(_message: unknown, _context?: string): void {}
+  verbose(_message: unknown, _context?: string): void {}
 }

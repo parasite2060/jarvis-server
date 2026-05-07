@@ -58,15 +58,15 @@ function createKafkaLogCreator(logger: LoggerService) {
 }
 
 export class E2ETestSetup {
-  public app: INestApplication;
+  public app!: INestApplication;
   public httpServer: any;
-  public dataSource: DataSource;
-  public mongoConnection: Connection;
+  public dataSource!: DataSource;
+  public mongoConnection!: Connection;
 
-  private kafka: Kafka;
-  private kafkaProducer: Producer;
-  private kafkaConsumer: Consumer;
-  private kafkaAdmin: Admin;
+  private kafka!: Kafka;
+  private kafkaProducer!: Producer;
+  private kafkaConsumer!: Consumer;
+  private kafkaAdmin!: Admin;
   private receivedMessages: Map<string, any[]> = new Map();
   private isConsumerRunning = false;
   private testRunId: string;
@@ -80,7 +80,7 @@ export class E2ETestSetup {
       imports: [AppModule],
     }).compile();
 
-    this.app = moduleFixture.createNestApplication(undefined, {
+    this.app = moduleFixture.createNestApplication({
       bufferLogs: true,
     });
 

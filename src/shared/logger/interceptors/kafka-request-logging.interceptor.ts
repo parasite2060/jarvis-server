@@ -1,130 +1,116 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor, HttpException } from '@nestjs/common';
-import { ClsService } from 'nestjs-cls';
-import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { ExecutionContext, HttpException, Injectable } from '@nestjs/common';
 import { KafkaContext } from '@nestjs/microservices';
-import { getHttpCode } from '../utils/http-code.utils';
-import { RpcApiResponse } from 'src/utils/api-rpc.response';
-import { transformKafkaResponseBody } from '../utils/response.transformer';
-import { transformKafkaRequest } from '../utils/request.transformer';
-import { isSilentResponseLog } from '../decorators/silent-response-log.decorators';
-import { isSilentRequestLog } from '../decorators/silent-request-log.decorators';
-import { Reflector } from '@nestjs/core';
 import { BaseException } from 'src/shared/common/models/exception';
+import { RpcApiResponse } from 'src/utils/api-rpc.response';
+import { getHttpCode } from '../utils/http-code.utils';
+import { transformKafkaRequest } from '../utils/request.transformer';
+import { transformKafkaResponseBody } from '../utils/response.transformer';
+import { RequestLoggingInterceptor } from './request-logging.interceptor';
+
+interface KafkaCoords {
+  topic: string;
+  partition: number;
+  key: string;
+}
+
+interface KafkaReplyHeaders {
+  topic: unknown;
+  partition: unknown;
+  correlation: unknown;
+}
 
 @Injectable()
-export class KafkaRequestLoggingInterceptor implements NestInterceptor {
-  private readonly logger: Logger = new Logger(KafkaRequestLoggingInterceptor.name);
-
-  constructor(
-    private readonly cls: ClsService,
-    private readonly reflector: Reflector,
-  ) {}
-
-  public intercept(context: ExecutionContext, call$: CallHandler): Observable<unknown> {
-    const requestType = this.cls.get('requestType');
-    if (requestType === 'KAFKA') {
-      if (!isSilentRequestLog(this.reflector, context)) {
-        this.logRequest(context);
-      }
-
-      return call$.handle().pipe(
-        tap({
-          next: (val: unknown): void => {
-            if (!isSilentResponseLog(this.reflector, context)) {
-              this.logResponse(val, context);
-            }
-          },
-          error: (err: Error): void => {
-            this.logError(err, context);
-          },
-        }),
-      );
-    }
-
-    return call$.handle();
+export class KafkaRequestLoggingInterceptor extends RequestLoggingInterceptor {
+  protected get transport(): 'KAFKA' {
+    return 'KAFKA';
   }
 
-  private logRequest(context: ExecutionContext): void {
-    const args = context.getArgs();
-    const kafkaContext = args[1] as KafkaContext;
+  protected logRequest(context: ExecutionContext): void {
+    const kafkaContext = this.kafkaContextOf(context);
     const message = kafkaContext.getMessage();
-
-    const request = {
-      topic: kafkaContext.getTopic(),
-      partition: kafkaContext.getPartition(),
-      message: transformKafkaRequest(this.reflector, context, message),
-    };
+    const coords = this.coordsOf(kafkaContext);
 
     this.logger.log({
-      message: `[KAFKA] Incoming message - ${request.topic} - ${request.partition} - ${request.message?.key ?? '(empty)'}`,
-      request: request,
+      message: this.formatMessage('Incoming message', coords, undefined),
+      request: {
+        topic: coords.topic,
+        partition: coords.partition,
+        message: transformKafkaRequest(this.reflector, context, message),
+      },
     });
   }
 
-  private logResponse(body: any, context: ExecutionContext): void {
-    const args = context.getArgs();
-    const kafkaContext = args[1] as KafkaContext;
+  protected logResponse(body: any, context: ExecutionContext): void {
+    const kafkaContext = this.kafkaContextOf(context);
+    const coords = this.coordsOf(kafkaContext);
     const status = body?.status ?? '(empty)';
-    const request = {
-      topic: kafkaContext.getTopic(),
-      partition: kafkaContext.getPartition(),
-      message: kafkaContext.getMessage(),
-    };
-
-    const response = {
-      topic: request.message?.headers?.['kafka_replyTopic'],
-      partition: request.message?.headers?.['kafka_replyPartition'],
-      correlation: request.message?.headers?.['kafka_correlationId'],
-    };
 
     this.logger.log({
-      message: `[KAFKA] Outgoing response - ${status} - ${request.topic} - ${request.partition} - ${request.message?.key ?? '(empty)'}`,
-      response: response,
+      message: this.formatMessage('Outgoing response', coords, status),
+      response: this.replyHeadersOf(kafkaContext),
       body: transformKafkaResponseBody(this.reflector, context, body),
     });
   }
 
-  private logError(error: Error, context: ExecutionContext): void {
-    const args = context.getArgs();
-    const kafkaContext = args[1] as KafkaContext;
-    const request = {
-      topic: kafkaContext.getTopic(),
-      partition: kafkaContext.getPartition(),
-      message: kafkaContext.getMessage(),
-    };
-    const response = {
-      topic: request.message?.headers?.['kafka_replyTopic'],
-      partition: request.message?.headers?.['kafka_replyPartition'],
-      correlation: request.message?.headers?.['kafka_correlationId'],
-    };
+  protected logError(error: Error, context: ExecutionContext): void {
+    const kafkaContext = this.kafkaContextOf(context);
+    const coords = this.coordsOf(kafkaContext);
+    const replyHeaders = this.replyHeadersOf(kafkaContext);
 
     if (error instanceof BaseException) {
+      const status = getHttpCode(error);
       this.logger.error({
-        message: `[KAFKA] Outgoing response - ${getHttpCode(error)} - ${request.topic} - ${request.partition} - ${request.message?.key ?? '(empty)'}`,
-        response: response,
-        error: error,
+        message: this.formatMessage('Outgoing response', coords, status),
+        response: replyHeaders,
+        error,
         body: {
-          value: new RpcApiResponse({
-            status: getHttpCode(error) ?? undefined,
-            code: error.code,
-            message: error.message,
-          }),
+          value: new RpcApiResponse({ status: status ?? undefined, code: error.code, message: error.message }),
         },
       });
-    } else if (error instanceof HttpException) {
-      this.logger.error({
-        message: `[KAFKA] Outgoing response - ${error.getStatus()} - ${request.topic} - ${request.partition} - ${request.message?.key ?? '(empty)'}`,
-        response: error.getResponse(),
-        error: error,
-      });
-    } else {
-      this.logger.error({
-        message: `[KAFKA] Outgoing response - ERROR - ${request.topic} - ${request.partition} - ${request.message?.key ?? '(empty)'}`,
-        response: response,
-        error: error,
-      });
+      return;
     }
+
+    if (error instanceof HttpException) {
+      this.logger.error({
+        message: this.formatMessage('Outgoing response', coords, error.getStatus()),
+        response: error.getResponse(),
+        error,
+      });
+      return;
+    }
+
+    this.logger.error({
+      message: this.formatMessage('Outgoing response', coords, 'ERROR'),
+      response: replyHeaders,
+      error,
+    });
+  }
+
+  private kafkaContextOf(context: ExecutionContext): KafkaContext {
+    return context.getArgs()[1] as KafkaContext;
+  }
+
+  private coordsOf(kafkaContext: KafkaContext): KafkaCoords {
+    const message = kafkaContext.getMessage();
+    return {
+      topic: kafkaContext.getTopic(),
+      partition: kafkaContext.getPartition(),
+      key: message?.key?.toString() ?? '(empty)',
+    };
+  }
+
+  private replyHeadersOf(kafkaContext: KafkaContext): KafkaReplyHeaders {
+    const headers = kafkaContext.getMessage()?.headers ?? {};
+    return {
+      topic: headers['kafka_replyTopic'],
+      partition: headers['kafka_replyPartition'],
+      correlation: headers['kafka_correlationId'],
+    };
+  }
+
+  private formatMessage(phase: string, coords: KafkaCoords, status: number | string | null | undefined): string {
+    const statusPart = status ?? '';
+    return `[KAFKA] ${phase} - ${statusPart} - ${coords.topic} - ${coords.partition} - ${coords.key}`;
   }
 }
