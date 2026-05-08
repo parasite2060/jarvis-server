@@ -17,3 +17,7 @@ export { weeklyReviewWorkflow } from './weekly-review.workflow';
 export { lightDreamWorkflow as LightDream } from './light-dream.workflow';
 export { deepDreamWorkflow as DeepDream } from './deep-dream.workflow';
 export { weeklyReviewWorkflow as WeeklyReview } from './weekly-review.workflow';
+
+// Story 13.13 — schedule relay workflow (sandbox-clean). Wire name
+// `ScheduleSignalRelay` per Python `@workflow.defn(name="ScheduleSignalRelay")`.
+export { scheduleSignalRelayWorkflow as ScheduleSignalRelay } from './schedule-signal-relay.workflow';

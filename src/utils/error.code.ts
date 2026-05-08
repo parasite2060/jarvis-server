@@ -148,4 +148,13 @@ export enum ErrorCode {
   // -400191..-400200 chaos/cutover band per Q9.b sub-blocks; -400201..-400210
   // reserved exclusively for shared agents.
   DREAM_PROMPT_LOAD_FAILED = -400201, // prompt file not found at boot — `PromptCacheService` failure
+
+  // Config business module (-400221 to -400240) — Story 13.13 (Q5 RESOLVED).
+  // `src/modules/config/` errors: validation, file IO, YAML parse failures.
+  CONFIG_VALIDATION_FAILED = -400221, // empty body, no fields to update
+  CONFIG_FILE_NOT_FOUND = -400222, // config.yml absent at vault path (defensive — falls back to defaults silently)
+  CONFIG_FILE_PARSE_FAILED = -400223, // config.yml YAML parse failed (defensive — falls back to defaults silently)
+  CONFIG_FILE_WRITE_FAILED = -400224, // atomic temp+rename write failed
+  CONFIG_CRON_INVALID = -400225, // cron expression invalid per cron-parser
+  // Slots -400226..-400240 reserved.
 }

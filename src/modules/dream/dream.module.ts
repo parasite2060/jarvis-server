@@ -5,6 +5,7 @@ import { Activities as WeeklyActivities } from './temporal/activities/weekly';
 import { DreamController } from './dream.controller';
 import { UseCases } from './usecases';
 import { CommandHandlers } from './commands/handlers';
+import { EventHandlers } from './events/handlers';
 
 /**
  * DreamModule — owns dream pipelines (light/deep/weekly).
@@ -28,6 +29,6 @@ import { CommandHandlers } from './commands/handlers';
  */
 @Module({
   controllers: [DreamController],
-  providers: [...UseCases, ...CommandHandlers, ...LightActivities, ...DeepActivities, ...WeeklyActivities],
+  providers: [...UseCases, ...CommandHandlers, ...EventHandlers, ...LightActivities, ...DeepActivities, ...WeeklyActivities],
 })
 export class DreamModule {}
