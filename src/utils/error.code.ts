@@ -129,6 +129,20 @@ export enum ErrorCode {
   DEEP_DREAM_COMMIT_AND_PR_FAILED = -400179,
   DEEP_DREAM_ALIGN_MEMU_FAILED = -400180,
 
+  // Weekly Review Pipeline (-400181 to -400190) — Story 13.12 / Q9.
+  // Per-pipeline sub-block split (Q9.b RESOLVED 2026-05-08, inherited from
+  // 13.10/13.11). Reserve -400191..-400200 for Story 13.16 (Chaos/Cutover).
+  // Slot allocations per Q9 leader resolution:
+  WEEKLY_REVIEW_GATHER_DAILYS_EMPTY_WEEK = -400181, // non-retryable per Q5
+  WEEKLY_REVIEW_GATHER_INDEXES_FAILED = -400182,
+  WEEKLY_REVIEW_AGENT_FAILED = -400183,
+  WEEKLY_REVIEW_OUTPUT_INVALID = -400184, // Zod validation after output_retries exhaustion
+  WEEKLY_REVIEW_WRITE_FILE_FAILED = -400185,
+  WEEKLY_REVIEW_COMMIT_AND_PR_FAILED = -400186,
+  WEEKLY_REVIEW_INVALIDATE_CACHE_FAILED = -400187, // Q3 — TS-only enhancement
+  WEEKLY_REVIEW_OUTCOME_UPDATE_FAILED = -400188, // Q8 — TS-only enhancement
+  // Slots -400189..-400190 reserved.
+
   // Shared Agents Infrastructure (-400201 to -400210) — Story 13.10.
   // Cross-pipeline errors thrown by `src/shared/agents/`. Sits OUTSIDE the
   // -400191..-400200 chaos/cutover band per Q9.b sub-blocks; -400201..-400210

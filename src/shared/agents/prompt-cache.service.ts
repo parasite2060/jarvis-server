@@ -38,6 +38,10 @@ const REQUIRED_PROMPTS = [
   'deep-dream-phase2-rem-sleep',
   'deep-dream-phase3-consolidate',
   'deep-dream-health-fix',
+  // Story 13.12 weekly-review prompt (Q2 RESOLVED 2026-05-08).
+  // kebab-case + camelCase tool-name body adjustments per 13.10 Q3 pattern;
+  // `readVaultIndex` mention preserved per Q4 (TS port registers the tool).
+  'weekly-review',
 ] as const;
 
 @Injectable()

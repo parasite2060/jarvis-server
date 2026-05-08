@@ -24,6 +24,8 @@ describe('PromptCacheService', () => {
     fs.writeFileSync(path.join(tempDir, 'deep-dream-phase2-rem-sleep.md'), 'PHASE2-PROMPT');
     fs.writeFileSync(path.join(tempDir, 'deep-dream-phase3-consolidate.md'), 'PHASE3-PROMPT');
     fs.writeFileSync(path.join(tempDir, 'deep-dream-health-fix.md'), 'HEALTH-FIX-PROMPT');
+    // Story 13.12 added the weekly-review prompt to REQUIRED_PROMPTS.
+    fs.writeFileSync(path.join(tempDir, 'weekly-review.md'), 'WEEKLY-REVIEW-PROMPT');
 
     mockConfig = createMock<AppConfigService>();
     Object.defineProperty(mockConfig, 'promptsPath', { get: () => tempDir });
