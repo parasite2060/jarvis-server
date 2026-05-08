@@ -277,6 +277,65 @@ describe('TemporalWorkerService', () => {
     });
   });
 
+  describe('isStarted (Story 13.9 cross-story fix-up)', () => {
+    it('returns false before start() is called', () => {
+      // Act + Assert
+      expect(target.isStarted()).toBe(false);
+    });
+
+    it('returns false after short-circuit (workflowsPath empty)', async () => {
+      // Arrange + Act
+      await target.start({
+        taskQueue: TASK_QUEUE,
+        workflowsPath: '',
+        activities: { 'test.noop': jest.fn() },
+      });
+
+      // Assert
+      expect(target.isStarted()).toBe(false);
+    });
+
+    it('returns false after short-circuit (activities empty)', async () => {
+      // Arrange + Act
+      await target.start({
+        taskQueue: TASK_QUEUE,
+        workflowsPath: '/workflows/path',
+        activities: {},
+      });
+
+      // Assert
+      expect(target.isStarted()).toBe(false);
+    });
+
+    it('returns true after successful start()', async () => {
+      // Arrange + Act
+      await target.start({
+        taskQueue: TASK_QUEUE,
+        workflowsPath: '/workflows/path',
+        activities: { 'test.noop': jest.fn() },
+      });
+
+      // Assert
+      expect(target.isStarted()).toBe(true);
+    });
+
+    it('returns false after beforeApplicationShutdown() runs', async () => {
+      // Arrange
+      await target.start({
+        taskQueue: TASK_QUEUE,
+        workflowsPath: '/workflows/path',
+        activities: { 'test.noop': jest.fn() },
+      });
+      expect(target.isStarted()).toBe(true);
+
+      // Act
+      await target.beforeApplicationShutdown();
+
+      // Assert
+      expect(target.isStarted()).toBe(false);
+    });
+  });
+
   describe('collectActivities', () => {
     it('proxies to ActivityRegistry.collect(app)', () => {
       // Arrange

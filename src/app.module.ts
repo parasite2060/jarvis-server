@@ -18,6 +18,7 @@ import { CommentModule } from './modules/comment/comment.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
 import { ContextModule } from './modules/context/context.module';
+import { DreamModule } from './modules/dream/dream.module';
 import { MemoryModule } from './modules/memory/memory.module';
 import { VaultModule } from './modules/vault/vault.module';
 import { RedisModule } from '@nestjs-redis/kit';
@@ -56,6 +57,7 @@ import { GitModule } from './shared/git/git.module';
     MemoryModule,
     VaultModule,
     ContextModule,
+    DreamModule,
   ],
   controllers: [],
   providers: [],

@@ -25,6 +25,7 @@ import { DefaultValidationOptions } from './utils/config/validation.config';
 import { GrpcRequestLoggingInterceptor } from './shared/logger/interceptors/grpc-request-logging.interceptor';
 import { AppConfigService } from './shared/config/config.service';
 import { getGRPCConfigs } from 'src/utils/config/grpc.config';
+import { TemporalClientService } from './shared/temporal/temporal-client.service';
 import { TemporalWorkerService } from './shared/temporal/temporal-worker.service';
 const logger = new Logger('Bootstrap');
 
@@ -50,6 +51,7 @@ async function bootstrap() {
     await startGrpc(app);
     await startEvent(app);
     await startTemporalWorker(app);
+    await ensureCoordinatorRunning(app);
 
     logAppPath(app, logger);
   } catch (error) {
@@ -133,6 +135,41 @@ function tryResolveWorkflowsPath(): string {
     // Story 13.9 lands the workflows directory; the next process restart
     // picks the worker up.
     return '';
+  }
+}
+
+/**
+ * Story 13.9 — start the singleton `coord-singleton` workflow once the
+ * worker has booted. Skipped when the worker short-circuited (Q1 = preserve
+ * AND-condition: no workflows path OR no activities → no worker → no point
+ * starting a coordinator that nothing can run). Failures rethrow so the
+ * existing bootstrap try/catch surfaces them as a process exit.
+ */
+async function ensureCoordinatorRunning(app: NestExpressApplication) {
+  const workerService = app.get(TemporalWorkerService);
+  if (!workerService.isStarted()) {
+    logger.warn({
+      message: 'temporal coordinator start deferred — worker not booted',
+      event: 'main.coordinatorStart.deferred',
+      reason: 'workerNotBooted',
+    });
+    return;
+  }
+
+  try {
+    await app.get(TemporalClientService).ensureCoordinatorRunning();
+    logger.log({
+      message: 'temporal coordinator start completed',
+      event: 'main.coordinatorStart.completed',
+      workflowId: 'coord-singleton',
+    });
+  } catch (err) {
+    logger.error({
+      message: 'temporal coordinator start failed',
+      event: 'main.coordinatorStart.failed',
+      errorClass: (err as { name?: string })?.name ?? 'Error',
+    });
+    throw err;
   }
 }
 
