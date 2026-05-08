@@ -13,6 +13,12 @@ const config: Config = {
   moduleDirectories: ['node_modules'],
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/$1',
+    // Story 13.10: `deepagents` + `@langchain/openai` transitively import
+    // ESM-only modules (`is-network-error` via `p-retry`) that Jest's CJS
+    // env can't parse. Map them to lightweight stubs for unit tests; the
+    // real packages are exercised in e2e + byte-equivalence specs only.
+    '^deepagents$': '<rootDir>/../test/mocks/deepagents.mock.ts',
+    '^@langchain/openai$': '<rootDir>/../test/mocks/langchain-openai.mock.ts',
   },
   coveragePathIgnorePatterns: [
     '<rootDir>/shared/postgres/migration/',

@@ -90,13 +90,38 @@ export const configValidationSchema = Joi.object({
   TEMPORAL_NAMESPACE: Joi.string().default('jarvis'),
   TEMPORAL_TASK_QUEUE: Joi.string().default('jarvis-dream'),
 
-  // Azure OpenAI
-  AZURE_OPENAI_API_KEY: Joi.string().required(),
-  AZURE_OPENAI_API_INSTANCE_NAME: Joi.string().required(),
-  AZURE_OPENAI_API_DEPLOYMENT_NAME: Joi.string().required(),
-  AZURE_OPENAI_API_VERSION: Joi.string().required(),
-  AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: Joi.string().required(),
+  // LLM provider switch (Story 13.10 / Addendum 1+2 — TanNT 2026-05-08)
+  // Default 'azure' keeps production behaviour unchanged. Dev/test environments
+  // override to 'openrouter' (rate-limited free tier) or 'llamacpp' (local
+  // server at 0.0.0.0:8080). `DeepAgentFactory` switches on this value at
+  // agent-build time. Joi accepts the three values; runtime validation that
+  // the chosen provider's credentials are non-empty happens inside the factory
+  // (LLM_PROVIDER_CONFIG_INVALID at -400170).
+  LLM_PROVIDER: Joi.string().valid('azure', 'openrouter', 'llamacpp').default('azure'),
+
+  // Azure OpenAI — required when LLM_PROVIDER='azure', optional otherwise.
+  // Azure remains the production default (Story 13.17 cutover keeps this).
+  AZURE_OPENAI_API_KEY: Joi.string().when('LLM_PROVIDER', { is: 'azure', then: Joi.required(), otherwise: Joi.optional() }),
+  AZURE_OPENAI_API_INSTANCE_NAME: Joi.string().when('LLM_PROVIDER', { is: 'azure', then: Joi.required(), otherwise: Joi.optional() }),
+  AZURE_OPENAI_API_DEPLOYMENT_NAME: Joi.string().when('LLM_PROVIDER', { is: 'azure', then: Joi.required(), otherwise: Joi.optional() }),
+  AZURE_OPENAI_API_VERSION: Joi.string().when('LLM_PROVIDER', { is: 'azure', then: Joi.required(), otherwise: Joi.optional() }),
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: Joi.string().when('LLM_PROVIDER', { is: 'azure', then: Joi.required(), otherwise: Joi.optional() }),
   LLM_MODEL: Joi.string().optional(),
+
+  // OpenRouter (Story 13.10 / Addendum 1) — used when LLM_PROVIDER='openrouter'.
+  // OpenAI-compatible API at openrouter.ai/api/v1; default model 'openrouter/free'
+  // for dev/test (rate-limited but free).
+  OPENROUTER_API_KEY: Joi.string().optional(),
+  OPENROUTER_MODEL: Joi.string().default('openrouter/free'),
+  OPENROUTER_BASE_URL: Joi.string().uri().default('https://openrouter.ai/api/v1'),
+
+  // llama.cpp (Story 13.10 / Addendum 2) — used when LLM_PROVIDER='llamacpp'.
+  // Local OpenAI-compatible server (TanNT runs it at 0.0.0.0:8080). The
+  // default `LLAMACPP_API_KEY='not-needed'` exists because LangChain's
+  // ChatOpenAI requires a non-empty apiKey; llama.cpp ignores it.
+  LLAMACPP_BASE_URL: Joi.string().uri().default('http://0.0.0.0:8080/v1'),
+  LLAMACPP_MODEL: Joi.string().default('local'),
+  LLAMACPP_API_KEY: Joi.string().default('not-needed'),
 
   // MemU
   MEMU_API_URL: Joi.string().uri().required(),

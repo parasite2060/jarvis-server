@@ -28,6 +28,8 @@ import { SecretRedactionModule } from './shared/secret-redaction/secret-redactio
 import { TemporalModule } from './shared/temporal/temporal.module';
 // Shared (global) module — Story 13.7
 import { GitModule } from './shared/git/git.module';
+// Shared (global) module — Story 13.10
+import { AgentsModule } from './shared/agents/agents.module';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { GitModule } from './shared/git/git.module';
     TemporalModule,
     // Shared global — Story 13.7
     GitModule,
+    // Shared global — Story 13.10
+    AgentsModule,
     // Business modules
     BlogModule,
     CommentModule,

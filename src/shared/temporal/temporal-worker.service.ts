@@ -48,6 +48,17 @@ export interface TemporalWorkerStartOptions {
   taskQueue: string;
   workflowsPath: string;
   activities?: ActivityMap;
+  /**
+   * Story 13.10 / Q1 (RESOLVED 2026-05-08, refined): the originally proposed
+   * "explicit `workflows` map" Worker.create option does NOT exist in
+   * `@temporalio/worker@1.17.0`. Workflow wire-name registration is
+   * handled at the workflows-directory level via aliased re-exports
+   * (e.g., `export { lightDreamWorkflow as LightDream }` in
+   * `src/modules/dream/temporal/workflows/index.ts`). Story 13.10's PascalCase
+   * `LightDream` registration is achieved through that alias; this option
+   * is reserved for forward-compat in case future SDK versions add it.
+   */
+  workflowsRegistered?: string[];
 }
 
 @Injectable()
@@ -120,6 +131,7 @@ export class TemporalWorkerService implements BeforeApplicationShutdown {
       taskQueue: opts.taskQueue,
       activitiesCount,
       workflowsPath: opts.workflowsPath,
+      workflowsRegistered: opts.workflowsRegistered ?? [],
     });
   }
 

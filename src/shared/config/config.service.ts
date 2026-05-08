@@ -196,6 +196,37 @@ export class AppConfigService {
     return this.configService.get<string>('TEMPORAL_TASK_QUEUE', 'jarvis-dream');
   }
 
+  // LLM provider switch (Story 13.10 / Addendum 1+2)
+  get llmProvider(): 'azure' | 'openrouter' | 'llamacpp' {
+    return this.configService.get<'azure' | 'openrouter' | 'llamacpp'>('LLM_PROVIDER', 'azure');
+  }
+
+  // OpenRouter (Story 13.10 / Addendum 1)
+  get openrouterApiKey(): string | undefined {
+    return this.configService.get<string>('OPENROUTER_API_KEY');
+  }
+
+  get openrouterModel(): string {
+    return this.configService.get<string>('OPENROUTER_MODEL', 'openrouter/free');
+  }
+
+  get openrouterBaseUrl(): string {
+    return this.configService.get<string>('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1');
+  }
+
+  // llama.cpp (Story 13.10 / Addendum 2)
+  get llamacppBaseUrl(): string {
+    return this.configService.get<string>('LLAMACPP_BASE_URL', 'http://0.0.0.0:8080/v1');
+  }
+
+  get llamacppModel(): string {
+    return this.configService.get<string>('LLAMACPP_MODEL', 'local');
+  }
+
+  get llamacppApiKey(): string {
+    return this.configService.get<string>('LLAMACPP_API_KEY', 'not-needed');
+  }
+
   // Azure OpenAI
   get azureOpenAIApiKey(): string {
     return this.configService.getOrThrow<string>('AZURE_OPENAI_API_KEY');
@@ -236,6 +267,15 @@ export class AppConfigService {
 
   get memuAgentId(): string {
     return this.configService.get<string>('MEMU_AGENT_ID', 'claude');
+  }
+
+  // Prompts (Story 13.10 / Q15) — directory for `prompts/*.md` loaded by
+  // `PromptCacheService` at boot. Default `${cwd}/prompts` for local dev;
+  // override `/app/prompts` in Docker via `PROMPTS_PATH` env var. The Joi
+  // schema marks the var optional (Q15.b) — actual file existence is
+  // validated at boot by `PromptCacheService`, not by Joi.
+  get promptsPath(): string {
+    return this.configService.get<string>('PROMPTS_PATH', `${process.cwd()}/prompts`);
   }
 
   // Phase budgets — one getter per phase. Defaults mirror Joi schema.

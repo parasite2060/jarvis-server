@@ -73,4 +73,19 @@ export class ConversationRepositoryImpl implements IConversationRepository {
   async setStatus(transcriptId: number, status: string): Promise<void> {
     await this.repository.update({ id: transcriptId }, { status });
   }
+
+  /**
+   * Story 13.10 / Q6 — atomic update of `status` AND `last_processed_line` in
+   * a single round-trip. Mirrors Python `update_transcript_position.py:9-22`:
+   *   - `status` always set.
+   *   - `last_processed_line` set ONLY when provided AND > 0 (per Python
+   *     `if inp.segment_end_line > 0`).
+   */
+  async updatePosition(transcriptId: number, status: string, lastProcessedLine?: number): Promise<void> {
+    const patch: Partial<Conversation> = { status };
+    if (lastProcessedLine !== undefined && lastProcessedLine > 0) {
+      patch.lastProcessedLine = lastProcessedLine;
+    }
+    await this.repository.update({ id: transcriptId }, patch);
+  }
 }

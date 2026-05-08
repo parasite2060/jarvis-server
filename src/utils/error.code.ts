@@ -88,4 +88,33 @@ export enum ErrorCode {
   TEMPORAL_WORKER_NOT_BOOTED = -400145, // defensive: method needs worker before start()
   TEMPORAL_SCHEDULE_REGISTRATION_FAILED = -400146, // Story 13.13 surface (reserved here)
   // -400147..-400160 reserved.
+
+  // Light Dream Pipeline (-400161 to -400170) — Story 13.10 / Q9.
+  // Per-story sub-block split (Q9.b RESOLVED 2026-05-08) — keeps each pipeline's
+  // codes contiguous for ownership clarity. -400171..-400180 reserved for
+  // Deep Dream (Story 13.11), -400181..-400190 for Weekly Review (Story 13.12),
+  // -400191..-400200 for Chaos/Cutover (Story 13.16).
+  //
+  // Slot -400170 re-allocated 2026-05-08 (Addendum 1) from
+  // `DREAM_PROMPT_LOAD_FAILED` to `LLM_PROVIDER_CONFIG_INVALID` per
+  // team-lead instruction. `DREAM_PROMPT_LOAD_FAILED` moves into the
+  // shared agents block at -400201..-400210 (NEW reservation; documented
+  // in Dev Notes — this expands beyond the original -400200 ceiling
+  // because shared infrastructure errors don't fit a per-pipeline split).
+  LIGHT_DREAM_LOAD_TRANSCRIPT_NOT_FOUND = -400161, // transcript_id not in DB; non-retryable
+  LIGHT_DREAM_EXTRACTION_AGENT_FAILED = -400162, // extraction agent threw after retries
+  LIGHT_DREAM_EXTRACTION_OUTPUT_INVALID = -400163, // Zod validation of `ExtractionSummary` failed after `output_retries=3`
+  LIGHT_DREAM_RECORD_AGENT_FAILED = -400164, // record agent threw after retries — caught by workflow, marks `partial`
+  LIGHT_DREAM_PERSIST_SESSION_LOG_FAILED = -400165, // DB UPDATE on `dreams.session_log` failed
+  LIGHT_DREAM_COMMIT_AND_PR_FAILED = -400166, // any of branch/commit/push/PR steps failed terminally
+  LIGHT_DREAM_INVALIDATE_CACHE_FAILED = -400167, // CommandBus dispatch threw
+  LIGHT_DREAM_UPDATE_POSITION_FAILED = -400168, // transcript update failed
+  LIGHT_DREAM_VAULT_WRITE_DENIED = -400169, // record agent's `writeFile` tool received a path outside the glob — should be impossible; defensive
+  LLM_PROVIDER_CONFIG_INVALID = -400170, // DeepAgentFactory built with provider whose required env vars are missing/empty (Addendum 1)
+
+  // Shared Agents Infrastructure (-400201 to -400210) — Story 13.10.
+  // Cross-pipeline errors thrown by `src/shared/agents/`. Sits OUTSIDE the
+  // -400191..-400200 chaos/cutover band per Q9.b sub-blocks; -400201..-400210
+  // reserved exclusively for shared agents.
+  DREAM_PROMPT_LOAD_FAILED = -400201, // prompt file not found at boot — `PromptCacheService` failure
 }

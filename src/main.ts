@@ -124,6 +124,12 @@ async function startTemporalWorker(app: INestApplication) {
     taskQueue: configs.temporalTaskQueue,
     workflowsPath: tryResolveWorkflowsPath(),
     activities: workerService.collectActivities(app),
+    // Story 13.10 / Q1 (refined) — `LightDream` is registered via aliased
+    // re-export in `src/modules/dream/temporal/workflows/index.ts`
+    // (`export { lightDreamWorkflow as LightDream }`). The `@temporalio/worker`
+    // bundle picks up the alias automatically; this `workflowsRegistered`
+    // surface is informational telemetry for the boot log only.
+    workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream'],
   });
 }
 

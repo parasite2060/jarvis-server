@@ -257,4 +257,43 @@ describe('ConversationRepositoryImpl', () => {
       expect((reloadedB as Conversation | null)?.status).toBe('received');
     });
   });
+
+  describe('updatePosition (Story 13.10 / Q6)', () => {
+    it('should update both status and lastProcessedLine when line > 0', async () => {
+      // Arrange
+      const a = await target.insertTranscript({
+        sessionId: 'sess-up',
+        rawContent: 'a',
+        status: 'received',
+        lastProcessedLine: 0,
+      });
+
+      // Act
+      await target.updatePosition(a.id, 'processed', 250);
+
+      // Assert
+      const reloaded = await dataSource.getRepository(PgMemTranscriptSchema).findOneBy({ id: a.id });
+      expect((reloaded as Conversation | null)?.status).toBe('processed');
+      expect((reloaded as Conversation | null)?.lastProcessedLine).toBe(250);
+    });
+
+    it('should update only status when lastProcessedLine is 0 or omitted', async () => {
+      // Arrange
+      const a = await target.insertTranscript({
+        sessionId: 'sess-up',
+        rawContent: 'a',
+        status: 'received',
+        lastProcessedLine: 100,
+      });
+
+      // Act
+      await target.updatePosition(a.id, 'processed', 0);
+
+      // Assert
+      const reloaded = await dataSource.getRepository(PgMemTranscriptSchema).findOneBy({ id: a.id });
+      expect((reloaded as Conversation | null)?.status).toBe('processed');
+      // lastProcessedLine NOT touched because line was 0.
+      expect((reloaded as Conversation | null)?.lastProcessedLine).toBe(100);
+    });
+  });
 });

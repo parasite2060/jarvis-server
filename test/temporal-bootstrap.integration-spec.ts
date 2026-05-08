@@ -195,13 +195,10 @@ describe('Temporal bootstrap (integration — real Docker server)', () => {
       const queryHandle = client.workflow.getHandle(handle.workflowId);
       // Brief retry loop — signal delivery via real cluster is async; the
       // workflow needs a tick to handle the signal before the query reflects it.
-      const payloads = await waitFor(
-        async () => {
-          const got = (await queryHandle.query('getSignalPayloads')) as Array<Record<string, unknown>>;
-          return got.length > 0 ? got : null;
-        },
-        5_000,
-      );
+      const payloads = await waitFor(async () => {
+        const got = (await queryHandle.query('getSignalPayloads')) as Array<Record<string, unknown>>;
+        return got.length > 0 ? got : null;
+      }, 5_000);
       expect(payloads).toEqual([{ transcript_id: 42, session_id: 'sess-xyz' }]);
     } finally {
       await handle.terminate('test-cleanup').catch(() => undefined);
