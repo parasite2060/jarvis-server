@@ -1,15 +1,19 @@
 /**
  * DeepAgentFactory — shared factory wrapping the `deepagents` package
- * (Story 13.10 / Task 2).
+ * (Story 13.10 / Task 2; Story 13.11 / Task 1 closes Finding 4).
  *
  * # API mapping (story-spec ↔ deepagents 1.10.0):
  *   - story `output` ↔ deepagents `responseFormat` (Zod schema or other format)
- *   - story `historyProcessor` ↔ deepagents middleware (e.g.,
- *     `createSummarizationMiddleware`) — context compaction is wrapped via
- *     middleware in the deepagents API.
+ *   - story `historyProcessor` ↔ message-list rewriter applied to the seed
+ *     `messages` array (and any caller-supplied `messageHistory`) before
+ *     the deepagents agent is invoked. NOT a deepagents middleware
+ *     registration — `createSummarizationMiddleware` requires a backend
+ *     (StateBackend) which Jarvis doesn't provide. The Python
+ *     `dream_agent.py::compact_history` semantics fit a pre-call rewrite
+ *     of the message list cleanly; we apply it at `invoke()` time.
  *   - story `usageLimits.totalTokens` / `usageLimits.toolCalls` — surfaced
  *     in the factory's options so the activity callers (Story 13.10
- *     light-extraction + light-record; Stories 13.11/13.12 deep + weekly)
+ *     light-extraction + light-record; Story 13.11 deep + Story 13.12 weekly)
  *     can pass per-phase budgets from `AppConfigService.lightExtractionLimits`
  *     etc. They are wired into agent invocation as part of the run config
  *     (NOT the create-time params per deepagents).
@@ -29,17 +33,17 @@
  *   `PromptCacheService` (read-once-at-app-init). The factory accepts the
  *   pre-loaded prompt string; no disk I/O at agent-build time.
  *
- * # compactHistory middleware — DEFERRED to Story 13.10.1 (Round 1/2 Finding 4)
- *   Python `dream_agent.py::compact_history` (320k char threshold + tool-return
- *   truncation > 200 chars + preserve last 6 messages) is NOT wired in 13.10.
- *   The `createSummarizationMiddleware` from deepagents would be the right
- *   plumbing, but tuning the knobs (`tokensToKeep`, `messagesToKeep`) to
- *   match Python's behaviour requires byte-equivalence-verified recordings
- *   to validate output parity. That work moves to Story 13.10.1 alongside
- *   fixture capture. Long sessions (>320k chars) WILL hit context-length
- *   errors against real LLMs in 13.10.1 / 13.16 until the middleware lands;
- *   13.10's unit tests use mocked `DeepAgentFactory` so the gap is invisible
- *   to the unit suite.
+ * # compactHistory — Story 13.11 / Q1 RESOLVED 2026-05-08
+ *   Closes Story 13.10 Finding 4 deferral. Mirrors Python `dream_agent.py:73-118`:
+ *     - Threshold: total message-chars > 320,000 (`COMPACT_THRESHOLD_CHARS`).
+ *     - Action: replace ToolReturnPart `content` > 200 chars with
+ *       `[Compacted: <toolName>, ~<N> chars]`.
+ *     - Preserve: last 6 messages always (`KEEP_RECENT_MESSAGES`).
+ *   Used to rewrite the seed message list (and any `messageHistory` for
+ *   Health Fix continuation) before `deepagents.agent.invoke(...)`. This
+ *   prevents Phase 3 / Health Fix prompts (full daily log + MEMORY.md +
+ *   8 vault index files + Phase 1+2 summaries) from blowing the LLM
+ *   context window.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import type { BaseLanguageModel } from '@langchain/core/language_models/base';
@@ -56,6 +60,24 @@ export interface DeepAgentFactoryUsageLimits {
   toolCalls: number;
 }
 
+/**
+ * Generic message shape compatible with both LangChain `BaseMessage` and
+ * deepagents' input-message dict. Pre-call rewriters work in this lossless
+ * format so Python's `compact_history` semantics (which key off `kind` and
+ * `parts[].part_kind`) port cleanly.
+ */
+export interface AgentMessage {
+  role?: string;
+  /** May be plain string OR LangChain BaseMessage `content` (string | parts[]). */
+  content?: unknown;
+  /** Tool call name when this is a `tool` message — drives compactHistory's placeholder. */
+  name?: string;
+  /** Allow extra fields (LangChain shape) without casting. */
+  [k: string]: unknown;
+}
+
+export type HistoryProcessor = (messages: AgentMessage[]) => AgentMessage[];
+
 export interface DeepAgentFactoryOptions<TOutput extends z.ZodTypeAny> {
   /** System prompt body. Pre-loaded via `PromptCacheService`. */
   systemPrompt: string;
@@ -71,6 +93,22 @@ export interface DeepAgentFactoryOptions<TOutput extends z.ZodTypeAny> {
   usageLimits: DeepAgentFactoryUsageLimits;
   /** Optional override for the LLM. Defaults to Azure OpenAI from config. */
   model?: BaseLanguageModel;
+  /**
+   * Optional message-list rewriter applied before `agent.invoke(...)`. Used
+   * by deep-dream Phase 3 / Health Fix to apply Python's `compact_history`
+   * semantics (Story 13.11 / Q1). Defaults to {@link compactHistory}.
+   * Pass `null` to disable compaction entirely (unit tests).
+   */
+  historyProcessor?: HistoryProcessor | null;
+}
+
+export interface AgentInvokeOptions {
+  /**
+   * Prior conversation history, e.g., serialized Phase 3 messages passed
+   * through to Health Fix per Story 13.11 AC #10. The factory prepends
+   * these to the new user message before invoking deepagents.
+   */
+  messageHistory?: AgentMessage[];
 }
 
 /**
@@ -83,11 +121,145 @@ export interface DeepAgentFactoryAgent<TOutput extends z.ZodTypeAny> {
   readonly usageLimits: DeepAgentFactoryUsageLimits;
   readonly outputSchema: TOutput;
   /**
-   * Invoke the agent with a run-prompt string and optional initial deps
-   * state. Returns the parsed structured output. Throws on validation
-   * failure after `outputRetries` exhaustion.
+   * Invoke the agent with a run-prompt string and optional message history
+   * (Story 13.11 Health Fix continuation). Returns the parsed structured
+   * output. Throws on validation failure after `outputRetries` exhaustion.
    */
-  invoke(runPrompt: string): Promise<z.infer<TOutput>>;
+  invoke(runPrompt: string, options?: AgentInvokeOptions): Promise<z.infer<TOutput>>;
+}
+
+/**
+ * Threshold above which {@link compactHistory} starts replacing tool-return
+ * payloads with placeholders. Mirrors Python `COMPACT_THRESHOLD_CHARS`
+ * (`dream_agent.py:73`). 320 000 chars ≈ 80k tokens at 4 char/token, which
+ * matches the Python comment: "compact when total context > ~80k tokens".
+ */
+export const COMPACT_THRESHOLD_CHARS = 320_000;
+
+/**
+ * Maximum length of an individual tool-return content before compaction
+ * replaces it with a placeholder. Below this length the return is short
+ * enough that compaction would lose more signal than it saves.
+ */
+export const TOOL_RETURN_TRUNCATE_CHARS = 200;
+
+/**
+ * How many trailing messages to preserve verbatim regardless of compaction.
+ * Mirrors Python `KEEP_RECENT_MESSAGES = 6`.
+ */
+export const KEEP_RECENT_MESSAGES = 6;
+
+/**
+ * Best-effort total-character measure of a message-list. Handles both
+ * LangChain string-content and content-parts shapes. Mirrors Python's
+ * `_total_chars(messages)` — sum of every text-like field encountered.
+ */
+function totalChars(messages: AgentMessage[]): number {
+  let total = 0;
+  for (const m of messages) {
+    if (typeof m.content === 'string') {
+      total += m.content.length;
+      continue;
+    }
+    if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (typeof part === 'string') {
+          total += part.length;
+          continue;
+        }
+        if (part !== null && typeof part === 'object') {
+          const obj = part as { text?: unknown; content?: unknown };
+          if (typeof obj.text === 'string') total += obj.text.length;
+          if (typeof obj.content === 'string') total += obj.content.length;
+        }
+      }
+    }
+  }
+  return total;
+}
+
+/**
+ * Determine whether a message is a tool-return / tool-message that
+ * `compactHistory` should consider replacing with a placeholder. Matches
+ * both LangChain `tool` role and deepagents' `kind: 'tool'` shape.
+ */
+function isToolReturn(m: AgentMessage): boolean {
+  if (m.role === 'tool') return true;
+  const kind = (m as { kind?: unknown }).kind;
+  if (kind === 'tool' || kind === 'tool_return') return true;
+  return false;
+}
+
+function toolReturnLength(m: AgentMessage): number {
+  if (typeof m.content === 'string') return m.content.length;
+  if (Array.isArray(m.content)) {
+    let len = 0;
+    for (const part of m.content) {
+      if (typeof part === 'string') len += part.length;
+      else if (part !== null && typeof part === 'object') {
+        const obj = part as { text?: unknown; content?: unknown };
+        if (typeof obj.text === 'string') len += obj.text.length;
+        if (typeof obj.content === 'string') len += obj.content.length;
+      }
+    }
+    return len;
+  }
+  return 0;
+}
+
+function toolReturnName(m: AgentMessage): string {
+  if (typeof m.name === 'string' && m.name.length > 0) return m.name;
+  const tn = (m as { tool_name?: unknown; toolName?: unknown }).tool_name ?? (m as { toolName?: unknown }).toolName;
+  if (typeof tn === 'string') return tn;
+  return 'unknown';
+}
+
+/**
+ * Replace this tool-return message's content with a placeholder. Pure
+ * function; the caller copies the array.
+ */
+function compactToolReturn(m: AgentMessage, length: number): AgentMessage {
+  const name = toolReturnName(m);
+  const placeholder = `[Compacted: ${name}, ~${length} chars]`;
+  return { ...m, content: placeholder };
+}
+
+/**
+ * Python-equivalent `compact_history` (`dream_agent.py:73-118`).
+ *
+ * If the total chars in the message list exceeds {@link COMPACT_THRESHOLD_CHARS},
+ * replace the content of every tool-return message in the prefix (everything
+ * before the trailing {@link KEEP_RECENT_MESSAGES}) whose length exceeds
+ * {@link TOOL_RETURN_TRUNCATE_CHARS} with a placeholder
+ * `[Compacted: <toolName>, ~<N> chars]`. Returns the rewritten list.
+ *
+ * Idempotent: a placeholder is < TOOL_RETURN_TRUNCATE_CHARS so a second pass
+ * leaves the list unchanged.
+ */
+export function compactHistory(messages: AgentMessage[]): AgentMessage[] {
+  if (messages.length === 0) return messages;
+  if (totalChars(messages) <= COMPACT_THRESHOLD_CHARS) return messages;
+  // Keep last KEEP_RECENT_MESSAGES verbatim. Compact tool-returns in the prefix.
+  const cutoff = Math.max(0, messages.length - KEEP_RECENT_MESSAGES);
+  const result: AgentMessage[] = new Array<AgentMessage>(messages.length);
+  for (let i = 0; i < messages.length; i++) {
+    const original = messages[i]!;
+    if (i >= cutoff) {
+      result[i] = original;
+      continue;
+    }
+    if (!isToolReturn(original)) {
+      result[i] = original;
+      continue;
+    }
+    const len = toolReturnLength(original);
+    if (len <= TOOL_RETURN_TRUNCATE_CHARS) {
+      result[i] = original;
+      continue;
+    }
+    result[i] = compactToolReturn(original, len);
+  }
+  return result;
 }
 
 @Injectable()
@@ -102,11 +274,14 @@ export class DeepAgentFactory {
    * `resolveModel(...)` for the switch + per-provider validation.
    *
    * The factory's option names (`output`, `usageLimits`, `historyProcessor`)
-   * map to deepagents' actual params (`responseFormat`, middleware) inside
-   * this method body — caller ergonomics > implementation-detail leakage.
+   * map to deepagents' actual params (`responseFormat`, message-list
+   * rewriting before invoke) inside this method body — caller ergonomics >
+   * implementation-detail leakage.
    */
   create<TOutput extends z.ZodTypeAny>(opts: DeepAgentFactoryOptions<TOutput>): DeepAgentFactoryAgent<TOutput> {
     const model: BaseLanguageModel = opts.model ?? this.resolveModel();
+    // `null` → disabled; `undefined` → use compactHistory default.
+    const processor: HistoryProcessor | null = opts.historyProcessor === undefined ? compactHistory : opts.historyProcessor;
 
     // deepagents@1.10.0 — `createDeepAgent({ model, tools, systemPrompt, responseFormat, ... })`.
     // `responseFormat` accepts a Zod schema; the deepagents SupportedResponseFormat
@@ -134,19 +309,28 @@ export class DeepAgentFactory {
       retries: opts.retries ?? 2,
       outputRetries: opts.outputRetries ?? 3,
       usageLimits: opts.usageLimits,
+      historyProcessor: processor === null ? 'disabled' : 'compactHistory',
     });
 
-    const invoke = async (runPrompt: string): Promise<z.infer<TOutput>> => {
+    const invoke = async (runPrompt: string, invokeOpts?: AgentInvokeOptions): Promise<z.infer<TOutput>> => {
+      // Build the seed message list. Health Fix continuation prepends
+      // `messageHistory` (serialized Phase 3 conversation) before the new
+      // user prompt — Python `health_fix.py:134-136` calls
+      // `_health_fix_agent.run(prompt, message_history=...)`.
+      const newUserMsg: AgentMessage = { role: 'user', content: runPrompt };
+      const seed: AgentMessage[] = invokeOpts?.messageHistory ? [...invokeOpts.messageHistory, newUserMsg] : [newUserMsg];
+      const messages = processor === null ? seed : processor(seed);
+
       // deepagents agents expose `.invoke({ messages: [...] })` returning the
       // structured response. Recursion limit ≈ tool-call cap.
-      const result = await agent.invoke(
-        {
-          messages: [{ role: 'user', content: runPrompt }],
-        },
-        {
-          recursionLimit: opts.usageLimits.toolCalls,
-        },
-      );
+      // The `messages` argument is our `AgentMessage[]` shape — deepagents
+      // accepts a wider `Messages` union (BaseMessageLike, role/content
+      // dicts, etc.). Cast at the boundary; the runtime contract only
+      // requires `{ role, content }` which our shape provides.
+      const invokeInput = { messages } as unknown as Parameters<typeof agent.invoke>[0];
+      const result = await agent.invoke(invokeInput, {
+        recursionLimit: opts.usageLimits.toolCalls,
+      });
 
       // The structured response lives on `result.structuredResponse` per
       // deepagents convention. Validate with the Zod schema for safety.

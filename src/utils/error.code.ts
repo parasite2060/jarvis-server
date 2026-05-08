@@ -112,6 +112,23 @@ export enum ErrorCode {
   LIGHT_DREAM_VAULT_WRITE_DENIED = -400169, // record agent's `writeFile` tool received a path outside the glob — should be impossible; defensive
   LLM_PROVIDER_CONFIG_INVALID = -400170, // DeepAgentFactory built with provider whose required env vars are missing/empty (Addendum 1)
 
+  // Deep Dream Pipeline (-400171 to -400180) — Story 13.11 / Q12.
+  // Phase 2 has no ErrorCode because it soft-fails internally (returns
+  // `output_json: null` on any exception) and never raises out of the
+  // activity; the workflow has no failure path for it.
+  // Reserve -400181..-400190 for Weekly Review (Story 13.12),
+  // -400191..-400200 for Chaos/Cutover (Story 13.16).
+  DEEP_DREAM_GATHER_INPUTS_FAILED = -400171,
+  DEEP_DREAM_PHASE1_AGENT_FAILED = -400172,
+  DEEP_DREAM_PHASE1_OUTPUT_INVALID = -400173,
+  DEEP_DREAM_SCORING_FAILED = -400174,
+  DEEP_DREAM_PHASE3_AGENT_FAILED = -400175,
+  DEEP_DREAM_PHASE3_OUTPUT_INVALID = -400176,
+  DEEP_DREAM_HEALTH_FIX_AGENT_FAILED = -400177,
+  DEEP_DREAM_WRITE_FILES_FAILED = -400178,
+  DEEP_DREAM_COMMIT_AND_PR_FAILED = -400179,
+  DEEP_DREAM_ALIGN_MEMU_FAILED = -400180,
+
   // Shared Agents Infrastructure (-400201 to -400210) — Story 13.10.
   // Cross-pipeline errors thrown by `src/shared/agents/`. Sits OUTSIDE the
   // -400191..-400200 chaos/cutover band per Q9.b sub-blocks; -400201..-400210

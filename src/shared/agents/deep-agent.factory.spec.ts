@@ -196,3 +196,82 @@ describe('DeepAgentFactory', () => {
     });
   });
 });
+
+import { compactHistory, COMPACT_THRESHOLD_CHARS, TOOL_RETURN_TRUNCATE_CHARS, KEEP_RECENT_MESSAGES } from './deep-agent.factory';
+
+// Story 13.11 / Q1 — closes 13.10 Finding 4 deferral.
+describe('compactHistory (Story 13.11)', () => {
+  it('returns the input unchanged when total chars are below threshold', () => {
+    // Arrange
+    const messages = [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ];
+
+    // Act
+    const result = compactHistory(messages);
+
+    // Assert — same array (no mutation, no rewrites)
+    expect(result).toBe(messages);
+  });
+
+  it('replaces tool-return content > 200 chars when total exceeds threshold', () => {
+    // Arrange — 10 tool-returns of 50_000 chars each = 500_000 chars (> threshold).
+    // Tool returns occupy positions 0..N-7 (inclusive); last 6 messages preserved.
+    const big = 'x'.repeat(50_000);
+    const messages: Array<{ role: string; name?: string; content: string }> = [];
+    for (let i = 0; i < 10; i++) {
+      messages.push({ role: 'tool', name: 'readFile', content: big });
+    }
+    // Last 6 are non-tool messages.
+    for (let i = 0; i < 6; i++) {
+      messages.push({ role: 'user', content: 'recent' });
+    }
+
+    // Act
+    const result = compactHistory(messages);
+
+    // Assert — last 6 preserved verbatim
+    for (let i = result.length - KEEP_RECENT_MESSAGES; i < result.length; i++) {
+      expect(result[i]!.content).toBe('recent');
+    }
+    // Earlier tool returns rewritten to placeholder
+    expect(result[0]!.content).toMatch(/^\[Compacted: readFile, ~\d+ chars\]$/);
+  });
+
+  it('does not touch messages < TOOL_RETURN_TRUNCATE_CHARS even when over threshold', () => {
+    // Arrange — fill with one giant tool return + many tiny ones; threshold is exceeded.
+    const giant = 'x'.repeat(COMPACT_THRESHOLD_CHARS + 1000);
+    const tiny = 'x'.repeat(TOOL_RETURN_TRUNCATE_CHARS - 10);
+    const messages = [
+      { role: 'tool', name: 'readFile', content: giant },
+      ...Array.from({ length: 5 }, () => ({ role: 'tool', name: 'readFile', content: tiny })),
+      ...Array.from({ length: KEEP_RECENT_MESSAGES }, () => ({ role: 'user', content: 'recent' })),
+    ];
+
+    // Act
+    const result = compactHistory(messages);
+
+    // Assert — tiny tool-returns NOT rewritten
+    for (let i = 1; i <= 5; i++) {
+      expect(result[i]!.content).toBe(tiny);
+    }
+  });
+
+  it('is idempotent — running twice produces the same output', () => {
+    // Arrange
+    const big = 'x'.repeat(60_000);
+    const messages = [
+      { role: 'tool', name: 'readFile', content: big },
+      ...Array.from({ length: 5 }, () => ({ role: 'tool', name: 'readFile', content: big })),
+      ...Array.from({ length: KEEP_RECENT_MESSAGES }, () => ({ role: 'user', content: 'recent' })),
+    ];
+
+    // Act
+    const once = compactHistory(messages);
+    const twice = compactHistory(once);
+
+    // Assert
+    expect(twice).toEqual(once);
+  });
+});

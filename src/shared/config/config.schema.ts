@@ -145,4 +145,17 @@ export const configValidationSchema = Joi.object({
   JARVIS_HEALTH_FIX_MAX_ITERATIONS: Joi.number().default(300),
   JARVIS_WEEKLY_REVIEW_MAX_TOKENS: Joi.number().default(1_500_000),
   JARVIS_WEEKLY_REVIEW_MAX_ITERATIONS: Joi.number().default(300),
+
+  // Deep-dream scoring weights (Story 13.11 / Q6 RESOLVED 2026-05-08).
+  // Defaults from Python `services/deep_dream.py:321-329` (DEFAULT_SCORING_WEIGHTS
+  // + DEFAULT_DECAY_RATE). Cross-story extension to Story 13.1's config schema:
+  // env-var route is cleaner than diverging `config.yml` from Python (which
+  // doesn't wire config.yml for these). The epic AC text "configurable via
+  // config.yml" is doc drift; Python is the truth.
+  SCORING_WEIGHT_FREQ: Joi.number().default(0.25),
+  SCORING_WEIGHT_RECENCY: Joi.number().default(0.25),
+  SCORING_WEIGHT_RELEVANCE: Joi.number().default(0.2),
+  SCORING_WEIGHT_CONSISTENCY: Joi.number().default(0.2),
+  SCORING_WEIGHT_BREADTH: Joi.number().default(0.1),
+  SCORING_DECAY_RATE: Joi.number().default(0.03),
 });

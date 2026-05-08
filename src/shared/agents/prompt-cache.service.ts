@@ -28,7 +28,17 @@ import { ErrorCode } from 'src/utils/error.code';
  * `OnApplicationBootstrap` fail-loud when the file is missing — a typo in
  * `prompts/light-extraction.md` shouldn't surface at first dream run.
  */
-const REQUIRED_PROMPTS = ['light-extraction', 'light-record'] as const;
+const REQUIRED_PROMPTS = [
+  'light-extraction',
+  'light-record',
+  // Story 13.11 deep-dream prompts (Q1 / Q3 / Q9 RESOLVED 2026-05-08).
+  // kebab-case + camelCase tool-name body adjustments; health-fix prompt has
+  // the `write_file` Python-fiction stripped per Q9.
+  'deep-dream-phase1-light-sleep',
+  'deep-dream-phase2-rem-sleep',
+  'deep-dream-phase3-consolidate',
+  'deep-dream-health-fix',
+] as const;
 
 @Injectable()
 export class PromptCacheService implements OnApplicationBootstrap {

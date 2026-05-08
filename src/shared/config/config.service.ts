@@ -327,4 +327,22 @@ export class AppConfigService {
       maxIterations: this.configService.get<number>('JARVIS_WEEKLY_REVIEW_MAX_ITERATIONS', 300),
     };
   }
+
+  // Deep-dream scoring weights (Story 13.11 / Q6 RESOLVED 2026-05-08).
+  // Mirror Python defaults from `services/deep_dream.py:321-329`. NOT exposed
+  // via vault `config.yml` (Python doesn't wire it either; epic AC's mention
+  // of config.yml is doc drift). Pure env-var route.
+  get scoringWeights(): { frequency: number; recency: number; relevance: number; consistency: number; breadth: number } {
+    return {
+      frequency: this.configService.get<number>('SCORING_WEIGHT_FREQ', 0.25),
+      recency: this.configService.get<number>('SCORING_WEIGHT_RECENCY', 0.25),
+      relevance: this.configService.get<number>('SCORING_WEIGHT_RELEVANCE', 0.2),
+      consistency: this.configService.get<number>('SCORING_WEIGHT_CONSISTENCY', 0.2),
+      breadth: this.configService.get<number>('SCORING_WEIGHT_BREADTH', 0.1),
+    };
+  }
+
+  get scoringDecayRate(): number {
+    return this.configService.get<number>('SCORING_DECAY_RATE', 0.03);
+  }
 }
