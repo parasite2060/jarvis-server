@@ -61,6 +61,22 @@ export enum ErrorCode {
   VAULT_ENDPOINT_PATH_TRAVERSAL = -400102, // HTTP 400 — GET /memory/files/*path traversal
   VAULT_MANIFEST_FAILED = -400103, // HTTP 500 — manifest walk failure (rare)
   VAULT_FILE_READ_FAILED = -400104, // HTTP 500 — read failure after path validation
+
+  // GitOps Shared Service (-400121 to -400140) — Story 13.7.
+  // Slots reserved for shared git operations (vault repo). Errors here are
+  // thrown from src/shared/git/git-ops.service.ts and consumed by dream
+  // activities (Stories 13.10/13.11/13.12) — they map to dream_phases
+  // outcome 'failed' or 'partial' per design/git-ops.md §5.3.
+  GIT_OPS_PULL_NON_FF = -400121, // pull --ff-only divergence (rare; activity retries)
+  GIT_OPS_BRANCH_NAME_INVALID = -400122, // defensive — caller passed an invalid name
+  GIT_OPS_REBASE_CONFLICT = -400123, // non-FF push rebase produced conflicts (terminal for the dream)
+  GIT_OPS_PUSH_FAILED = -400124, // push failed for non-recoverable reason
+  GIT_OPS_FORBIDDEN_TRAILER = -400125, // commit message contained Co-Authored-By: Claude/AI line
+  GIT_OPS_PR_CREATION_FAILED = -400126, // gh pr create failed for non-idempotent reason
+  GIT_OPS_GH_CLI_MISSING = -400127, // gh binary not found on PATH (ENOENT)
+  GIT_OPS_VAULT_PATH_INVALID = -400128, // appConfig.vaultPath does not exist or is not a git working tree
+  // Slots -400129..-400140 reserved.
+
   // Context block (Story 13.5 placeholder removed in 13.6 / Q9 to free this range);
   // future Context ErrorCodes allocate at -400141..-400160 if needed.
 }

@@ -36,6 +36,11 @@ const ALLOWLIST: string[] = [
   'shared/postgres/utils/database.logger.ts',
   // Sample module — slated for deletion in 13.16.5.
   'modules/audit-log/audit-log.controller.ts',
+  // GitOpsService spreads `process.env` into the `gh` subprocess env to
+  // preserve PATH / HOME / locale; no Jarvis config value is read from
+  // `process.env` directly (GH_TOKEN comes from `appConfig.ghToken`).
+  // Story 13.7.
+  'shared/git/git-ops.service.ts',
 ];
 
 async function walk(dir: string, accumulator: string[] = []): Promise<string[]> {

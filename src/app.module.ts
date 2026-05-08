@@ -25,6 +25,8 @@ import { RedisModule } from '@nestjs-redis/kit';
 // Shared (global) modules — Story 13.3 stubs
 import { SecretRedactionModule } from './shared/secret-redaction/secret-redaction.module';
 import { TemporalModule } from './shared/temporal/temporal.module';
+// Shared (global) module — Story 13.7
+import { GitModule } from './shared/git/git.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { TemporalModule } from './shared/temporal/temporal.module';
     // Shared globals (Story 13.3 stubs — 13.8 / 13.15 retrofit)
     SecretRedactionModule,
     TemporalModule,
+    // Shared global — Story 13.7
+    GitModule,
     // Business modules
     BlogModule,
     CommentModule,

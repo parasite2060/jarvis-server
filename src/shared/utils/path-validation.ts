@@ -1,5 +1,10 @@
 /**
- * Centralized vault path-traversal validation — Story 13.6 / Q3.
+ * Centralized vault path-traversal validation.
+ *
+ * Originally introduced by Story 13.6 at `src/modules/vault/utils/path-validation.ts`;
+ * promoted to `src/shared/utils/` by Story 13.7 / Q3 (b) so shared infrastructure
+ * (`GitOpsService`) can reuse it without violating the module-boundary rule
+ * (architecture §1.4 principle 8 — shared MUST NOT depend on business modules).
  *
  * Mirrors Python `app/services/memory_files.py :: safe_resolve(repo_root, relative_path)`.
  * Resolves the candidate path and returns it ONLY if it remains within
@@ -12,9 +17,9 @@
  *     content (silent skip — caller distinguishes via the vault.readFile.* event).
  *   - GET /memory/files/{path} (Story 13.6): throw VaultEndpointPathTraversalError
  *     → HTTP 400 (matches Python `files.py:91-101`).
- *
- * Replaces Story 13.4's inline `isWithin()` helper. Behaviour-preserving — same
- * null-on-traversal semantic.
+ *   - GitOpsService.writeFiles (Story 13.7): throw
+ *     `InternalException(GIT_OPS_VAULT_PATH_INVALID)` — defensive validation at
+ *     the FS boundary.
  */
 import * as path from 'node:path';
 

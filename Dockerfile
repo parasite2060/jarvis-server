@@ -42,6 +42,13 @@ WORKDIR /usr/src/app
 ENV NODE_ENV=production \
     HUSKY=0
 
+# git + gh CLI required by GitOpsService (Story 13.7) for vault repo operations
+# and pull-request creation against the ai-memory repo. Alpine ships
+# `github-cli` in the community repo (enabled by default on alpine 3.18+).
+RUN apk add --no-cache git github-cli \
+    && git --version \
+    && gh --version
+
 COPY --from=production-deps --chown=bun:bun /usr/src/app/node_modules ./node_modules
 COPY --from=build --chown=bun:bun /usr/src/app/dist ./dist
 COPY --chown=bun:bun package.json ./

@@ -27,7 +27,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'node:fs/promises';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { GetVaultFileResult } from '../commands/get-vault-file.command';
-import { safeResolveVaultPath } from '../utils/path-validation';
+import { safeResolveVaultPath } from 'src/shared/utils/path-validation';
 
 @Injectable()
 export class GetVaultFileUseCase {
