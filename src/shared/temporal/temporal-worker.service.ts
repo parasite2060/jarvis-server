@@ -132,6 +132,17 @@ export class TemporalWorkerService implements BeforeApplicationShutdown {
   }
 
   /**
+   * Story 13.9 cross-story fix-up to 13.8 — public getter so `main.ts`'s
+   * `ensureCoordinatorRunning(app)` helper can short-circuit when the worker
+   * never booted (workflowsPath empty OR activitiesCount === 0). Returns
+   * `true` only after a successful `start()` AND before
+   * `beforeApplicationShutdown()` clears the worker reference.
+   */
+  isStarted(): boolean {
+    return this.worker !== null;
+  }
+
+  /**
    * Graceful drain — fires in NestJS's `beforeApplicationShutdown` phase so
    * the worker drains BEFORE the client's gRPC connection closes
    * (`onApplicationShutdown` phase, see `TemporalClientService`).

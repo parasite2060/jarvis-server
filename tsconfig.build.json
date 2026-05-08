@@ -5,5 +5,13 @@
       "src/*": ["./src/*"]
     }
   },
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "*.ts", "tools"]
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "*.ts",
+    "tools",
+    "src/modules/dream/temporal/workflows/**"
+  ]
 }
