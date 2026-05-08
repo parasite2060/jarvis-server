@@ -23,7 +23,12 @@ describe('Conversation E2E Tests', () => {
     setup = new E2ETestSetup();
     await setup.init();
     const temporal = setup.app.get(TemporalClientService);
-    temporalSpy = jest.spyOn(temporal, 'signalCoordinator');
+    // Story 13.8 retrofit: signalCoordinator now opens a real connection.
+    // The e2e infra has no Temporal cluster wired, so we stub the
+    // implementation to a no-op resolved promise — this keeps the soft-fail
+    // path in IngestTranscriptUseCase from triggering and lets us assert
+    // the call shape (kind + snake_case payload).
+    temporalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
   }, 90000);
 
   afterAll(async () => {
