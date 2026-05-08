@@ -77,6 +77,15 @@ export enum ErrorCode {
   GIT_OPS_VAULT_PATH_INVALID = -400128, // appConfig.vaultPath does not exist or is not a git working tree
   // Slots -400129..-400140 reserved.
 
-  // Context block (Story 13.5 placeholder removed in 13.6 / Q9 to free this range);
-  // future Context ErrorCodes allocate at -400141..-400160 if needed.
+  // Temporal Shared Service (-400141 to -400160) — Story 13.8.
+  // Errors thrown from src/shared/temporal/{temporal-client,temporal-worker}.service.ts.
+  // Surface examples: signal-failed → IngestTranscriptUseCase soft-fail (Story 13.3);
+  // worker-start-failed → main.ts bootstrap process.exit(1).
+  TEMPORAL_CONNECTION_FAILED = -400141, // Client.connect failed (network/DNS)
+  TEMPORAL_WORKFLOW_START_FAILED = -400142, // client.workflow.start non-idempotent failure
+  TEMPORAL_SIGNAL_FAILED = -400143, // handle.signal RPC error
+  TEMPORAL_WORKER_START_FAILED = -400144, // Worker.create threw
+  TEMPORAL_WORKER_NOT_BOOTED = -400145, // defensive: method needs worker before start()
+  TEMPORAL_SCHEDULE_REGISTRATION_FAILED = -400146, // Story 13.13 surface (reserved here)
+  // -400147..-400160 reserved.
 }

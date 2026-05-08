@@ -77,12 +77,12 @@ describe('HealthController', () => {
         status: 'ok',
         info: {
           application: { status: 'up', message: 'Up and running' },
-          temporal: { status: 'up', message: 'not-yet-bootstrapped' },
+          temporal: { status: 'up', message: 'connected' },
         },
         error: {},
         details: {
           application: { status: 'up', message: 'Up and running' },
-          temporal: { status: 'up', message: 'not-yet-bootstrapped' },
+          temporal: { status: 'up', message: 'connected' },
         },
       });
 
@@ -95,9 +95,11 @@ describe('HealthController', () => {
     });
 
     it('should include the temporal indicator in the indicator list', async () => {
-      // Arrange
-      mockTemporalIndicator.isHealthy.mockReturnValue({
-        temporal: { status: 'up', message: 'not-yet-bootstrapped' },
+      // Arrange — Story 13.8 retrofit: indicator is async + reports
+      // 'connected' / 'not-connected' / 'unreachable: ...' instead of the
+      // Story 13.1 'not-yet-bootstrapped' placeholder.
+      mockTemporalIndicator.isHealthy.mockResolvedValue({
+        temporal: { status: 'up', message: 'connected' },
       });
       mockHealthService.check.mockImplementation(async (indicators) => {
         // Run all indicator factories so we can verify the temporal one was passed.

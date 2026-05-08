@@ -25,6 +25,7 @@ import { DefaultValidationOptions } from './utils/config/validation.config';
 import { GrpcRequestLoggingInterceptor } from './shared/logger/interceptors/grpc-request-logging.interceptor';
 import { AppConfigService } from './shared/config/config.service';
 import { getGRPCConfigs } from 'src/utils/config/grpc.config';
+import { TemporalWorkerService } from './shared/temporal/temporal-worker.service';
 const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
@@ -48,6 +49,7 @@ async function bootstrap() {
     await startHttp(app);
     await startGrpc(app);
     await startEvent(app);
+    await startTemporalWorker(app);
 
     logAppPath(app, logger);
   } catch (error) {
@@ -103,6 +105,35 @@ async function startEvent(app: INestApplication) {
   );
 
   await app.startAllMicroservices();
+}
+
+/**
+ * Story 13.8 — boot the co-located Temporal worker AFTER `app.init()` so
+ * activity providers can resolve their NestJS DI before Temporal invokes
+ * them. Q9 = (b) defensive: missing workflow path / empty activity map
+ * short-circuits gracefully so 13.8 ships HTTP-only out of the box; the
+ * first dream workflow / activity (Stories 13.9–13.12) flips the worker on
+ * across the next process boot.
+ */
+async function startTemporalWorker(app: INestApplication) {
+  const workerService = app.get(TemporalWorkerService);
+  const configs = app.get(AppConfigService);
+  await workerService.start({
+    taskQueue: configs.temporalTaskQueue,
+    workflowsPath: tryResolveWorkflowsPath(),
+    activities: workerService.collectActivities(app),
+  });
+}
+
+function tryResolveWorkflowsPath(): string {
+  try {
+    return require.resolve('./modules/dream/temporal/workflows');
+  } catch {
+    // Empty signals "skip worker boot" to TemporalWorkerService.start.
+    // Story 13.9 lands the workflows directory; the next process restart
+    // picks the worker up.
+    return '';
+  }
 }
 
 async function startGrpc(app: INestApplication) {

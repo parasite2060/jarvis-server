@@ -1,18 +1,27 @@
+/**
+ * Terminus indicator for the Temporal client/worker (Story 13.1 introduced
+ * as placeholder; Story 13.8 retrofits with the real probe).
+ *
+ * Decision D pattern (Story 13.4 MemU indicator precedent): always returns
+ * `up` so `/health` stays 200 even when Temporal is unreachable. The
+ * `message` field conveys the actual state (`connected` /
+ * `unreachable: <error>` / `not-connected`).
+ *
+ * Probe is `client.connection.workflowService.getSystemInfo({})` with a 2 s
+ * timeout (Q3 + Q7) — see `TemporalClientService.healthy()`.
+ */
 import { Injectable } from '@nestjs/common';
 import { HealthIndicator, HealthIndicatorResult } from '@nestjs/terminus';
+import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 
-/**
- * Placeholder Terminus indicator for the Temporal worker.
- *
- * Story 13.1 introduces it so `/health` can already report a `temporal` key.
- * Story 13.8 swaps the body with a real `TemporalWorkerService.healthy()` probe.
- *
- * The indicator must not throw and must return `up` so `/health` stays 200
- * for the early Epic-13 stories that ship without a worker.
- */
 @Injectable()
 export class TemporalHealthIndicator extends HealthIndicator {
-  public isHealthy(key: string): HealthIndicatorResult {
-    return super.getStatus(key, true, { message: 'not-yet-bootstrapped' });
+  constructor(private readonly temporalClient: TemporalClientService) {
+    super();
+  }
+
+  public async isHealthy(key: string): Promise<HealthIndicatorResult> {
+    const probe = await this.temporalClient.healthy();
+    return this.getStatus(key, true, { message: probe.message });
   }
 }

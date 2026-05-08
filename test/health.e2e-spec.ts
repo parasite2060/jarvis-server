@@ -35,6 +35,7 @@ import { DataSource } from 'typeorm';
 import { AppConfigModule } from '../src/shared/config/config.module';
 import { AppConfigService } from '../src/shared/config/config.service';
 import { TemporalHealthIndicator } from '../src/shared/health/indicators/temporal.indicator';
+import { TemporalClientService } from '../src/shared/temporal/temporal-client.service';
 import { DBConnections } from '../src/shared/postgres/utils/constaint';
 
 @Controller('health')
@@ -85,7 +86,7 @@ class InlineApplicationIndicator extends HealthIndicator {
     TerminusModule,
   ],
   controllers: [SlimHealthController],
-  providers: [TemporalHealthIndicator],
+  providers: [TemporalHealthIndicator, TemporalClientService],
 })
 class HealthTestModule {}
 
@@ -134,9 +135,13 @@ describe('Health E2E', () => {
       expect(response.body.info).toBeDefined();
       expect(response.body.info.application).toEqual(expect.objectContaining({ status: 'up' }));
       expect(response.body.info.postgres).toEqual(expect.objectContaining({ status: 'up' }));
+      // Story 13.8 retrofit: indicator now reports `not-connected` when
+      // the client hasn't been used yet (no signal/coordinator-start in
+      // this slim test fixture). Decision D — always `up`; the message
+      // conveys actual state.
       expect(response.body.info.temporal).toEqual({
         status: 'up',
-        message: 'not-yet-bootstrapped',
+        message: 'not-connected',
       });
     });
   });
