@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { buildHealthFixAgent } from './health-fix.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
-import { HealthFixOutputSchema } from './schemas/health-fix-output.schema';
+import { HealthFixOutputSchema } from './health-fix-output.schema';
 
 describe('buildHealthFixAgent', () => {
   let mockFactory: DeepMocked<DeepAgentFactory>;

@@ -3,7 +3,7 @@
  *
  * # SANDBOX-CLEAN — Temporal replays this code on recovery.
  *   This file imports ONLY from `@temporalio/workflow` AND type-only imports
- *   from `../types/light-dream.types`. NO NestJS, NO `fs`, NO `crypto`,
+ *   from `../types/light-dream.types` (deleted). NO NestJS, NO `fs`, NO `crypto`,
  *   NO `Date.now()`, NO `Math.random()`, NO `src/...` runtime imports.
  *   All non-deterministic operations go through the workflow runtime API.
  *
@@ -34,23 +34,134 @@
  *   Workflow itself can't update DB (sandbox); the dedicated activity does it.
  */
 import { proxyActivities, log } from '@temporalio/workflow';
-import type {
-  CommitAndPRInput,
-  CommitAndPRResult,
-  ExtractionAgentOutput,
-  ExtractionInput,
-  InvalidateCacheInput,
-  LightDreamPayload,
-  LightDreamResult,
-  LoadTranscriptInput,
-  LoadTranscriptResult,
-  MarkDreamOutcomeInput,
-  PersistSessionLogInput,
-  RecordAgentOutput,
-  RecordInput,
-  UpdatePositionInput,
-} from '../types/light-dream.types';
-import type { SessionLogEntry } from '../../agents/schemas/extraction-summary.schema';
+import type { SessionLogEntry } from '../../agents/extraction-summary.schema';
+import type { FileAction } from '../../agents/record-result.schema';
+
+// ---------------------------------------------------------------------------
+// Activity I/O wire types (Q6 RESOLVED 2026-05-08 by TanNT — inlined here
+// from former `temporal/types/light-dream.types.ts` which was deleted to
+// match module-map §1).
+//
+// # Q8 binding — snake_case keys mirror Python `app/activities/light/_models.py`
+//   field-for-field (MC3 + MC5 byte-equivalence).
+// # Sandbox-safe: only `import type` references — fully erased at runtime.
+// ---------------------------------------------------------------------------
+
+/**
+ * Workflow entry payload (signaled to coordinator via `submit_light`).
+ * `session_id` is the Claude session UUID; `transcript_id` is the DB row PK.
+ */
+export interface LightDreamPayload {
+  session_id: string;
+  transcript_id: number;
+}
+
+/**
+ * Workflow result returned to the coordinator.
+ * `pr_url` is `null` when no daily-log changes were committed.
+ */
+export interface LightDreamResult {
+  dream_id: number;
+  pr_url: string | null;
+}
+
+export interface LoadTranscriptInput {
+  session_id: string;
+  transcript_id: number;
+}
+
+export interface LoadTranscriptResult {
+  dream_id: number;
+  parsed_text: string;
+  project: string | null;
+  token_count: number | null;
+  /** ISO-8601 timestamp of transcript-row creation. */
+  created_at_iso: string | null;
+  segment_end_line: number;
+  is_continuation: boolean;
+}
+
+export interface ExtractionInput {
+  dream_id: number;
+  session_id: string;
+  parsed_text: string;
+  project: string | null;
+  token_count: number | null;
+  /** Optional vault-relative path to a copy of the transcript for the agent. */
+  transcript_file: string | null;
+}
+
+export interface ExtractionAgentOutput {
+  summary: string;
+  no_extract: boolean;
+  /** Snake_case JSONB-equivalent — overwritten by deterministic post-run assembly. */
+  session_log_json: SessionLogEntry;
+}
+
+export interface PersistSessionLogInput {
+  dream_id: number;
+  session_log_json: SessionLogEntry;
+}
+
+export interface RecordInput {
+  dream_id: number;
+  session_id: string;
+  session_log_json: SessionLogEntry;
+  source_date_iso: string; // YYYY-MM-DD
+  session_start_iso: string; // HH:MM (24-hour UTC) or '00:00'
+  summary: string;
+  is_continuation: boolean;
+}
+
+export interface RecordWriteTriple {
+  path: string;
+  content: string;
+  action: 'create' | 'append' | 'update' | 'skip';
+}
+
+export interface RecordAgentOutput {
+  /** Q12 = (c) RESOLVED — triples collected by record agent's writeFile etc.; commitAndPr writes them on the new branch. */
+  session_log_writes: RecordWriteTriple[];
+  files_modified: string[];
+  files: FileAction[];
+  summary: string;
+}
+
+export interface UpdatePositionInput {
+  transcript_id: number;
+  segment_end_line: number;
+}
+
+export interface InvalidateCacheInput {
+  dream_id: number;
+}
+
+export interface CommitAndPRInput {
+  dream_id: number;
+  session_id: string;
+  source_date_iso: string;
+  summary: string;
+  files_modified: string[];
+  extraction_summary: string;
+  session_log_writes: RecordWriteTriple[];
+}
+
+export interface CommitAndPRResult {
+  git_branch: string;
+  git_pr_url: string | null;
+  /**
+   * `'created'` when a new PR was opened in this run.
+   * `'existing'` when the activity is a Temporal retry and the PR was already opened.
+   * `'no_changes'` when there were no files to commit (defensive).
+   */
+  git_pr_status: 'created' | 'existing' | 'no_changes';
+}
+
+/** Q13 — TS-only enhancement (Python doesn't update dream.outcome). */
+export interface MarkDreamOutcomeInput {
+  dream_id: number;
+  outcome: 'success' | 'partial' | 'failed';
+}
 
 // ---------------------------------------------------------------------------
 // Activity proxies — multiple policy groups per Q10.

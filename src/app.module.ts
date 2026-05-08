@@ -21,6 +21,9 @@ import { ContextModule } from './modules/context/context.module';
 import { DreamModule } from './modules/dream/dream.module';
 import { MemoryModule } from './modules/memory/memory.module';
 import { VaultModule } from './modules/vault/vault.module';
+// Story 13.10.5 — config business module per module-map §1 lines 170-180.
+// Distinct from `src/shared/config/` (boilerplate env-var loader; different scope).
+import { ConfigModule as JarvisConfigModule } from './modules/config/config.module';
 import { RedisModule } from '@nestjs-redis/kit';
 
 // Shared (global) modules — Story 13.3 stubs
@@ -62,6 +65,7 @@ import { AgentsModule } from './shared/agents/agents.module';
     VaultModule,
     ContextModule,
     DreamModule,
+    JarvisConfigModule,
   ],
   controllers: [],
   providers: [],

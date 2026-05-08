@@ -14,9 +14,9 @@
  * substitutes an empty Phase 2 summary when null.
  */
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { REMSleepOutputSchema } from './schemas/rem-sleep-output.schema';
-import { type VaultToolDeps } from './tools/vault-tools';
-import { readDailyLogPreloadedFactory } from './tools/deep-tools';
+import { REMSleepOutputSchema } from './rem-sleep-output.schema';
+import { type VaultToolDeps } from './vault-tools';
+import { readDailyLogPreloadedFactory } from './deep-tools';
 import { buildBase7Tools } from './deep-phase1.agent';
 
 export interface BuildPhase2AgentOptions {

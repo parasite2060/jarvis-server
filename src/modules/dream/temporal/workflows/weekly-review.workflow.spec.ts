@@ -23,7 +23,7 @@ import type {
   WeeklyReviewPayload,
   WriteReviewInput,
   WriteReviewResult,
-} from '../types/weekly-review.types';
+} from './weekly-review.workflow';
 
 describe('weeklyReviewWorkflow — Temporal scenarios', () => {
   let testEnv: TestWorkflowEnvironment;

@@ -17,7 +17,7 @@
 import { Worker } from '@temporalio/worker';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { deriveSourceDate, deriveSessionStart } from './light-dream.workflow';
-import { emptySessionLog, type SessionLogEntry } from '../../agents/schemas/extraction-summary.schema';
+import { emptySessionLog, type SessionLogEntry } from '../../agents/extraction-summary.schema';
 import type {
   CommitAndPRInput,
   CommitAndPRResult,
@@ -31,7 +31,7 @@ import type {
   RecordAgentOutput,
   RecordInput,
   UpdatePositionInput,
-} from '../types/light-dream.types';
+} from './light-dream.workflow';
 
 describe('lightDreamWorkflow — pure helpers', () => {
   describe('deriveSourceDate', () => {

@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { ExtractionSummarySchema, type MemoryItem, type VaultTarget } from './schemas/extraction-summary.schema';
+import { ExtractionSummarySchema, type MemoryItem, type VaultTarget } from './extraction-summary.schema';
 
 /**
  * Agent dependency state — mirrors Python `DreamDeps`. Mutated by store

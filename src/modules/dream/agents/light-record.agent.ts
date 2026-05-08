@@ -23,8 +23,8 @@ import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import * as mm from 'micromatch';
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { RecordResultSchema } from './schemas/record-result.schema';
-import type { RecordWriteTriple } from '../temporal/types/light-dream.types';
+import { RecordResultSchema } from './record-result.schema';
+import type { RecordWriteTriple } from '../temporal/workflows/light-dream.workflow';
 
 export interface RecordDeps {
   session_id: string;

@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { buildPhase3Agent } from './deep-phase3.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
-import { ConsolidationOutputSchema } from './schemas/consolidation-output.schema';
+import { ConsolidationOutputSchema } from './consolidation-output.schema';
 
 describe('buildPhase3Agent', () => {
   let mockFactory: DeepMocked<DeepAgentFactory>;

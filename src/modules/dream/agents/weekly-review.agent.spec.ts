@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { buildWeeklyReviewAgent } from './weekly-review.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
-import { WeeklyReviewOutputSchema } from './schemas/weekly-review-output.schema';
+import { WeeklyReviewOutputSchema } from './weekly-review-output.schema';
 
 describe('buildWeeklyReviewAgent', () => {
   let mockFactory: DeepMocked<DeepAgentFactory>;

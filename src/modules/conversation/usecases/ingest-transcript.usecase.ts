@@ -1,12 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { EventBus } from '@nestjs/cqrs';
+import { CommandBus, EventBus } from '@nestjs/cqrs';
 import { CONVERSATION_REPOSITORY, IConversationRepository } from 'src/shared/domain/repositories/conversation.repository.interface';
 import { SecretScrubberService } from 'src/shared/secret-redaction/secret-scrubber.service';
-import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 import { IngestTranscriptRequest } from '../models/requests/ingest-transcript.request';
 import { IngestTranscriptResponse } from '../models/responses/ingest-transcript.response';
 import { ConversationIngestedEvent, ConversationIngestedPayload } from '../events/conversation-ingested.event';
-import { countTokensApproximate, parseTranscript } from '../utils/transcript-parser.util';
+// Q2 RESOLVED 2026-05-08 by TanNT — module-map §1 wins over §A.4. The
+// conversation module no longer injects TemporalClientService directly;
+// it dispatches TriggerLightDreamCommand via CommandBus, and the dream
+// module's handler (in src/modules/dream/commands/handlers/) calls the
+// temporal client. Cross-business-module call goes through the formal
+// Command path per architecture.md §1.4 principle 8.
+import { TriggerLightDreamCommand } from 'src/modules/dream/commands/trigger-light-dream.command';
 
 const DEDUP_WINDOW_MS = 60_000;
 
@@ -23,7 +28,7 @@ export class IngestTranscriptUseCase {
     @Inject(CONVERSATION_REPOSITORY)
     private readonly repository: IConversationRepository,
     private readonly scrubber: SecretScrubberService,
-    private readonly temporal: TemporalClientService,
+    private readonly commandBus: CommandBus,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -57,8 +62,8 @@ export class IngestTranscriptUseCase {
       });
     }
 
-    const parsedText = parseTranscript(scrubbed);
-    const tokenCount = countTokensApproximate(parsedText);
+    const parsedText = this.parseTranscript(scrubbed);
+    const tokenCount = this.countTokensApproximate(parsedText);
 
     // Python conversations.py:91-104 — insert with status='received'.
     const row = await this.repository.insertTranscript({
@@ -89,10 +94,17 @@ export class IngestTranscriptUseCase {
     // facing 202 to fail; the coordinator workflow's signal-queue replay
     // (Story 13.8 design) covers retry on the activity side.
     try {
-      await this.temporal.signalCoordinator('light', {
-        transcript_id: row.id,
-        session_id: request.sessionId,
-      });
+      // Q2 RESOLVED 2026-05-08 by TanNT — dispatch via CommandBus instead
+      // of direct TemporalClientService.signalCoordinator. The dream
+      // module's TriggerLightDreamHandler delegates to its
+      // TriggerLightDreamUseCase, which signals the Temporal coordinator.
+      // Net behavior identical to the pre-13.10.5 path.
+      await this.commandBus.execute(
+        new TriggerLightDreamCommand({
+          sessionId: request.sessionId,
+          transcriptId: row.id,
+        }),
+      );
       await this.repository.setStatus(row.id, 'queued');
       this.logger.log({
         message: 'transcript queued for light dream',
@@ -123,5 +135,26 @@ export class IngestTranscriptUseCase {
     );
 
     return { httpStatus: 202, body: new IngestTranscriptResponse(row.id, false) };
+  }
+
+  /**
+   * Identity-stub transcript parser. Was `transcript-parser.util.ts`; inlined
+   * here per Story 13.10.5 / Q10 RESOLVED 2026-05-08 by TanNT (module-map §1
+   * does not list `conversation/utils/`).
+   *
+   * Story 13.10 ports the full Python parser into the light-dream extraction
+   * agent path; this method only populates Postgres `parsed_text` with a
+   * sane-but-not-precise value.
+   */
+  private parseTranscript(text: string): string {
+    return text;
+  }
+
+  /**
+   * Approximate token count — `Math.ceil(length / 4)`. Inlined per Q10.
+   * NOT for production cost estimates.
+   */
+  private countTokensApproximate(text: string): number {
+    return Math.ceil(text.length / 4);
   }
 }
