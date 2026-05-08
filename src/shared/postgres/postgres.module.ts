@@ -19,12 +19,14 @@ import { BlogRepositoryImpl } from './repository/blog.repository.impl';
 import { CommentRepositoryImpl } from './repository/comment.repository.impl';
 import { ConversationRepositoryImpl } from './repository/conversation.repository.impl';
 import { DreamRepositoryImpl } from './repository/dream.repository.impl';
+import { FileManifestRepositoryImpl } from './repository/file-manifest.repository.impl';
 
 // Repository tokens
 import { BLOG_REPOSITORY } from '../domain/repositories/blog.repository.interface';
 import { COMMENT_REPOSITORY } from '../domain/repositories/comment.repository.interface';
 import { CONVERSATION_REPOSITORY } from '../domain/repositories/conversation.repository.interface';
 import { DREAM_REPOSITORY } from '../domain/repositories/dream.repository.interface';
+import { FILE_MANIFEST_REPOSITORY } from '../domain/repositories/file-manifest.repository.interface';
 
 @Global()
 @Module({
@@ -45,7 +47,8 @@ import { DREAM_REPOSITORY } from '../domain/repositories/dream.repository.interf
     { provide: COMMENT_REPOSITORY, useClass: CommentRepositoryImpl },
     { provide: CONVERSATION_REPOSITORY, useClass: ConversationRepositoryImpl },
     { provide: DREAM_REPOSITORY, useClass: DreamRepositoryImpl },
+    { provide: FILE_MANIFEST_REPOSITORY, useClass: FileManifestRepositoryImpl },
   ],
-  exports: [BLOG_REPOSITORY, COMMENT_REPOSITORY, CONVERSATION_REPOSITORY, DREAM_REPOSITORY],
+  exports: [BLOG_REPOSITORY, COMMENT_REPOSITORY, CONVERSATION_REPOSITORY, DREAM_REPOSITORY, FILE_MANIFEST_REPOSITORY],
 })
 export class PostgresModule {}

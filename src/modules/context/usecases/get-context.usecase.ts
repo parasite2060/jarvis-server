@@ -15,7 +15,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ContextPresenter } from '../models/presenters/context.presenter';
 import { ContextCacheService } from '../services/context-cache.service';
-import { formatPythonIso } from '../utils/format-iso';
+import { formatPythonIso } from 'src/shared/utils/format-iso';
 import { AssembleContextUseCase } from './assemble-context.usecase';
 
 @Injectable()

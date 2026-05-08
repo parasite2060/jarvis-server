@@ -9,6 +9,8 @@ import { ErrorCode } from '../error.code';
 import { ValidateException, InternalException } from 'src/shared/common/models/exception';
 import { VaultFileNotFoundError } from 'src/shared/common/exceptions/vault-file-not-found.error';
 import { VaultPathTraversalError } from 'src/shared/common/exceptions/vault-path-traversal.error';
+import { VaultEndpointFileNotFoundError } from 'src/shared/common/exceptions/vault-endpoint-file-not-found.error';
+import { VaultEndpointPathTraversalError } from 'src/shared/common/exceptions/vault-endpoint-path-traversal.error';
 import { MemuError, MemuUnavailableError } from 'src/shared/api/errors/memu.errors';
 
 /**
@@ -144,6 +146,44 @@ export class MemuUnavailableExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const body = HttpApiResponse.failed(ErrorCode.MEMU_UNAVAILABLE, exception.detail);
     this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.BAD_GATEWAY);
+    return null;
+  }
+}
+
+/**
+ * Vault endpoint file-not-found — `GetVaultFileByPathUseCase` throws
+ * `VaultEndpointFileNotFoundError` (Story 13.6 / Q9). Mapped to HTTP 404 with
+ * the VAULT-context code (-400101). Distinct from Story 13.4's
+ * MEMORY-context 404 (-400087).
+ */
+@Catch(VaultEndpointFileNotFoundError)
+export class VaultEndpointFileNotFoundExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: VaultEndpointFileNotFoundError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(exception.code, exception.message);
+    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.NOT_FOUND);
+    return null;
+  }
+}
+
+/**
+ * Vault endpoint path-traversal — `GetVaultFileByPathUseCase` throws
+ * `VaultEndpointPathTraversalError` (Story 13.6 / Q9). Mapped to HTTP 400
+ * (matches Python `files.py:91-101` — caller-supplied path is INVALID, not
+ * forbidden). Distinct from Story 13.4's defence-in-depth 403 path.
+ */
+@Catch(VaultEndpointPathTraversalError)
+export class VaultEndpointPathTraversalExceptionFilter implements ExceptionFilter {
+  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
+
+  catch(exception: VaultEndpointPathTraversalError, host: ArgumentsHost): any {
+    if (host.getType() !== 'http') return null;
+    const ctx = host.switchToHttp();
+    const body = HttpApiResponse.failed(exception.code, exception.message);
+    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.BAD_REQUEST);
     return null;
   }
 }
