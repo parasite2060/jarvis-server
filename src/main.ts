@@ -27,6 +27,7 @@ import { AppConfigService } from './shared/config/config.service';
 import { getGRPCConfigs } from 'src/utils/config/grpc.config';
 import { TemporalClientService } from './shared/temporal/temporal-client.service';
 import { TemporalWorkerService } from './shared/temporal/temporal-worker.service';
+import { loadCronConfigFromVault } from './shared/temporal/load-cron-config';
 const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
@@ -52,6 +53,7 @@ async function bootstrap() {
     await startEvent(app);
     await startTemporalWorker(app);
     await ensureCoordinatorRunning(app);
+    await registerSchedules(app);
 
     logAppPath(app, logger);
   } catch (error) {
@@ -132,7 +134,7 @@ async function startTemporalWorker(app: INestApplication) {
     //
     // Story 13.11 added `DeepDream`; Story 13.12 added `WeeklyReview` —
     // same aliased re-export pattern.
-    workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream', 'DeepDream', 'WeeklyReview'],
+    workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream', 'DeepDream', 'WeeklyReview', 'ScheduleSignalRelay'],
   });
 }
 
@@ -179,6 +181,48 @@ async function ensureCoordinatorRunning(app: NestExpressApplication) {
       errorClass: (err as { name?: string })?.name ?? 'Error',
     });
     throw err;
+  }
+}
+
+/**
+ * Story 13.13 — register Temporal Schedules at boot. Mirrors Python
+ * `app/main.py:148-150` ordering (AFTER worker boot + coordinator start).
+ *
+ * Q7 RESOLVED: soft-fail at this outer boundary. The methods themselves
+ * throw `InternalException` on connection / RPC failures; we catch + log
+ * `main.registerSchedules.failed` + continue boot. PATCH /config can
+ * re-attempt via `updateSchedule()` once Temporal is reachable; the next
+ * successful boot self-heals via `registerSchedules()`.
+ */
+async function registerSchedules(app: NestExpressApplication) {
+  const workerService = app.get(TemporalWorkerService);
+  if (!workerService.isStarted()) {
+    logger.warn({
+      message: 'temporal schedule registration deferred — worker not booted',
+      event: 'main.registerSchedules.deferred',
+      reason: 'workerNotBooted',
+    });
+    return;
+  }
+
+  try {
+    const cronConfig = await loadCronConfigFromVault(app);
+    await app.get(TemporalClientService).registerSchedules({
+      deepDreamCron: cronConfig.deepDreamCron,
+      weeklyReviewCron: cronConfig.weeklyReviewCron,
+    });
+    logger.log({
+      message: 'temporal schedule registration completed',
+      event: 'main.registerSchedules.completed',
+      scheduleIds: ['deep-dream-nightly', 'weekly-review'],
+    });
+  } catch (err) {
+    logger.warn({
+      message: 'temporal schedule registration degraded — continuing boot (will self-heal on next start)',
+      event: 'main.registerSchedules.failed',
+      errorClass: (err as { name?: string })?.name ?? 'Error',
+      error: (err as Error).message,
+    });
   }
 }
 

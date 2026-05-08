@@ -1,15 +1,18 @@
 /**
- * ConfigController — GET /config + PATCH /config (Story 13.10.5 scaffold).
+ * ConfigController — Story 13.13 (functional bodies).
  *
- * Module-map §1 lines 170-180 prescribes this controller. Story 13.13
- * (Temporal Schedules) wires functional bodies (cron read + cron-changed
- * event publish). Here we expose the routes with placeholder responses so
- * NestJS boot validates the routes and the module structure conforms to §1.
+ * `GET /config` returns the current config with defaults applied.
+ * `PATCH /config` validates + merges + writes + dispatches `CronChangedEvent`
+ * for cron diffs.
+ *
+ * Mirrors Python `app/api/routes/config.py:62-128`. Wire format camelCase
+ * per MC1 + Story 13.6 Q1.
  */
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { GetConfigUseCase } from './usecases/get-config.usecase';
 import { UpdateConfigUseCase } from './usecases/update-config.usecase';
 import { UpdateConfigRequest } from './models/requests/update-config.request';
+import { ConfigPresenter } from './models/presenters/config.presenter';
 
 @Controller()
 export class ConfigController {
@@ -19,12 +22,12 @@ export class ConfigController {
   ) {}
 
   @Get('config')
-  async getConfig(): Promise<Record<string, unknown>> {
+  async getConfig(): Promise<ConfigPresenter> {
     return this.getConfigUseCase.execute();
   }
 
   @Patch('config')
-  async updateConfig(@Body() request: UpdateConfigRequest): Promise<{ ok: boolean }> {
-    return this.updateConfigUseCase.execute(request as Record<string, unknown>);
+  async updateConfig(@Body() request: UpdateConfigRequest): Promise<ConfigPresenter> {
+    return this.updateConfigUseCase.execute(request);
   }
 }

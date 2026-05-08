@@ -12,7 +12,14 @@
  */
 import { Logger } from '@nestjs/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { Client, Connection, WorkflowExecutionAlreadyStartedError, WorkflowIdReusePolicy } from '@temporalio/client';
+import {
+  Client,
+  Connection,
+  ScheduleNotFoundError,
+  ScheduleOverlapPolicy,
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowIdReusePolicy,
+} from '@temporalio/client';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { ErrorCode } from 'src/utils/error.code';
 import { InternalException } from 'src/shared/common/models/exception';
@@ -37,10 +44,19 @@ interface MockHandle {
   signal: jest.Mock;
 }
 
+interface MockScheduleHandle {
+  describe: jest.Mock;
+  update: jest.Mock;
+}
+
 interface MockClient {
   workflow: {
     getHandle: jest.Mock<MockHandle, [string]>;
     start: jest.Mock;
+  };
+  schedule: {
+    getHandle: jest.Mock<MockScheduleHandle, [string]>;
+    create: jest.Mock;
   };
   connection: {
     workflowService: { getSystemInfo: jest.Mock };
@@ -53,6 +69,13 @@ function buildMockClient(): MockClient {
     workflow: {
       getHandle: jest.fn().mockReturnValue({ signal: jest.fn().mockResolvedValue(undefined) }),
       start: jest.fn().mockResolvedValue(undefined),
+    },
+    schedule: {
+      getHandle: jest.fn().mockReturnValue({
+        describe: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue(undefined),
+      }),
+      create: jest.fn().mockResolvedValue(undefined),
     },
     connection: {
       workflowService: { getSystemInfo: jest.fn().mockResolvedValue({}) },
@@ -187,14 +210,124 @@ describe('TemporalClientService', () => {
     });
   });
 
-  describe('registerSchedules', () => {
-    it('logs skipped (Story 13.13 placeholder) and returns void without touching the client', async () => {
+  describe('registerSchedules (Story 13.13)', () => {
+    const opts = { deepDreamCron: '0 20 * * *', weeklyReviewCron: '0 20 * * 0' };
+
+    it('updates both schedules when both already exist (idempotent path)', async () => {
+      // Arrange — describe succeeds for both → update path
+      const deepHandle = { describe: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue(undefined) };
+      const weeklyHandle = { describe: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue(undefined) };
+      mockClient.schedule.getHandle.mockReturnValueOnce(deepHandle).mockReturnValueOnce(weeklyHandle);
+
       // Act
-      const result = await target.registerSchedules();
+      await target.registerSchedules(opts);
+
+      // Assert — describe + update for each; no create
+      expect(mockClient.schedule.getHandle).toHaveBeenNthCalledWith(1, 'deep-dream-nightly');
+      expect(mockClient.schedule.getHandle).toHaveBeenNthCalledWith(2, 'weekly-review');
+      expect(deepHandle.describe).toHaveBeenCalled();
+      expect(deepHandle.update).toHaveBeenCalled();
+      expect(weeklyHandle.describe).toHaveBeenCalled();
+      expect(weeklyHandle.update).toHaveBeenCalled();
+      expect(mockClient.schedule.create).not.toHaveBeenCalled();
+    });
+
+    it('creates both schedules on ScheduleNotFoundError (first-boot path)', async () => {
+      // Arrange — describe throws NotFound for both → fall through to create
+      const notFound = (id: string) => new ScheduleNotFoundError('not found', id);
+      const deepHandle = { describe: jest.fn().mockRejectedValue(notFound('deep-dream-nightly')), update: jest.fn() };
+      const weeklyHandle = { describe: jest.fn().mockRejectedValue(notFound('weekly-review')), update: jest.fn() };
+      mockClient.schedule.getHandle.mockReturnValueOnce(deepHandle).mockReturnValueOnce(weeklyHandle);
+
+      // Act
+      await target.registerSchedules(opts);
+
+      // Assert — create called twice with correct shape
+      expect(mockClient.schedule.create).toHaveBeenCalledTimes(2);
+      const firstCall = mockClient.schedule.create.mock.calls[0]![0];
+      expect(firstCall.scheduleId).toBe('deep-dream-nightly');
+      expect(firstCall.spec.cronExpressions).toEqual(['0 20 * * *']);
+      expect(firstCall.action.type).toBe('startWorkflow');
+      expect(firstCall.action.workflowType).toBe('ScheduleSignalRelay');
+      expect(firstCall.action.workflowId).toBe('deep-dream-nightly-relay');
+      expect(firstCall.action.taskQueue).toBe(TEMPORAL_TASK_QUEUE);
+      expect(firstCall.action.args).toEqual(['deep']);
+      expect(firstCall.policies.overlap).toBe(ScheduleOverlapPolicy.SKIP);
+
+      const secondCall = mockClient.schedule.create.mock.calls[1]![0];
+      expect(secondCall.scheduleId).toBe('weekly-review');
+      expect(secondCall.action.workflowId).toBe('weekly-review-relay');
+      expect(secondCall.action.args).toEqual(['weekly']);
+    });
+
+    it('mixed path: deep exists, weekly does not — describe-update for deep + create for weekly', async () => {
+      // Arrange
+      const notFound = (id: string) => new ScheduleNotFoundError('not found', id);
+      const deepHandle = { describe: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue(undefined) };
+      const weeklyHandle = { describe: jest.fn().mockRejectedValue(notFound('weekly-review')), update: jest.fn() };
+      mockClient.schedule.getHandle.mockReturnValueOnce(deepHandle).mockReturnValueOnce(weeklyHandle);
+
+      // Act
+      await target.registerSchedules(opts);
 
       // Assert
-      expect(result).toBeUndefined();
-      expect(ConnectionConnectMock).not.toHaveBeenCalled();
+      expect(deepHandle.update).toHaveBeenCalled();
+      expect(mockClient.schedule.create).toHaveBeenCalledTimes(1);
+      expect(mockClient.schedule.create.mock.calls[0]![0].scheduleId).toBe('weekly-review');
+    });
+
+    it('throws InternalException(TEMPORAL_SCHEDULE_REGISTRATION_FAILED) on non-NotFound error during describe', async () => {
+      // Arrange — describe throws something other than NotFound
+      const deepHandle = { describe: jest.fn().mockRejectedValue(new Error('rpc disconnected')), update: jest.fn() };
+      mockClient.schedule.getHandle.mockReturnValueOnce(deepHandle);
+
+      // Act + Assert
+      await expect(target.registerSchedules(opts)).rejects.toMatchObject({
+        code: ErrorCode.TEMPORAL_SCHEDULE_REGISTRATION_FAILED,
+      });
+    });
+  });
+
+  describe('updateSchedule (Story 13.13)', () => {
+    it('updates an existing schedule via the upsert helper', async () => {
+      // Arrange
+      const handle = { describe: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue(undefined) };
+      mockClient.schedule.getHandle.mockReturnValueOnce(handle);
+
+      // Act
+      await target.updateSchedule('deep-dream-nightly', '0 21 * * *');
+
+      // Assert
+      expect(mockClient.schedule.getHandle).toHaveBeenCalledWith('deep-dream-nightly');
+      expect(handle.update).toHaveBeenCalled();
+    });
+
+    it('falls through to create on ScheduleNotFoundError', async () => {
+      // Arrange
+      const notFound = new ScheduleNotFoundError('not found', 'weekly-review');
+      const handle = { describe: jest.fn().mockRejectedValue(notFound), update: jest.fn() };
+      mockClient.schedule.getHandle.mockReturnValueOnce(handle);
+
+      // Act
+      await target.updateSchedule('weekly-review', '0 22 * * 0');
+
+      // Assert
+      expect(mockClient.schedule.create).toHaveBeenCalledTimes(1);
+      const callArgs = mockClient.schedule.create.mock.calls[0]![0];
+      expect(callArgs.scheduleId).toBe('weekly-review');
+      expect(callArgs.spec.cronExpressions).toEqual(['0 22 * * 0']);
+      expect(callArgs.action.args).toEqual(['weekly']);
+    });
+
+    it('throws InternalException(TEMPORAL_SCHEDULE_REGISTRATION_FAILED) on non-NotFound error', async () => {
+      // Arrange
+      const handle = { describe: jest.fn().mockRejectedValue(new Error('rpc disconnected')), update: jest.fn() };
+      mockClient.schedule.getHandle.mockReturnValueOnce(handle);
+
+      // Act + Assert
+      await expect(target.updateSchedule('deep-dream-nightly', '0 21 * * *')).rejects.toMatchObject({
+        code: ErrorCode.TEMPORAL_SCHEDULE_REGISTRATION_FAILED,
+      });
     });
   });
 

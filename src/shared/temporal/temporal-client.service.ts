@@ -40,16 +40,38 @@
  *     `client = null` anyway. NEVER rethrow.
  */
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
-import { Client, Connection, WorkflowExecutionAlreadyStartedError, WorkflowIdReusePolicy } from '@temporalio/client';
+import {
+  Client,
+  Connection,
+  ScheduleNotFoundError,
+  ScheduleOverlapPolicy,
+  type ScheduleOptions,
+  type ScheduleOptionsAction,
+  type ScheduleUpdateOptions,
+  // The Workflow generic isn't needed here; we use the default-bound form.
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowIdReusePolicy,
+} from '@temporalio/client';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
 
 export type CoordinatorSignalKind = 'light' | 'deep' | 'weekly';
+export type ScheduleId = 'deep-dream-nightly' | 'weekly-review';
+export type ScheduleRelayKind = 'deep' | 'weekly';
+
+export interface RegisterSchedulesOptions {
+  deepDreamCron: string;
+  weeklyReviewCron: string;
+}
 
 const COORDINATOR_WORKFLOW_ID = 'coord-singleton';
 const COORDINATOR_WORKFLOW_TYPE = 'dreamCoordinatorWorkflow';
 const HEALTHY_TIMEOUT_MS = 2_000;
+
+const SCHEDULE_RELAY_WORKFLOW_TYPE = 'ScheduleSignalRelay';
+const DEEP_DREAM_SCHEDULE_ID: ScheduleId = 'deep-dream-nightly';
+const WEEKLY_REVIEW_SCHEDULE_ID: ScheduleId = 'weekly-review';
 
 // Story 13.1 §AC-4 forbidden field regex (production variant): drop fields
 // whose names smell like content / secrets / raw bodies. Matches only
@@ -175,14 +197,114 @@ export class TemporalClientService implements OnApplicationShutdown {
     });
   }
 
-  async registerSchedules(): Promise<void> {
-    // Empty placeholder — Story 13.13 fills with `client.schedule.create(...)`
-    // / `handle.update(...)` calls per Python `temporal_schedules.py:46-83`.
+  /**
+   * Story 13.13 — idempotently register (or update) the two cron schedules:
+   * `deep-dream-nightly` and `weekly-review`. Mirrors Python
+   * `register_schedules()` at `app/temporal_schedules.py:77-88`.
+   *
+   * The cron values are passed as args (Q10 RESOLVED) — boot reads them via
+   * `loadCronConfigFromVault(app)` helper before invoking this method. Keeps
+   * the shared service business-module-agnostic.
+   */
+  async registerSchedules(opts: RegisterSchedulesOptions): Promise<void> {
+    const client = await this.getRawClient();
+    await this._upsertSchedule(client, DEEP_DREAM_SCHEDULE_ID, opts.deepDreamCron, 'deep');
+    await this._upsertSchedule(client, WEEKLY_REVIEW_SCHEDULE_ID, opts.weeklyReviewCron, 'weekly');
     this.logger.log({
-      message: 'temporal schedule registration deferred',
-      event: 'temporalClient.registerSchedules.skipped',
-      reason: 'story13.13Pending',
+      message: 'temporal schedules registered',
+      event: 'temporalClient.registerSchedules.completed',
+      scheduleIds: [DEEP_DREAM_SCHEDULE_ID, WEEKLY_REVIEW_SCHEDULE_ID],
     });
+  }
+
+  /**
+   * Story 13.13 — update a single schedule's cron expression. Triggered by
+   * `CronChangedEvent` consumed in the dream module's handler when
+   * `PATCH /config` changes a cron field.
+   *
+   * Defensive: on `ScheduleNotFoundError` falls through to `create()` —
+   * same idempotency pattern as `registerSchedules()`.
+   */
+  async updateSchedule(scheduleId: ScheduleId, cron: string): Promise<void> {
+    const client = await this.getRawClient();
+    const kind: ScheduleRelayKind = scheduleId === DEEP_DREAM_SCHEDULE_ID ? 'deep' : 'weekly';
+    await this._upsertSchedule(client, scheduleId, cron, kind);
+  }
+
+  private _makeScheduleOptions(scheduleId: ScheduleId, cron: string, kind: ScheduleRelayKind): ScheduleOptions<ScheduleOptionsAction> {
+    return {
+      scheduleId,
+      spec: { cronExpressions: [cron] },
+      action: {
+        type: 'startWorkflow',
+        workflowType: SCHEDULE_RELAY_WORKFLOW_TYPE,
+        workflowId: `${scheduleId}-relay`,
+        taskQueue: this.appConfig.temporalTaskQueue,
+        args: [kind],
+      },
+      policies: { overlap: ScheduleOverlapPolicy.SKIP },
+    };
+  }
+
+  /**
+   * Idempotent describe-then-update / catch-NotFound-then-create. Mirrors
+   * Python `_upsert_schedule()` at `app/temporal_schedules.py:59-74`.
+   */
+  private async _upsertSchedule(client: Client, scheduleId: ScheduleId, cron: string, kind: ScheduleRelayKind): Promise<void> {
+    const opts = this._makeScheduleOptions(scheduleId, cron, kind);
+    try {
+      const handle = client.schedule.getHandle(scheduleId);
+      await handle.describe(); // throws ScheduleNotFoundError if absent
+      const updateOpts: ScheduleUpdateOptions<ScheduleOptionsAction> = {
+        spec: opts.spec,
+        action: opts.action,
+        policies: opts.policies,
+        state: {},
+      };
+      await handle.update(() => updateOpts);
+      this.logger.log({
+        message: 'temporal schedule updated',
+        event: 'temporalClient.schedule.updated',
+        scheduleId,
+        cron,
+      });
+      return;
+    } catch (err) {
+      if (!(err instanceof ScheduleNotFoundError)) {
+        this.logger.error({
+          message: 'temporal schedule upsert failed',
+          event: 'temporalClient.schedule.upsertFailed',
+          scheduleId,
+          errorClass: (err as { name?: string })?.name ?? 'Error',
+        });
+        throw new InternalException(
+          ErrorCode.TEMPORAL_SCHEDULE_REGISTRATION_FAILED,
+          `Schedule registration failed for ${scheduleId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // ScheduleNotFoundError → create.
+    try {
+      await client.schedule.create(opts);
+      this.logger.log({
+        message: 'temporal schedule created',
+        event: 'temporalClient.schedule.created',
+        scheduleId,
+        cron,
+      });
+    } catch (createErr) {
+      this.logger.error({
+        message: 'temporal schedule create failed',
+        event: 'temporalClient.schedule.createFailed',
+        scheduleId,
+        errorClass: (createErr as { name?: string })?.name ?? 'Error',
+      });
+      throw new InternalException(
+        ErrorCode.TEMPORAL_SCHEDULE_REGISTRATION_FAILED,
+        `Schedule registration failed for ${scheduleId}: ${(createErr as Error).message}`,
+      );
+    }
   }
 
   async healthy(): Promise<{ healthy: boolean; message: string }> {
