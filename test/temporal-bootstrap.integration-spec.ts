@@ -1,10 +1,15 @@
 /**
- * Integration spec for Story 13.8 — Temporal client + worker bootstrap
- * against the in-process `@temporalio/testing` Test Server (Q8 = a).
+ * Integration spec for Story 13.8 — Temporal client + worker bootstrap.
  *
- * Real Temporal Test Server (no Docker), real worker, real client. Five GWT
- * scenarios per AC #15 (scenario (d) hardened by the leader's graceful-shutdown
- * amplification 2026-05-08):
+ * Connects to a REAL Temporal server running in Docker (`temporalio/auto-setup`
+ * via `docker-compose.e2e.yml` on `localhost:7234`). The wire contract — gRPC,
+ * signal delivery, worker registration, replay, retry policies — is exercised
+ * against a real server, not the in-process Java Test Server (which elides
+ * real-cluster behavior). User policy: e2e + integration tests must hit real
+ * services, not embedded simulators.
+ *
+ * Five GWT scenarios per AC #15 (scenario (d) hardened by the leader's
+ * graceful-shutdown amplification 2026-05-08):
  *   (a) Worker boots and runs a no-op activity via a stub workflow
  *   (b) Signal flows end-to-end through `signalCoordinator` (snake_case
  *       payload preserved verbatim)
@@ -19,7 +24,7 @@
 import * as path from 'node:path';
 import { INestApplication, Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { TestWorkflowEnvironment } from '@temporalio/testing';
+import { Client, Connection } from '@temporalio/client';
 import { ActivityRegistry } from '../src/shared/temporal/activity-registry.service';
 import { TemporalActivity } from '../src/shared/temporal/decorators/temporal-activity.decorator';
 import { TemporalClientService } from '../src/shared/temporal/temporal-client.service';
@@ -28,7 +33,9 @@ import { TemporalWorkerService } from '../src/shared/temporal/temporal-worker.se
 import { AppConfigService } from '../src/shared/config/config.service';
 import { DiscoveryModule } from '@nestjs/core';
 
-const TASK_QUEUE = 'jarvis-dream-test';
+const TEMPORAL_ADDRESS = process.env['TEMPORAL_E2E_ADDRESS'] ?? 'localhost:7234';
+const TEMPORAL_NAMESPACE = process.env['TEMPORAL_E2E_NAMESPACE'] ?? 'default';
+const TASK_QUEUE = 'jarvis-dream-test-bootstrap';
 
 @Injectable()
 class TestActivities {
@@ -38,7 +45,7 @@ class TestActivities {
   }
 }
 
-async function buildApp(testEnv: TestWorkflowEnvironment): Promise<INestApplication> {
+async function buildApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [DiscoveryModule],
     providers: [
@@ -50,8 +57,8 @@ async function buildApp(testEnv: TestWorkflowEnvironment): Promise<INestApplicat
       {
         provide: AppConfigService,
         useValue: {
-          temporalAddress: testEnv.address,
-          temporalNamespace: testEnv.namespace ?? 'default',
+          temporalAddress: TEMPORAL_ADDRESS,
+          temporalNamespace: TEMPORAL_NAMESPACE,
           temporalTaskQueue: TASK_QUEUE,
         } as unknown as AppConfigService,
       },
@@ -63,23 +70,25 @@ async function buildApp(testEnv: TestWorkflowEnvironment): Promise<INestApplicat
   return app;
 }
 
-describe('Temporal bootstrap (integration — Test Server)', () => {
-  // Test Server boot has a one-time ~5–10 s warm-up. Bump global timeout.
+describe('Temporal bootstrap (integration — real Docker server)', () => {
+  // Cluster operations + worker boot + workflow execution can take a while
+  // on first cold-start. Bump global timeout.
   jest.setTimeout(60_000);
 
-  let testEnv: TestWorkflowEnvironment;
+  let testClient: Client;
 
   beforeAll(async () => {
-    testEnv = await TestWorkflowEnvironment.createLocal();
+    const connection = await Connection.connect({ address: TEMPORAL_ADDRESS });
+    testClient = new Client({ connection, namespace: TEMPORAL_NAMESPACE });
   });
 
   afterAll(async () => {
-    if (testEnv) await testEnv.teardown();
+    await testClient.connection.close().catch(() => undefined);
   });
 
   it('(e) healthy() reports not-connected when the client has not been used yet (Decision D — never throws)', async () => {
     // GIVEN a fresh app with no signal/coordinator-start invoked
-    const app = await buildApp(testEnv);
+    const app = await buildApp();
 
     // WHEN the health indicator probes the client
     const indicator = app.get(TemporalHealthIndicator);
@@ -93,30 +102,37 @@ describe('Temporal bootstrap (integration — Test Server)', () => {
 
   it('(c) healthy() reports connected once the client has connected via a signal call', async () => {
     // GIVEN an app with a started coordinator workflow + booted worker
-    const app = await buildApp(testEnv);
+    const app = await buildApp();
 
-    // Start a stub coordinator workflow on the test env so the signal lands
-    await testEnv.client.workflow.start('dreamCoordinatorWorkflow', {
-      workflowId: 'coord-singleton',
+    // Start a stub coordinator workflow on the cluster so the signal lands
+    const coordHandle = await testClient.workflow.start('dreamCoordinatorWorkflow', {
+      workflowId: `coord-singleton-c-${Date.now()}`,
       taskQueue: TASK_QUEUE,
       args: [],
     });
 
-    // WHEN signalCoordinator is called (lazily connects the client)
-    const client = app.get(TemporalClientService);
-    await client.signalCoordinator('light', { transcript_id: 1, session_id: 's' });
+    try {
+      // WHEN signalCoordinator is called (lazily connects the client)
+      const client = app.get(TemporalClientService);
+      // signalCoordinator targets workflowId 'coord-singleton' by convention; for
+      // this scenario we need the signal to land on our test workflow, so we
+      // call the underlying client.signal directly with the test workflow id.
+      const raw = await client.getRawClient();
+      await raw.workflow.getHandle(coordHandle.workflowId).signal('submit_light', { transcript_id: 1, session_id: 's' });
 
-    // THEN healthy() reports connected
-    const indicator = app.get(TemporalHealthIndicator);
-    const probe = await indicator.isHealthy('temporal');
-    expect(probe).toEqual({ temporal: { status: 'up', message: 'connected' } });
-
-    await app.close();
+      // THEN healthy() reports connected
+      const indicator = app.get(TemporalHealthIndicator);
+      const probe = await indicator.isHealthy('temporal');
+      expect(probe).toEqual({ temporal: { status: 'up', message: 'connected' } });
+    } finally {
+      await coordHandle.terminate('test-cleanup').catch(() => undefined);
+      await app.close();
+    }
   });
 
   it('(a) worker boots and runs a no-op activity via the stub workflow', async () => {
     // GIVEN an app with the test workflow path resolved + the test.noop activity registered
-    const app = await buildApp(testEnv);
+    const app = await buildApp();
     const workerService = app.get(TemporalWorkerService);
     const activities = workerService.collectActivities(app);
     expect(activities['test.noop']).toBeInstanceOf(Function);
@@ -128,24 +144,26 @@ describe('Temporal bootstrap (integration — Test Server)', () => {
       activities,
     });
 
-    // WHEN the test workflow is executed via the test env's client
-    const result = await testEnv.client.workflow.execute('runNoopWorkflow', {
-      workflowId: 'test-noop-1',
-      taskQueue: TASK_QUEUE,
-      args: [],
-    });
+    try {
+      // WHEN the test workflow is executed via the cluster client
+      const result = await testClient.workflow.execute('runNoopWorkflow', {
+        workflowId: `test-noop-${Date.now()}`,
+        taskQueue: TASK_QUEUE,
+        args: [],
+      });
 
-    // THEN the workflow returns the activity's output
-    expect(result).toBe('ok');
-
-    await app.close();
+      // THEN the workflow returns the activity's output
+      expect(result).toBe('ok');
+    } finally {
+      await app.close();
+    }
   });
 
   it('(b) signalCoordinator delivers submit_${kind} with snake_case payload preserved end-to-end', async () => {
     // GIVEN an app with the worker booted and a coordinator workflow that records
     // signal payloads. We fold the assertion into the workflow itself by using
     // a query handler in the runSignalAccumulatorWorkflow fixture.
-    const app = await buildApp(testEnv);
+    const app = await buildApp();
     const workerService = app.get(TemporalWorkerService);
     const activities = workerService.collectActivities(app);
 
@@ -156,36 +174,44 @@ describe('Temporal bootstrap (integration — Test Server)', () => {
       activities,
     });
 
-    // Start the signal-accumulator workflow as `coord-singleton`.
-    const handle = await testEnv.client.workflow.start('runSignalAccumulatorWorkflow', {
-      workflowId: 'coord-singleton-b',
+    // Start the signal-accumulator workflow with a unique id (real cluster
+    // persists across runs, so any duplicate id would conflict).
+    const accumulatorId = `coord-singleton-b-${Date.now()}`;
+    const handle = await testClient.workflow.start('runSignalAccumulatorWorkflow', {
+      workflowId: accumulatorId,
       taskQueue: TASK_QUEUE,
       args: [],
     });
 
-    // WHEN signalCoordinator is invoked targeting our accumulator workflow
-    // We need the handle name to be 'coord-singleton' for the service path,
-    // but here we exercise the underlying client.signal contract via the
-    // service's own client to keep behaviour identical.
-    const client = await app.get(TemporalClientService).getRawClient();
-    await client.workflow.getHandle(handle.workflowId).signal('submit_light', {
-      transcript_id: 42,
-      session_id: 'sess-xyz',
-    });
+    try {
+      // WHEN signalCoordinator-style signal is sent to the accumulator workflow
+      const client = await app.get(TemporalClientService).getRawClient();
+      await client.workflow.getHandle(handle.workflowId).signal('submit_light', {
+        transcript_id: 42,
+        session_id: 'sess-xyz',
+      });
 
-    // THEN the workflow's query reports the snake_case payload verbatim
-    const queryHandle = client.workflow.getHandle(handle.workflowId);
-    const payloads = (await queryHandle.query('getSignalPayloads')) as Array<Record<string, unknown>>;
-    expect(payloads).toEqual([{ transcript_id: 42, session_id: 'sess-xyz' }]);
-
-    // Cleanup: terminate the workflow so it doesn't outlive the test
-    await queryHandle.terminate('test-cleanup').catch(() => undefined);
-    await app.close();
+      // THEN the workflow's query reports the snake_case payload verbatim
+      const queryHandle = client.workflow.getHandle(handle.workflowId);
+      // Brief retry loop — signal delivery via real cluster is async; the
+      // workflow needs a tick to handle the signal before the query reflects it.
+      const payloads = await waitFor(
+        async () => {
+          const got = (await queryHandle.query('getSignalPayloads')) as Array<Record<string, unknown>>;
+          return got.length > 0 ? got : null;
+        },
+        5_000,
+      );
+      expect(payloads).toEqual([{ transcript_id: 42, session_id: 'sess-xyz' }]);
+    } finally {
+      await handle.terminate('test-cleanup').catch(() => undefined);
+      await app.close();
+    }
   });
 
   it('(d) graceful drain on app.close() — worker.shutdown runs BEFORE connection.close, run-loop settles within 10 s, NO unhandled rejections', async () => {
     // GIVEN a booted worker
-    const app = await buildApp(testEnv);
+    const app = await buildApp();
     app.enableShutdownHooks();
     const workerService = app.get(TemporalWorkerService);
     const clientService = app.get(TemporalClientService);
@@ -239,3 +265,13 @@ describe('Temporal bootstrap (integration — Test Server)', () => {
     expect(unhandledRejections).toEqual([]);
   });
 });
+
+async function waitFor<T>(check: () => Promise<T | null>, timeoutMs: number): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const v = await check();
+    if (v !== null) return v;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`waitFor timed out after ${timeoutMs}ms`);
+}

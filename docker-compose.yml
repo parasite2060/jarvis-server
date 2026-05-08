@@ -120,3 +120,37 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Local Temporal cluster for development.
+  # Use the homelab cluster (192.168.50.129:7233) for production-like work
+  # OR localhost:7233 here for offline/disconnected sessions. Story 13.8+
+  # `TemporalClientService` is lazy-on-first-use, so the worker doesn't
+  # require Temporal at boot — but the dream pipeline (Story 13.10+)
+  # needs it to actually run. Web UI exposed at http://localhost:8233.
+  temporal:
+    image: temporalio/temporal:1.7.0
+    restart: unless-stopped
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --namespace
+      - default
+      - --log-level
+      - info
+    ports:
+      - 7233:7233 # gRPC frontend
+      - 8233:8233 # Web UI
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'namespace', 'describe', 'default', '--address', 'localhost:7233']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
