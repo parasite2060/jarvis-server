@@ -1,6 +1,7 @@
 export { dreamCoordinatorWorkflow, submitLightSignal, submitDeepSignal, submitWeeklySignal } from './dream-coordinator.workflow';
 export type { DreamKind, DreamRequest } from './dream-coordinator.workflow';
 export { lightDreamWorkflow, deriveSourceDate, deriveSessionStart } from './light-dream.workflow';
+export { deepDreamWorkflow, formatPhase1Summary, formatPhase2Summary, extractKnowledgeGapNames } from './deep-dream.workflow';
 
 // Story 13.10 / Q1 (RESOLVED 2026-05-08, refined post-Worker.create-typecheck):
 // `@temporalio/worker@1.17.0` registers workflows by their EXPORTED function
@@ -13,3 +14,4 @@ export { lightDreamWorkflow, deriveSourceDate, deriveSessionStart } from './ligh
 //
 // Stories 13.11 / 13.12 add `DeepDream` / `WeeklyReview` aliases the same way.
 export { lightDreamWorkflow as LightDream } from './light-dream.workflow';
+export { deepDreamWorkflow as DeepDream } from './deep-dream.workflow';

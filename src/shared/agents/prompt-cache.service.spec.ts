@@ -18,6 +18,12 @@ describe('PromptCacheService', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-cache-spec-'));
     fs.writeFileSync(path.join(tempDir, 'light-extraction.md'), 'EXTRACTION-PROMPT-BODY');
     fs.writeFileSync(path.join(tempDir, 'light-record.md'), 'RECORD-PROMPT-BODY');
+    // Story 13.11 added 4 deep-dream prompts to REQUIRED_PROMPTS — seed
+    // each so the boot-time check passes in this spec.
+    fs.writeFileSync(path.join(tempDir, 'deep-dream-phase1-light-sleep.md'), 'PHASE1-PROMPT');
+    fs.writeFileSync(path.join(tempDir, 'deep-dream-phase2-rem-sleep.md'), 'PHASE2-PROMPT');
+    fs.writeFileSync(path.join(tempDir, 'deep-dream-phase3-consolidate.md'), 'PHASE3-PROMPT');
+    fs.writeFileSync(path.join(tempDir, 'deep-dream-health-fix.md'), 'HEALTH-FIX-PROMPT');
 
     mockConfig = createMock<AppConfigService>();
     Object.defineProperty(mockConfig, 'promptsPath', { get: () => tempDir });
