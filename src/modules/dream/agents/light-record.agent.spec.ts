@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { buildLightRecordAgent, type RecordDeps } from './light-record.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
-import { readFileTool } from './tools/vault-tools';
+import { readFileTool } from './vault-tools';
 import { createMock as cm } from '@golevelup/ts-jest';
 import type { IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 

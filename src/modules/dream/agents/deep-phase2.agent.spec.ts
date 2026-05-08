@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { buildPhase2Agent } from './deep-phase2.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
-import { REMSleepOutputSchema } from './schemas/rem-sleep-output.schema';
+import { REMSleepOutputSchema } from './rem-sleep-output.schema';
 
 describe('buildPhase2Agent', () => {
   let mockFactory: DeepMocked<DeepAgentFactory>;

@@ -27,7 +27,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { LightSleepOutputSchema } from './schemas/light-sleep-output.schema';
+import { LightSleepOutputSchema } from './light-sleep-output.schema';
 import {
   fileInfoTool,
   grepTool,
@@ -37,8 +37,8 @@ import {
   readFileTool,
   readFrontmatterTool,
   type VaultToolDeps,
-} from './tools/vault-tools';
-import { queryMemuMemoriesFactory } from './tools/deep-tools';
+} from './vault-tools';
+import { queryMemuMemoriesFactory } from './deep-tools';
 
 export interface BuildPhase1AgentOptions {
   systemPrompt: string;

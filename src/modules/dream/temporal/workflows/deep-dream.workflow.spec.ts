@@ -34,7 +34,7 @@ import type {
   ScoringInput,
   Phase1Input,
   DeepDreamPayload,
-} from '../types/deep-dream.types';
+} from './deep-dream.workflow';
 
 describe('deepDreamWorkflow — pure helpers', () => {
   describe('formatPhase1Summary', () => {

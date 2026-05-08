@@ -19,9 +19,9 @@
  * here as the `usageLimits` opts argument.
  */
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { WeeklyReviewOutputSchema } from './schemas/weekly-review-output.schema';
-import { type VaultToolDeps } from './tools/vault-tools';
-import { readDailyLogPreloadedFactory, readVaultIndexPreloadedFactory } from './tools/weekly-tools';
+import { WeeklyReviewOutputSchema } from './weekly-review-output.schema';
+import { type VaultToolDeps } from './vault-tools';
+import { readDailyLogPreloadedFactory, readVaultIndexPreloadedFactory } from './weekly-tools';
 import { buildBase7Tools } from './deep-phase1.agent';
 
 export interface BuildWeeklyReviewAgentOptions {

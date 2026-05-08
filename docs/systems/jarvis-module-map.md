@@ -4,7 +4,8 @@
 **Created:** 2026-05-07
 **Authority:** [`./application-design.md`](./application-design.md) (Clean Architecture rules) + [`../../../../_bmad-output/planning-artifacts/architecture.md`](../../../../_bmad-output/planning-artifacts/architecture.md) (Jarvis architecture)
 **Story:** 13.0 — gates all Epic 13 implementation work
-**Locked decisions:** A.1=Command (sync invalidation per activity); A.2=grouped activities (`LightDreamActivities`, etc.); A.3=sibling subfolder layout (`temporal/`, `agents/`, `scoring/`); A.4=direct `TemporalClientService.signalCoordinator(...)` injection from `conversation` (no `TriggerLightDreamCommand` layer).
+**Locked decisions:** A.1=Command (sync invalidation per activity); A.3=sibling subfolder layout (`temporal/`, `agents/`, `scoring/`).
+**Superseded by TanNT 2026-05-08 binding ruling "follow §1 exactly":** A.2 (grouped activities → §1 prescribes per-activity files); A.4 (no TriggerLightDreamCommand layer → §1 prescribes commands/ folder with the trigger command + handler).
 
 ---
 
@@ -132,6 +133,7 @@ src/modules/
 │   │       │   ├── update-transcript-position.activity.ts
 │   │       │   ├── invalidate-context-cache.activity.ts
 │   │       │   ├── commit-and-pr.activity.ts
+│   │       │   ├── mark-dream-outcome.activity.ts            ◄── TS-port enhancement (Story 13.10 Q13); §1 amended 2026-05-08 by TanNT (Q8)
 │   │       │   └── index.ts
 │   │       ├── deep/
 │   │       │   ├── gather-inputs.activity.ts
@@ -145,6 +147,7 @@ src/modules/
 │   │       │   ├── align-memu.activity.ts
 │   │       │   ├── commit-and-pr.activity.ts
 │   │       │   ├── invalidate-context-cache.activity.ts
+│   │       │   ├── mark-deep-dream-outcome.activity.ts       ◄── TS-port enhancement (Story 13.11 Q13); §1 amended 2026-05-08 by TanNT (Q8)
 │   │       │   └── index.ts
 │   │       ├── weekly/
 │   │       │   ├── gather-dailys.activity.ts
@@ -153,6 +156,7 @@ src/modules/
 │   │       │   ├── write-review-file.activity.ts
 │   │       │   ├── commit-and-pr.activity.ts
 │   │       │   ├── invalidate-context-cache.activity.ts
+│   │       │   ├── mark-weekly-review-outcome.activity.ts    ◄── TS-port enhancement (Story 13.12 Q8); §1 amended 2026-05-08 by TanNT (Q8)
 │   │       │   └── index.ts
 │   │       └── index.ts                      ◄── re-exports each subfolder's array
 │   ├── agents/

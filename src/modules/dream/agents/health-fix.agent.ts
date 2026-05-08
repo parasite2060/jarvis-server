@@ -22,8 +22,8 @@
  * before invocation.
  */
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { HealthFixOutputSchema } from './schemas/health-fix-output.schema';
-import { type VaultToolDeps } from './tools/vault-tools';
+import { HealthFixOutputSchema } from './health-fix-output.schema';
+import { type VaultToolDeps } from './vault-tools';
 import { buildBase7Tools } from './deep-phase1.agent';
 
 export interface BuildHealthFixAgentOptions {

@@ -3,7 +3,7 @@
  *
  * # SANDBOX-CLEAN — Temporal replays this code on recovery.
  *   This file imports ONLY from `@temporalio/workflow` AND type-only imports
- *   from `../types/deep-dream.types`. NO NestJS, NO `fs`, NO `crypto`,
+ *   from `../types/deep-dream.types` (deleted). NO NestJS, NO `fs`, NO `crypto`,
  *   NO `Math.random()`, NO `src/...` runtime imports.
  *
  *   Per the Story 13.10 Finding 3 reversal (verified against
@@ -49,30 +49,170 @@
  *   16. return DeepDreamResult
  */
 import { proxyActivities, log } from '@temporalio/workflow';
-import type {
-  AlignMemuInput,
-  CommitAndPRResult,
-  ConsolidationResult,
-  DeepCommitAndPRInput,
-  DeepDreamPayload,
-  DeepDreamResult,
-  GatherInputsResult,
-  HealthCheckInput,
-  HealthFixInput,
-  HealthFixResult,
-  HealthReportResult,
-  InvalidateCacheInput,
-  LightSleepResult,
-  MarkDeepDreamOutcomeInput,
-  Phase1Input,
-  Phase2Input,
-  Phase3Input,
-  REMSleepResult,
-  ScoredCandidatesResult,
-  ScoringInput,
-  WriteFilesInput,
-  WriteFilesResult,
-} from '../types/deep-dream.types';
+
+// ---------------------------------------------------------------------------
+// Activity I/O wire types (Q6 RESOLVED 2026-05-08 by TanNT — inlined here
+// from former `temporal/types/deep-dream.types.ts` which was deleted to
+// match module-map §1).
+//
+// # Q8 binding — snake_case keys mirror Python `app/activities/deep/_models.py`
+//   field-for-field (MC3 + MC5 byte-equivalence).
+// # Sandbox-safe: type-only declarations (erased at runtime).
+// ---------------------------------------------------------------------------
+
+export interface DeepDreamPayload {
+  /** ISO format YYYY-MM-DD (e.g., '2026-05-07'). Drives branch name + dream_id key. */
+  target_date: string;
+  /** 'auto' (Temporal Schedule) | 'manual' (POST /dream). Default 'auto'. */
+  trigger?: string;
+  source_date_iso?: string | null;
+}
+
+export interface DeepDreamResult {
+  dream_id: number;
+  status: 'completed' | 'partial' | 'skipped';
+  pr_url?: string | null;
+  error_message?: string | null;
+}
+
+export interface GatherInputsResult {
+  dream_id: number;
+  memu_memories: Array<Record<string, unknown>>;
+  memory_md: string;
+  daily_log: string;
+  soul_md: string;
+  source_date_iso: string;
+}
+
+export interface Phase1Input {
+  dream_id: number;
+  memu_memories: Array<Record<string, unknown>>;
+  memory_md: string;
+  daily_log: string;
+  soul_md: string;
+  source_date_iso: string;
+}
+
+export interface LightSleepResult {
+  candidates_json: Array<Record<string, unknown>>;
+  duplicates_removed: number;
+  contradictions_found: number;
+}
+
+export interface ScoringInput {
+  dream_id: number;
+  candidates_json: Array<Record<string, unknown>>;
+}
+
+export interface ScoredCandidatesResult {
+  scored: Array<Record<string, unknown>>;
+}
+
+export interface Phase2Input {
+  dream_id: number;
+  source_date_iso: string;
+  candidates_json: Array<Record<string, unknown>>;
+  scored_json: Array<Record<string, unknown>>;
+}
+
+export interface REMSleepResult {
+  output_json: Record<string, unknown> | null;
+}
+
+export interface Phase3Input {
+  dream_id: number;
+  source_date_iso: string;
+  memu_memories: Array<Record<string, unknown>>;
+  memory_md: string;
+  daily_log: string;
+  soul_md: string;
+  phase1_summary: string;
+  phase2_summary: string;
+}
+
+export interface ConsolidationResult {
+  consolidation_json: Record<string, unknown>;
+  messages_json: Array<Record<string, unknown>>;
+  usage_input_tokens: number | null;
+  usage_output_tokens: number | null;
+  usage_total_tokens: number | null;
+  usage_tool_calls: number | null;
+}
+
+export interface HealthCheckInput {
+  dream_id: number;
+  source_date_iso: string;
+  knowledge_gap_names: string[];
+}
+
+export interface HealthReportResult {
+  report_json: Record<string, unknown>;
+  total_issues: number;
+}
+
+export interface HealthFixInput {
+  dream_id: number;
+  source_date_iso: string;
+  report_json: Record<string, unknown>;
+  consolidation_messages_json: Array<Record<string, unknown>>;
+  knowledge_gap_names: string[];
+}
+
+export interface HealthFixResult {
+  status: 'clean' | 'fixed' | 'incomplete';
+  report_json: Record<string, unknown>;
+  total_issues_remaining: number;
+}
+
+export interface WriteFilesInput {
+  dream_id: number;
+  source_date_iso: string;
+  consolidation_json: Record<string, unknown>;
+}
+
+export interface WriteFilesFileEntry {
+  path: string;
+  action: string; // 'create' | 'update' | 'rewrite'
+}
+
+export interface WriteFilesResult {
+  files_modified: WriteFilesFileEntry[];
+  /** Q3 deviation: triple-collection passed to commitAndPr. */
+  vault_writes: Array<{ path: string; content: string; action: 'create' | 'update' }>;
+}
+
+export interface DeepCommitAndPRInput {
+  dream_id: number;
+  target_date_iso: string;
+  files_modified: WriteFilesFileEntry[];
+  vault_writes: Array<{ path: string; content: string; action: 'create' | 'update' }>;
+  stats: Record<string, unknown>;
+}
+
+export interface CommitAndPRResult {
+  git_branch: string;
+  git_pr_url: string;
+  /** 'created' | 'existing' | 'no_files' | 'merged'. */
+  git_pr_status: string;
+}
+
+export interface AlignMemuInput {
+  dream_id: number;
+  memory_md: string;
+  source_date_iso: string;
+  /** `dream-{dream_id}` — the file-based idempotency key. */
+  idempotency_key: string;
+}
+
+export interface InvalidateCacheInput {
+  dream_id: number;
+}
+
+/** TS-only enhancement (Q13) — Python doesn't update dream.outcome. */
+export interface MarkDeepDreamOutcomeInput {
+  dream_id: number;
+  outcome: 'completed' | 'partial' | 'skipped';
+}
 
 // ---------------------------------------------------------------------------
 // Activity proxies — six policy groups per Q2.

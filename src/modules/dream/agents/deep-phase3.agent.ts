@@ -15,9 +15,9 @@
  * `writeFiles` activity from `vault_updates` after Q14 topics-drop).
  */
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { ConsolidationOutputSchema } from './schemas/consolidation-output.schema';
-import { type VaultToolDeps } from './tools/vault-tools';
-import { queryMemuMemoriesFactory, readDailyLogLiveFactory, readVaultIndexFactory } from './tools/deep-tools';
+import { ConsolidationOutputSchema } from './consolidation-output.schema';
+import { type VaultToolDeps } from './vault-tools';
+import { queryMemuMemoriesFactory, readDailyLogLiveFactory, readVaultIndexFactory } from './deep-tools';
 import { buildBase7Tools } from './deep-phase1.agent';
 
 export interface BuildPhase3AgentOptions {

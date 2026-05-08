@@ -4,7 +4,7 @@
  *
  * # SANDBOX-CLEAN — Temporal replays this code on recovery.
  *   This file imports ONLY from `@temporalio/workflow` AND type-only imports
- *   from `../types/weekly-review.types` AND a pure-data import from
+ *   from `../types/weekly-review.types` (deleted) AND a pure-data import from
  *   `./iso-week.ts`. NO NestJS, NO `fs`, NO `crypto`, NO `Math.random()`,
  *   NO `src/...` runtime imports.
  *
@@ -60,21 +60,105 @@
  */
 import { proxyActivities, log } from '@temporalio/workflow';
 import { weekIso } from './iso-week';
-import type {
-  AgentInput,
-  AgentResult,
-  CommitAndPRResult,
-  GatherDailysResult,
-  GatherIndexesInput,
-  GatherIndexesResult,
-  InvalidateCacheInput,
-  MarkWeeklyReviewOutcomeInput,
-  WeeklyCommitAndPRInput,
-  WeeklyReviewPayload,
-  WeeklyReviewResult,
-  WriteReviewInput,
-  WriteReviewResult,
-} from '../types/weekly-review.types';
+
+// ---------------------------------------------------------------------------
+// Activity I/O wire types (Q6 RESOLVED 2026-05-08 by TanNT — inlined here
+// from former `temporal/types/weekly-review.types.ts` which was deleted to
+// match module-map §1).
+//
+// # Q8 binding — snake_case keys mirror Python `app/activities/weekly/_models.py`
+//   field-for-field (MC3 + MC5 byte-equivalence).
+// # Sandbox-safe: type-only declarations (erased at runtime).
+// ---------------------------------------------------------------------------
+
+export interface WeeklyReviewPayload {
+  /** ISO date YYYY-MM-DD — Monday of the review week. */
+  week_start: string;
+  trigger?: string;
+}
+
+export interface WeeklyReviewResult {
+  dream_id: number;
+  /** TS-only enhancement (Q8) — Python omits this field. */
+  status: 'completed' | 'partial' | 'skipped';
+  pr_url?: string | null;
+}
+
+export interface GatherDailysResult {
+  dream_id: number;
+  week_start: string;
+  /** Map of `YYYY-MM-DD` → daily-log content. Empty entries omitted. */
+  daily_logs: Record<string, string>;
+}
+
+export interface GatherIndexesInput {
+  dream_id: number;
+  week_start: string;
+}
+
+export interface GatherIndexesResult {
+  vault_indexes: Record<string, string>;
+  vault_guide: string;
+}
+
+export interface AgentInput {
+  dream_id: number;
+  week_start: string;
+  daily_logs: Record<string, string>;
+  vault_indexes: Record<string, string>;
+  vault_guide: string;
+}
+
+export interface AgentResult {
+  review_content: string;
+  week_themes: string[];
+  stale_action_items: string[];
+  project_updates: Record<string, string>;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  tool_calls: number | null;
+}
+
+export interface WriteReviewInput {
+  dream_id: number;
+  week_start: string;
+  review_content: string;
+}
+
+export interface WriteReviewResult {
+  /** Mirrors Python `WriteReviewResult.review_path` (e.g., `reviews/2026-W19.md`). */
+  review_path: string;
+  files_modified: Array<{ path: string; action: string }>;
+  /** Q3 deviation: triple-collection passed to commitAndPr. */
+  vault_writes: Array<{ path: string; content: string; action: 'create' | 'update' }>;
+}
+
+export interface WeeklyCommitAndPRInput {
+  dream_id: number;
+  /** `YYYY-Www` form (e.g., `2026-W19`). */
+  week_iso: string;
+  files_modified: Array<{ path: string; action: string }>;
+  vault_writes: Array<{ path: string; content: string; action: 'create' | 'update' }>;
+}
+
+export interface CommitAndPRResult {
+  git_branch: string;
+  git_pr_url: string;
+  /** 'created' | 'existing' | 'no_files' | 'merged'. */
+  git_pr_status: string;
+}
+
+/** TS-only enhancement (Q3) — Python's weekly pipeline does NOT invalidate cache. */
+export interface InvalidateCacheInput {
+  dream_id: number;
+}
+
+/** TS-only enhancement (Q8) — Python doesn't update dream.outcome. */
+export interface MarkWeeklyReviewOutcomeInput {
+  dream_id: number;
+  outcome: 'completed' | 'partial' | 'skipped';
+}
 
 // ---------------------------------------------------------------------------
 // Activity proxies — three policy groups.

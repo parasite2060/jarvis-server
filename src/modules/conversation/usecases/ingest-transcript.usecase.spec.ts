@@ -1,21 +1,23 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { EventBus } from '@nestjs/cqrs';
+import { CommandBus, EventBus } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { CONVERSATION_REPOSITORY, IConversationRepository } from 'src/shared/domain/repositories/conversation.repository.interface';
 import { SecretScrubberService } from 'src/shared/secret-redaction/secret-scrubber.service';
-import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 import { Conversation } from 'src/shared/domain/entities/conversation.entity';
 import { IngestTranscriptUseCase } from './ingest-transcript.usecase';
 import { IngestTranscriptRequest } from '../models/requests/ingest-transcript.request';
 import { ConversationIngestedEvent } from '../events/conversation-ingested.event';
+// Story 13.10.5 / Q2 — IngestTranscriptUseCase now dispatches via CommandBus
+// instead of injecting TemporalClientService directly.
+import { TriggerLightDreamCommand } from 'src/modules/dream/commands/trigger-light-dream.command';
 
 describe('IngestTranscriptUseCase', () => {
   let target: IngestTranscriptUseCase;
   let mockRepo: DeepMocked<IConversationRepository>;
   let mockScrubber: DeepMocked<SecretScrubberService>;
-  let mockTemporal: DeepMocked<TemporalClientService>;
+  let mockCommandBus: DeepMocked<CommandBus>;
   let mockEventBus: DeepMocked<EventBus>;
   let logSpy: jest.SpyInstance;
   let errorSpy: jest.SpyInstance;
@@ -50,7 +52,7 @@ describe('IngestTranscriptUseCase', () => {
   beforeEach(async () => {
     mockRepo = createMock<IConversationRepository>();
     mockScrubber = createMock<SecretScrubberService>();
-    mockTemporal = createMock<TemporalClientService>();
+    mockCommandBus = createMock<CommandBus>();
     mockEventBus = createMock<EventBus>();
 
     // Default: no duplicate, no continuation, no redactions, signal succeeds.
@@ -58,7 +60,7 @@ describe('IngestTranscriptUseCase', () => {
     mockRepo.countBySessionId.mockResolvedValue(0);
     mockScrubber.scrub.mockReturnValue({ scrubbed: 'plain transcript body', redactionCounts: {} });
     mockRepo.insertTranscript.mockImplementation(async (input) => makeRow(input));
-    mockTemporal.signalCoordinator.mockResolvedValue();
+    mockCommandBus.execute.mockResolvedValue(undefined);
     mockRepo.setStatus.mockResolvedValue();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -66,7 +68,7 @@ describe('IngestTranscriptUseCase', () => {
         IngestTranscriptUseCase,
         { provide: CONVERSATION_REPOSITORY, useValue: mockRepo },
         { provide: SecretScrubberService, useValue: mockScrubber },
-        { provide: TemporalClientService, useValue: mockTemporal },
+        { provide: CommandBus, useValue: mockCommandBus },
         { provide: EventBus, useValue: mockEventBus },
       ],
     })
@@ -103,10 +105,12 @@ describe('IngestTranscriptUseCase', () => {
         isContinuation: false,
       }),
     );
-    expect(mockTemporal.signalCoordinator).toHaveBeenCalledWith('light', {
-      transcript_id: 200,
-      session_id: 'sess-1',
-    });
+    // Q2 — verify the use case dispatches TriggerLightDreamCommand instead
+    // of calling TemporalClientService directly.
+    expect(mockCommandBus.execute).toHaveBeenCalledTimes(1);
+    const dispatched = mockCommandBus.execute.mock.calls[0]![0] as TriggerLightDreamCommand;
+    expect(dispatched).toBeInstanceOf(TriggerLightDreamCommand);
+    expect(dispatched.payload).toEqual({ sessionId: 'sess-1', transcriptId: 200 });
     expect(mockRepo.setStatus).toHaveBeenCalledWith(200, 'queued');
     expect(mockEventBus.publish).toHaveBeenCalledTimes(1);
     const publishedEvent = mockEventBus.publish.mock.calls[0]![0] as ConversationIngestedEvent;
@@ -128,7 +132,7 @@ describe('IngestTranscriptUseCase', () => {
     expect(result.body.duplicate).toBe(true);
     expect(mockScrubber.scrub).not.toHaveBeenCalled();
     expect(mockRepo.insertTranscript).not.toHaveBeenCalled();
-    expect(mockTemporal.signalCoordinator).not.toHaveBeenCalled();
+    expect(mockCommandBus.execute).not.toHaveBeenCalled();
     expect(mockRepo.setStatus).not.toHaveBeenCalled();
     expect(mockEventBus.publish).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({ event: 'conversation.ingest.duplicate', transcriptId: 99 }));
@@ -161,7 +165,7 @@ describe('IngestTranscriptUseCase', () => {
   it('signal-failure path — setStatus NOT called, error logged, use case still returns 202', async () => {
     // Arrange
     mockRepo.insertTranscript.mockResolvedValue(makeRow({ id: 500 }));
-    mockTemporal.signalCoordinator.mockRejectedValue(new Error('temporal down'));
+    mockCommandBus.execute.mockRejectedValue(new Error('temporal down'));
 
     // Act
     const result = await target.execute(baseRequest);
