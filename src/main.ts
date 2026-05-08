@@ -129,7 +129,10 @@ async function startTemporalWorker(app: INestApplication) {
     // (`export { lightDreamWorkflow as LightDream }`). The `@temporalio/worker`
     // bundle picks up the alias automatically; this `workflowsRegistered`
     // surface is informational telemetry for the boot log only.
-    workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream'],
+    //
+    // Story 13.11 added `DeepDream`; Story 13.12 added `WeeklyReview` —
+    // same aliased re-export pattern.
+    workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream', 'DeepDream', 'WeeklyReview'],
   });
 }
 
