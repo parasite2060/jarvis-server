@@ -1,6 +1,12 @@
 /**
- * Integration spec for Story 13.9 — `dreamCoordinatorWorkflow` against the
- * `@temporalio/testing` Test Server (Q9 = createLocal for integration).
+ * Integration spec for Story 13.9 — `dreamCoordinatorWorkflow` against a
+ * REAL Temporal server running in Docker (`docker-compose.e2e.yml` on
+ * `localhost:7234`).
+ *
+ * User policy: e2e + integration tests must hit real services, not embedded
+ * simulators. This spec exercises the actual gRPC contract, signal delivery,
+ * worker registration, and replay against the real server — exactly what
+ * production will run against the homelab cluster.
  *
  * Mirrors Python Story 12.9's `test_coordinator_serialisation` for scenario
  * (b) — single-active-dream invariant proven empirically by timestamp
@@ -19,17 +25,17 @@
  *   (e) Failed child does not block — a LightDream that throws does not
  *       prevent the next signal's child from running.
  *
- * Each test scopes its own task queue + recorder workflow ID so test
- * fixtures don't collide. The `coord-singleton` workflow ID is shared
- * across tests because it lives in `TemporalClientService` as a
- * package-level constant; we terminate it at the end of every test to
- * keep tests independent.
+ * Each test uses a unique task queue + suffix-bearing workflow IDs so test
+ * fixtures don't collide on the persistent cluster. The COORDINATOR_WORKFLOW_ID
+ * (`coord-singleton`) is hard-coded in `TemporalClientService` so we
+ * terminate it at the end of every test to keep tests independent and
+ * idempotent across runs.
  */
 import * as path from 'node:path';
 import { INestApplication, Injectable } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { TestWorkflowEnvironment } from '@temporalio/testing';
+import { Client, Connection } from '@temporalio/client';
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { AppConfigService } from '../src/shared/config/config.service';
 import { ActivityRegistry } from '../src/shared/temporal/activity-registry.service';
@@ -38,6 +44,8 @@ import { TemporalClientService } from '../src/shared/temporal/temporal-client.se
 import { TemporalWorkerService } from '../src/shared/temporal/temporal-worker.service';
 import type { ChildExecutionRecord } from './fixtures/temporal/coordinator-workflows';
 
+const TEMPORAL_ADDRESS = process.env['TEMPORAL_E2E_ADDRESS'] ?? 'localhost:7234';
+const TEMPORAL_NAMESPACE = process.env['TEMPORAL_E2E_NAMESPACE'] ?? 'default';
 const TASK_QUEUE_BASE = 'jarvis-dream-coordinator-test';
 const COORDINATOR_WORKFLOW_ID = 'coord-singleton';
 
@@ -60,8 +68,10 @@ interface TestHarness {
   recorderId: string;
 }
 
-async function buildHarness(testEnv: TestWorkflowEnvironment, scenarioId: string): Promise<TestHarness> {
-  const taskQueue = `${TASK_QUEUE_BASE}-${scenarioId}`;
+async function buildHarness(scenarioId: string): Promise<TestHarness> {
+  // Per-test task queue keeps workers + workflows isolated even though the
+  // cluster persists across test runs.
+  const taskQueue = `${TASK_QUEUE_BASE}-${scenarioId}-${Date.now()}`;
   // Recorder workflow ID is FIXED ('test-recorder-singleton') because the
   // child stub workflows in `test/fixtures/temporal/coordinator-workflows`
   // import it as a module-level constant. We isolate tests by terminating
@@ -79,8 +89,8 @@ async function buildHarness(testEnv: TestWorkflowEnvironment, scenarioId: string
       {
         provide: AppConfigService,
         useValue: {
-          temporalAddress: testEnv.address,
-          temporalNamespace: testEnv.namespace ?? 'default',
+          temporalAddress: TEMPORAL_ADDRESS,
+          temporalNamespace: TEMPORAL_NAMESPACE,
           temporalTaskQueue: taskQueue,
         } as unknown as AppConfigService,
       },
@@ -90,12 +100,12 @@ async function buildHarness(testEnv: TestWorkflowEnvironment, scenarioId: string
   const app = moduleRef.createNestApplication();
   await app.init();
 
-  const connection = await NativeConnection.connect({ address: testEnv.address });
+  const connection = await NativeConnection.connect({ address: TEMPORAL_ADDRESS });
   const workflowsPath = path.resolve(__dirname, 'fixtures/temporal/coordinator-workflows');
   const activities = app.get(TemporalWorkerService).collectActivities(app);
   const worker = await Worker.create({
     connection,
-    namespace: testEnv.namespace ?? 'default',
+    namespace: TEMPORAL_NAMESPACE,
     taskQueue,
     workflowsPath,
     activities,
@@ -105,20 +115,20 @@ async function buildHarness(testEnv: TestWorkflowEnvironment, scenarioId: string
   return { app, worker, runPromise, connection, taskQueue, recorderId };
 }
 
-async function startRecorder(testEnv: TestWorkflowEnvironment, harness: TestHarness): Promise<void> {
-  await testEnv.client.workflow.start('recorderWorkflow', {
+async function startRecorder(testClient: Client, harness: TestHarness): Promise<void> {
+  await testClient.workflow.start('recorderWorkflow', {
     workflowId: harness.recorderId,
     taskQueue: harness.taskQueue,
     args: [],
   });
 }
 
-async function readRecords(testEnv: TestWorkflowEnvironment, harness: TestHarness): Promise<ChildExecutionRecord[]> {
-  const handle = testEnv.client.workflow.getHandle(harness.recorderId);
+async function readRecords(testClient: Client, harness: TestHarness): Promise<ChildExecutionRecord[]> {
+  const handle = testClient.workflow.getHandle(harness.recorderId);
   return (await handle.query('getRecords')) as ChildExecutionRecord[];
 }
 
-async function waitFor<T>(predicate: () => Promise<T | null>, timeoutMs = 15_000, pollMs = 100): Promise<T> {
+async function waitFor<T>(predicate: () => Promise<T | null>, timeoutMs = 30_000, pollMs = 100): Promise<T> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const result = await predicate();
@@ -128,15 +138,15 @@ async function waitFor<T>(predicate: () => Promise<T | null>, timeoutMs = 15_000
   throw new Error('waitFor: timed out');
 }
 
-async function teardown(testEnv: TestWorkflowEnvironment, harness: TestHarness): Promise<void> {
+async function teardown(testClient: Client, harness: TestHarness): Promise<void> {
   // Terminate workflows so subsequent tests don't trip
   // WorkflowExecutionAlreadyStartedError on `coord-singleton` reuse. The
   // recorder is per-scenario but we terminate too for tidiness.
-  await testEnv.client.workflow
+  await testClient.workflow
     .getHandle(COORDINATOR_WORKFLOW_ID)
     .terminate('test-cleanup')
     .catch(() => undefined);
-  await testEnv.client.workflow
+  await testClient.workflow
     .getHandle(harness.recorderId)
     .terminate('test-cleanup')
     .catch(() => undefined);
@@ -147,24 +157,35 @@ async function teardown(testEnv: TestWorkflowEnvironment, harness: TestHarness):
   await harness.app.close();
 }
 
-describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
-  jest.setTimeout(120_000);
+describe('dreamCoordinatorWorkflow (integration — real Docker server)', () => {
+  // Cold-start + worker boot + workflow execution take longer against the
+  // real cluster than the embedded test server. Bump global timeout.
+  jest.setTimeout(180_000);
 
-  let testEnv: TestWorkflowEnvironment;
+  let testClient: Client;
 
   beforeAll(async () => {
-    testEnv = await TestWorkflowEnvironment.createLocal();
+    const connection = await Connection.connect({ address: TEMPORAL_ADDRESS });
+    testClient = new Client({ connection, namespace: TEMPORAL_NAMESPACE });
+
+    // Best-effort terminate any lingering coord-singleton from a previous
+    // test run — the cluster persists across runs so tests must be
+    // idempotent at startup too.
+    await testClient.workflow
+      .getHandle(COORDINATOR_WORKFLOW_ID)
+      .terminate('integration-spec-pre-clean')
+      .catch(() => undefined);
   });
 
   afterAll(async () => {
-    if (testEnv) await testEnv.teardown();
+    await testClient.connection.close().catch(() => undefined);
   });
 
   it('(a) coordinator boots and accepts a submit_light signal — payload preserved verbatim', async () => {
     // GIVEN a Nest app + a worker booted against the coordinator-workflows fixture bundle
-    const harness = await buildHarness(testEnv, 'a');
+    const harness = await buildHarness('a');
     try {
-      await startRecorder(testEnv, harness);
+      await startRecorder(testClient, harness);
       await harness.app.get(TemporalClientService).ensureCoordinatorRunning();
 
       // WHEN signalCoordinator('light', ...) is called with snake_case payload
@@ -173,7 +194,7 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
 
       // THEN the LightDream child runs with payload preserved verbatim
       const records = await waitFor<ChildExecutionRecord[]>(async () => {
-        const r = await readRecords(testEnv, harness);
+        const r = await readRecords(testClient, harness);
         return r.length >= 1 ? r : null;
       });
       expect(records).toHaveLength(1);
@@ -184,15 +205,15 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
         threw: false,
       });
     } finally {
-      await teardown(testEnv, harness);
+      await teardown(testClient, harness);
     }
   });
 
   it('(b) two consecutive submit_light signals serialise — second child startMs >= first child endMs (Python Story 12.9 parity)', async () => {
     // GIVEN coordinator + worker up
-    const harness = await buildHarness(testEnv, 'b');
+    const harness = await buildHarness('b');
     try {
-      await startRecorder(testEnv, harness);
+      await startRecorder(testClient, harness);
       await harness.app.get(TemporalClientService).ensureCoordinatorRunning();
 
       // WHEN two submit_light signals are sent in quick succession
@@ -202,7 +223,7 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
 
       // THEN both children execute AND second.startMs >= first.endMs (single-active-dream)
       const records = await waitFor<ChildExecutionRecord[]>(async () => {
-        const r = await readRecords(testEnv, harness);
+        const r = await readRecords(testClient, harness);
         return r.length >= 2 ? r : null;
       });
       expect(records).toHaveLength(2);
@@ -211,15 +232,15 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
       expect(second.workflowId).toBe('light-b2');
       expect(second.startMs).toBeGreaterThanOrEqual(first.endMs);
     } finally {
-      await teardown(testEnv, harness);
+      await teardown(testClient, harness);
     }
   });
 
   it('(c) mixed-kind FIFO — submit_light → submit_deep → submit_weekly all execute in submission order', async () => {
     // GIVEN coordinator + worker up
-    const harness = await buildHarness(testEnv, 'c');
+    const harness = await buildHarness('c');
     try {
-      await startRecorder(testEnv, harness);
+      await startRecorder(testClient, harness);
       await harness.app.get(TemporalClientService).ensureCoordinatorRunning();
 
       // WHEN three signals of different kinds land in order
@@ -230,7 +251,7 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
 
       // THEN three children execute, IDs match, FIFO ordering preserved
       const records = await waitFor<ChildExecutionRecord[]>(async () => {
-        const r = await readRecords(testEnv, harness);
+        const r = await readRecords(testClient, harness);
         return r.length >= 3 ? r : null;
       });
       expect(records).toHaveLength(3);
@@ -239,15 +260,15 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
       expect(records[1]!.startMs).toBeGreaterThanOrEqual(records[0]!.endMs);
       expect(records[2]!.startMs).toBeGreaterThanOrEqual(records[1]!.endMs);
     } finally {
-      await teardown(testEnv, harness);
+      await teardown(testClient, harness);
     }
   });
 
   it('(d) ensureCoordinatorRunning is idempotent — second call swallows the already-started error', async () => {
     // GIVEN coordinator + worker up + first ensureCoordinatorRunning succeeded
-    const harness = await buildHarness(testEnv, 'd');
+    const harness = await buildHarness('d');
     try {
-      await startRecorder(testEnv, harness);
+      await startRecorder(testClient, harness);
       const client = harness.app.get(TemporalClientService);
       await client.ensureCoordinatorRunning();
 
@@ -258,20 +279,20 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
       // AND the existing coordinator instance still handles signals
       await client.signalCoordinator('light', { session_id: 'd1' });
       const records = await waitFor<ChildExecutionRecord[]>(async () => {
-        const r = await readRecords(testEnv, harness);
+        const r = await readRecords(testClient, harness);
         return r.length >= 1 ? r : null;
       });
       expect(records[0]!.workflowId).toBe('light-d1');
     } finally {
-      await teardown(testEnv, harness);
+      await teardown(testClient, harness);
     }
   });
 
   it('(e) failed child does not block subsequent signals — coordinator continues despite per-iteration error', async () => {
     // GIVEN coordinator + worker up
-    const harness = await buildHarness(testEnv, 'e');
+    const harness = await buildHarness('e');
     try {
-      await startRecorder(testEnv, harness);
+      await startRecorder(testClient, harness);
       const client = harness.app.get(TemporalClientService);
       await client.ensureCoordinatorRunning();
 
@@ -281,14 +302,14 @@ describe('dreamCoordinatorWorkflow (integration — Test Server)', () => {
 
       // THEN both children executed (the failed one with threw:true) AND the deep dream still ran
       const records = await waitFor<ChildExecutionRecord[]>(async () => {
-        const r = await readRecords(testEnv, harness);
+        const r = await readRecords(testClient, harness);
         return r.length >= 2 ? r : null;
       });
       expect(records).toHaveLength(2);
       expect(records[0]).toMatchObject({ kind: 'light', workflowId: 'light-e1', threw: true });
       expect(records[1]).toMatchObject({ kind: 'deep', workflowId: 'deep-2026-05-09', threw: false });
     } finally {
-      await teardown(testEnv, harness);
+      await teardown(testClient, harness);
     }
   });
 });

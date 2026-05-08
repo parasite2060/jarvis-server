@@ -91,6 +91,38 @@ services:
       retries: 5
       start_period: 5s
 
+  # Real Temporal cluster for e2e + integration tests.
+  # Uses `temporalio/temporal` (the CLI image) running `server start-dev` —
+  # the canonical zero-dependency dev mode that bundles an in-memory or
+  # SQLite-backed cluster. The `default` namespace is auto-created.
+  # Integration specs (Story 13.8 + 13.9 + 13.10+) connect to localhost:7234
+  # instead of spawning the in-process Java Test Server, so the wire
+  # contract (gRPC, signal delivery, worker registration, retry policies,
+  # replay) gets exercised against a real server — not an embedded simulator.
+  temporal:
+    image: temporalio/temporal:1.7.0
+    restart: unless-stopped
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --namespace
+      - default
+      - --log-level
+      - warn
+    ports:
+      - 7234:7233 # gRPC frontend (E2E: 7234, Local dev compose: 7233)
+      - 8234:8233 # Web UI (E2E: 8234, Local dev compose: 8233)
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'namespace', 'describe', 'default', '--address', 'localhost:7233']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
 volumes:
   postgres_e2e_data:
   mongo_e2e_data:
