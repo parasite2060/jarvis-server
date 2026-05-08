@@ -18,7 +18,7 @@ import { AppConfigService } from 'src/shared/config/config.service';
 import { VaultEndpointFileNotFoundError } from 'src/shared/common/exceptions/vault-endpoint-file-not-found.error';
 import { VaultEndpointPathTraversalError } from 'src/shared/common/exceptions/vault-endpoint-path-traversal.error';
 import { FileServePresenter } from '../models/presenters/file-serve.presenter';
-import { safeResolveVaultPath } from '../utils/path-validation';
+import { safeResolveVaultPath } from 'src/shared/utils/path-validation';
 
 @Injectable()
 export class GetVaultFileByPathUseCase {
