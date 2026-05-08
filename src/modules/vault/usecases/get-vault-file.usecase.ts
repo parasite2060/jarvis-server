@@ -1,5 +1,7 @@
 /**
- * GetVaultFileUseCase (Story 13.4 / Q1 — VaultModule stub; extended Story 13.5 / Q2+Q4).
+ * GetVaultFileUseCase (Story 13.4 / Q1 — VaultModule stub; extended Story 13.5 / Q2+Q4;
+ * Story 13.6 / Q3 cross-story fix-up — replaced inline `isWithin()` with the
+ * centralized `safeResolveVaultPath` helper).
  *
  * Mirrors Python `app/services/memory_files.py :: read_vault_file(relative_path)`:
  *   - Resolves `<vaultPath>/<relativePath>`; rejects paths that escape the vault root.
@@ -16,14 +18,16 @@
  * `read_vault_file_lines()` at `memory_files.py:62-69`. Truncation runs only
  * when `maxLines` is provided AND content is non-null.
  *
- * Story 13.6 retrofits this module with manifest + file-by-path endpoints + the
- * full path-traversal centralisation. This stub ships ONLY the read path.
+ * Story 13.6 extension: path-traversal check now delegates to
+ * `safeResolveVaultPath` (single source of truth for vault containment). The
+ * file-by-path endpoint (`GetVaultFileByPathUseCase`) reuses the same helper
+ * but throws `VaultEndpointPathTraversalError` on null instead of silent skip.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { GetVaultFileResult } from '../commands/get-vault-file.command';
+import { safeResolveVaultPath } from '../utils/path-validation';
 
 @Injectable()
 export class GetVaultFileUseCase {
@@ -32,9 +36,8 @@ export class GetVaultFileUseCase {
   constructor(private readonly appConfig: AppConfigService) {}
 
   async execute(relativePath: string, maxLines?: number): Promise<GetVaultFileResult> {
-    const vaultRoot = path.resolve(this.appConfig.vaultPath);
-    const candidate = path.resolve(vaultRoot, relativePath);
-    if (!isWithin(vaultRoot, candidate)) {
+    const resolved = safeResolveVaultPath(this.appConfig.vaultPath, relativePath);
+    if (resolved === null) {
       this.logger.warn({
         message: 'vault read blocked by path-traversal check',
         event: 'vault.readFile.pathTraversal',
@@ -43,7 +46,7 @@ export class GetVaultFileUseCase {
       return { content: null, file_path: relativePath };
     }
     try {
-      const raw = await fs.readFile(candidate, 'utf-8');
+      const raw = await fs.readFile(resolved, 'utf-8');
       const content = maxLines !== undefined ? truncateLines(raw, maxLines) : raw;
       this.logger.log({
         message: 'vault read succeeded',
@@ -65,11 +68,6 @@ export class GetVaultFileUseCase {
       throw err;
     }
   }
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const rel = path.relative(root, candidate);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 // Mirrors Python `read_vault_file_lines()` — `content.splitlines()[:max_lines]` joined by '\n'.

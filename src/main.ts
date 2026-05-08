@@ -10,6 +10,8 @@ import {
   HttpExceptionFilter,
   VaultFileNotFoundExceptionFilter,
   VaultPathTraversalExceptionFilter,
+  VaultEndpointFileNotFoundExceptionFilter,
+  VaultEndpointPathTraversalExceptionFilter,
   MemuErrorExceptionFilter,
   MemuUnavailableExceptionFilter,
 } from './utils/filter/exception.filter';
@@ -74,6 +76,8 @@ function configure(app: INestApplication) {
   // Story 13.4 — vault read + MemU client typed exceptions.
   app.useGlobalFilters(new VaultFileNotFoundExceptionFilter(httpAdapter));
   app.useGlobalFilters(new VaultPathTraversalExceptionFilter(httpAdapter));
+  app.useGlobalFilters(new VaultEndpointFileNotFoundExceptionFilter(httpAdapter));
+  app.useGlobalFilters(new VaultEndpointPathTraversalExceptionFilter(httpAdapter));
   app.useGlobalFilters(new MemuErrorExceptionFilter(httpAdapter));
   app.useGlobalFilters(new MemuUnavailableExceptionFilter(httpAdapter));
 

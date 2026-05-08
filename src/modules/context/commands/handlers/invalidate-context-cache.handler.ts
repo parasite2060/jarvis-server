@@ -13,7 +13,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { ContextCacheService } from '../../services/context-cache.service';
-import { formatPythonIso } from '../../utils/format-iso';
+import { formatPythonIso } from 'src/shared/utils/format-iso';
 import { InvalidateContextCacheCommand } from '../invalidate-context-cache.command';
 
 @Injectable()

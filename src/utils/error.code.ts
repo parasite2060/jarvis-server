@@ -47,7 +47,20 @@ export enum ErrorCode {
   VAULT_FILE_NOT_FOUND = -400087,
   VAULT_PATH_TRAVERSAL = -400088,
 
-  // Context Module (-400101 to -400120) — reserved block for future Context errors.
-  // GET /memory/context has no validation surface in 13.5; slot anchors the range.
-  CONTEXT_RESERVED = -400101,
+  // Vault Module (-400101 to -400120) — Story 13.6.
+  // Note: Story 13.4's MEMORY-context VAULT_FILE_NOT_FOUND (-400087) and
+  // VAULT_PATH_TRAVERSAL (-400088) STAY in the Memory block — thrown by
+  // GetSoul/GetIdentity/GetMemoryFile use cases. The codes below are
+  // VAULT-context, thrown by manifest + file-by-path endpoints. Acceptable
+  // duplication: the codes encode WHICH endpoint failed (HTTP status differs
+  // for the path-traversal case — Memory block returns 403, Vault endpoint
+  // returns 400 per Python `files.py:91-101`). Distinct enum identifiers
+  // (`VAULT_ENDPOINT_*` vs `VAULT_*`) avoid TS duplicate-name compile errors
+  // while preserving the leader's slot allocation.
+  VAULT_ENDPOINT_FILE_NOT_FOUND = -400101, // HTTP 404 — GET /memory/files/*path missing
+  VAULT_ENDPOINT_PATH_TRAVERSAL = -400102, // HTTP 400 — GET /memory/files/*path traversal
+  VAULT_MANIFEST_FAILED = -400103, // HTTP 500 — manifest walk failure (rare)
+  VAULT_FILE_READ_FAILED = -400104, // HTTP 500 — read failure after path validation
+  // Context block (Story 13.5 placeholder removed in 13.6 / Q9 to free this range);
+  // future Context ErrorCodes allocate at -400141..-400160 if needed.
 }
