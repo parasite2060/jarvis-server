@@ -123,6 +123,37 @@ services:
       retries: 10
       start_period: 15s
 
+  # MemU — semantic memory service used by IngestTranscriptUseCase and dream pipelines.
+  # Uses the same GHCR image as production. Pointed at the e2e Postgres and the
+  # local llama.cpp instance for embeddings. Port 8001 matches MEMU_API_URL in .env.e2e.
+  memu-server:
+    image: ghcr.io/parasite2060/memu-server:latest
+    restart: unless-stopped
+    ports:
+      - 8001:8000
+    environment:
+      - OPENAI_API_KEY=not-needed
+      - OPENAI_BASE_URL=http://host.docker.internal:8080/v1
+      - EMBEDDING_BASE_URL=http://host.docker.internal:8080/v1
+      - EMBEDDING_MODEL=text-embedding-3-large
+      - DEFAULT_LLM_MODEL=local
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=test123
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=e2e_test_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:8000/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
 volumes:
   postgres_e2e_data:
   mongo_e2e_data:
