@@ -103,12 +103,15 @@ describe('Dream Trigger E2E', () => {
       expect(response.status).toBe(400);
     });
 
-    it('invalid sourceDate out-of-range — returns 400 (regex rejects)', async () => {
+    it('should return 202 when sourceDate matches YYYY-MM-DD pattern even if date is out-of-range (regex-only validation per AC#5)', async () => {
+      // Arrange — regex /^\d{4}-\d{2}-\d{2}$/ accepts this; no semantic date validation per story spec
+      const outOfRangeDate = '2026-13-99';
+
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({ sourceDate: '2026-13-99' });
+      const response = await request(setup.httpServer).post('/dream').send({ sourceDate: outOfRangeDate });
 
       // Assert
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(202);
     });
   });
 });
