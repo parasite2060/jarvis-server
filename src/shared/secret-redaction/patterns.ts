@@ -43,7 +43,7 @@ export const PATTERNS: PatternEntry[] = [
   },
   {
     name: 'aws_access_key',
-    regex: 'AKIA[A-Z0-9]{16}',
+    regex: 'AKIA[A-Z0-9]{10,}',
     flags: 'g',
     replacementType: 'literal',
     replacement: '[REDACTED_AWS_KEY]',
@@ -57,7 +57,7 @@ export const PATTERNS: PatternEntry[] = [
   },
   {
     name: 'google_api_key',
-    regex: 'AIzaSy[A-Za-z0-9_-]{33}',
+    regex: 'AIzaSy[A-Za-z0-9_-]{20,}',
     flags: 'g',
     replacementType: 'literal',
     replacement: '[REDACTED_GOOGLE_KEY]',
