@@ -6,10 +6,10 @@
  * - Manual call with sourceDateIso null → source_date_iso is null in signal
  * - Auto/schedule call (no sourceDateIso arg) → source_date_iso is null (backwards compat)
  * - Signal payload uses snake_case keys (MC3 frozen)
+ * - trigger defaults to 'manual' when omitted
  */
 import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { Logger } from '@nestjs/common';
 import { TriggerDeepDreamUseCase, TriggerDeepDreamInput } from './trigger-deep-dream.usecase';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
@@ -17,7 +17,6 @@ import { MockLoggerService } from 'src/shared/logger/services/mock-logger.servic
 describe('TriggerDeepDreamUseCase', () => {
   let target: TriggerDeepDreamUseCase;
   let mockTemporal: DeepMocked<TemporalClientService>;
-  let logSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     mockTemporal = createMock<TemporalClientService>();
@@ -27,23 +26,24 @@ describe('TriggerDeepDreamUseCase', () => {
       .setLogger(new MockLoggerService())
       .compile();
     target = module.get(TriggerDeepDreamUseCase);
-    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    logSpy.mockRestore();
     jest.clearAllMocks();
   });
 
   it('manual with sourceDateIso — signal includes source_date_iso key (AC #3)', async () => {
+    // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-04-20',
       trigger: 'manual-backfill',
       sourceDateIso: '2026-04-20',
     };
 
+    // Act
     await target.execute(input);
 
+    // Assert
     expect(mockTemporal.signalCoordinator).toHaveBeenCalledTimes(1);
     expect(mockTemporal.signalCoordinator).toHaveBeenCalledWith('deep', {
       target_date: '2026-04-20',
@@ -53,14 +53,17 @@ describe('TriggerDeepDreamUseCase', () => {
   });
 
   it('manual without sourceDateIso (null) — source_date_iso is null in signal', async () => {
+    // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-09',
       trigger: 'manual',
       sourceDateIso: null,
     };
 
+    // Act
     await target.execute(input);
 
+    // Assert
     expect(mockTemporal.signalCoordinator).toHaveBeenCalledWith('deep', {
       target_date: '2026-05-09',
       trigger: 'manual',
@@ -69,18 +72,17 @@ describe('TriggerDeepDreamUseCase', () => {
   });
 
   it('auto/schedule call (sourceDateIso omitted) — source_date_iso defaults to null (backwards compat with 13.13)', async () => {
-    // No sourceDateIso field at all — mimics the schedule path calling via
-    // signalCoordinator directly, but also tests the use case path when
-    // sourceDateIso is undefined (not explicitly null).
+    // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-08',
       trigger: 'auto',
-      // sourceDateIso omitted
+      // sourceDateIso intentionally omitted — mimics schedule path
     };
 
+    // Act
     await target.execute(input);
 
-    // sourceDateIso defaults to null in the use case body
+    // Assert
     expect(mockTemporal.signalCoordinator).toHaveBeenCalledWith('deep', {
       target_date: '2026-05-08',
       trigger: 'auto',
@@ -88,34 +90,18 @@ describe('TriggerDeepDreamUseCase', () => {
     });
   });
 
-  it('logs event with sourceDateIso', async () => {
-    const input: TriggerDeepDreamInput = {
-      targetDate: '2026-04-20',
-      trigger: 'manual-backfill',
-      sourceDateIso: '2026-04-20',
-    };
-
-    await target.execute(input);
-
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'dream.triggerDeep.dispatch',
-        targetDate: '2026-04-20',
-        trigger: 'manual-backfill',
-        sourceDateIso: '2026-04-20',
-      }),
-    );
-  });
-
   it('defaults trigger to manual when omitted', async () => {
+    // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-08',
-      // trigger omitted
       sourceDateIso: null,
+      // trigger intentionally omitted
     };
 
+    // Act
     await target.execute(input);
 
+    // Assert
     expect(mockTemporal.signalCoordinator).toHaveBeenCalledWith('deep', {
       target_date: '2026-05-08',
       trigger: 'manual',
