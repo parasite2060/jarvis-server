@@ -18,13 +18,9 @@ import {
 import { CustomLoggerService } from './shared/logger/services/custom-logger.service';
 import { ClsService } from 'nestjs-cls';
 import { HttpRequestLoggingInterceptor } from './shared/logger/interceptors/http-request-logging.interceptor';
-import { KafkaRequestLoggingInterceptor } from './shared/logger/interceptors/kafka-request-logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { getKafkaConfigs } from './utils/config/kafka.config';
 import { DefaultValidationOptions } from './utils/config/validation.config';
-import { GrpcRequestLoggingInterceptor } from './shared/logger/interceptors/grpc-request-logging.interceptor';
 import { AppConfigService } from './shared/config/config.service';
-import { getGRPCConfigs } from 'src/utils/config/grpc.config';
 import { TemporalClientService } from './shared/temporal/temporal-client.service';
 import { TemporalWorkerService } from './shared/temporal/temporal-worker.service';
 import { loadCronConfigFromVault } from './shared/temporal/load-cron-config';
@@ -49,8 +45,6 @@ async function bootstrap() {
     configure(app);
 
     await startHttp(app);
-    await startGrpc(app);
-    await startEvent(app);
     await startTemporalWorker(app);
     await ensureCoordinatorRunning(app);
     await registerSchedules(app);
@@ -71,8 +65,6 @@ function configure(app: INestApplication) {
   app.useLogger(app.get(CustomLoggerService));
 
   app.useGlobalInterceptors(new HttpRequestLoggingInterceptor(cls, reflector));
-  app.useGlobalInterceptors(new KafkaRequestLoggingInterceptor(cls, reflector));
-  app.useGlobalInterceptors(new GrpcRequestLoggingInterceptor(cls, reflector));
 
   app.useGlobalFilters(new UnknownExceptionsFilter(httpAdapter));
   app.useGlobalFilters(new DefaultValidateExceptionFilter(httpAdapter));
@@ -97,20 +89,6 @@ async function startHttp(app: INestApplication) {
   await app.listen(configs.port);
 }
 
-async function startEvent(app: INestApplication) {
-  const configs = app.get(AppConfigService);
-  app.connectMicroservice(
-    {
-      ...getKafkaConfigs(configs),
-    },
-    {
-      inheritAppConfig: true,
-    },
-  );
-
-  await app.startAllMicroservices();
-}
-
 /**
  * Story 13.8 — boot the co-located Temporal worker AFTER `app.init()` so
  * activity providers can resolve their NestJS DI before Temporal invokes
@@ -126,14 +104,6 @@ async function startTemporalWorker(app: INestApplication) {
     taskQueue: configs.temporalTaskQueue,
     workflowsPath: tryResolveWorkflowsPath(),
     activities: workerService.collectActivities(app),
-    // Story 13.10 / Q1 (refined) — `LightDream` is registered via aliased
-    // re-export in `src/modules/dream/temporal/workflows/index.ts`
-    // (`export { lightDreamWorkflow as LightDream }`). The `@temporalio/worker`
-    // bundle picks up the alias automatically; this `workflowsRegistered`
-    // surface is informational telemetry for the boot log only.
-    //
-    // Story 13.11 added `DeepDream`; Story 13.12 added `WeeklyReview` —
-    // same aliased re-export pattern.
     workflowsRegistered: ['dreamCoordinatorWorkflow', 'LightDream', 'DeepDream', 'WeeklyReview', 'ScheduleSignalRelay'],
   });
 }
@@ -142,19 +112,13 @@ function tryResolveWorkflowsPath(): string {
   try {
     return require.resolve('./modules/dream/temporal/workflows');
   } catch {
-    // Empty signals "skip worker boot" to TemporalWorkerService.start.
-    // Story 13.9 lands the workflows directory; the next process restart
-    // picks the worker up.
     return '';
   }
 }
 
 /**
  * Story 13.9 — start the singleton `coord-singleton` workflow once the
- * worker has booted. Skipped when the worker short-circuited (Q1 = preserve
- * AND-condition: no workflows path OR no activities → no worker → no point
- * starting a coordinator that nothing can run). Failures rethrow so the
- * existing bootstrap try/catch surfaces them as a process exit.
+ * worker has booted. Skipped when the worker short-circuited.
  */
 async function ensureCoordinatorRunning(app: NestExpressApplication) {
   const workerService = app.get(TemporalWorkerService);
@@ -185,14 +149,7 @@ async function ensureCoordinatorRunning(app: NestExpressApplication) {
 }
 
 /**
- * Story 13.13 — register Temporal Schedules at boot. Mirrors Python
- * `app/main.py:148-150` ordering (AFTER worker boot + coordinator start).
- *
- * Q7 RESOLVED: soft-fail at this outer boundary. The methods themselves
- * throw `InternalException` on connection / RPC failures; we catch + log
- * `main.registerSchedules.failed` + continue boot. PATCH /config can
- * re-attempt via `updateSchedule()` once Temporal is reachable; the next
- * successful boot self-heals via `registerSchedules()`.
+ * Story 13.13 — register Temporal Schedules at boot.
  */
 async function registerSchedules(app: NestExpressApplication) {
   const workerService = app.get(TemporalWorkerService);
@@ -224,18 +181,6 @@ async function registerSchedules(app: NestExpressApplication) {
       error: (err as Error).message,
     });
   }
-}
-
-async function startGrpc(app: INestApplication) {
-  const configs = app.get<AppConfigService>(AppConfigService);
-  app.connectMicroservice(
-    {
-      ...getGRPCConfigs(configs),
-    },
-    {
-      inheritAppConfig: true,
-    },
-  );
 }
 
 function logAppEnv(logger: LoggerService) {

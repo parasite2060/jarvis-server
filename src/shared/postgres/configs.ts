@@ -6,11 +6,6 @@ import { configValidationSchema } from 'src/shared/config/config.schema';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import DatabaseLogger from './utils/database.logger';
 import { DBConnections } from 'src/shared/postgres/utils/constaint';
-import { CacheType } from 'src/shared/postgres/cache/cache-type.enum';
-import { MemoryCacheProvider } from 'src/shared/postgres/cache/memory-cache.provider';
-import { MultiCacheProvider } from 'src/shared/postgres/cache/multi-cache.provider';
-import { QueryResultCache } from 'typeorm/cache/QueryResultCache';
-import { RedisCacheProvider } from 'src/shared/postgres/cache/redis-cache.provider';
 
 const internalLogger = new Logger('PG-INTERNAL');
 
@@ -44,26 +39,6 @@ export function optionsFactory(configs: AppConfigService): TypeOrmModuleOptions 
         } else {
           internalLogger.verbose(msg);
         }
-      },
-    },
-    cache: {
-      ignoreErrors: true,
-      provider(_connection: DataSource): QueryResultCache {
-        return new MultiCacheProvider([
-          {
-            type: CacheType.REDIS,
-            provider: new RedisCacheProvider({
-              host: configs.redisHost,
-              port: configs.redisPort,
-              password: configs.redisPass || undefined,
-              db: configs.redisDb,
-            }),
-          },
-          {
-            type: CacheType.INMEMORY,
-            provider: new MemoryCacheProvider(),
-          },
-        ]);
       },
     },
   };
