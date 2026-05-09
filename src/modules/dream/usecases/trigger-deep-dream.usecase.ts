@@ -1,8 +1,9 @@
 /**
- * TriggerDeepDreamUseCase — placeholder body (Story 13.10.5 / Q1).
+ * TriggerDeepDreamUseCase — POST /dream entry point.
  *
- * Module-map §1 line 107 prescribes this use case. Story 13.14 wires the
- * functional body (POST /dream + Temporal Schedule entry).
+ * Module-map §1 line 107 prescribes this use case. Wires the functional body
+ * (POST /dream + Temporal Schedule entry). Story 13.14 extends the signal
+ * payload to include `source_date_iso` (MC3 frozen per Python `dream.py:40-47`).
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
@@ -10,8 +11,14 @@ import { TemporalClientService } from 'src/shared/temporal/temporal-client.servi
 export interface TriggerDeepDreamInput {
   /** ISO YYYY-MM-DD; drives child workflow ID. */
   targetDate: string;
-  /** 'auto' (Schedule) | 'manual' (POST /dream). */
+  /** 'auto' (Schedule) | 'manual' (POST /dream) | 'manual-backfill'. */
   trigger?: string;
+  /**
+   * ISO YYYY-MM-DD if user provided source_date in body; null otherwise.
+   * New in Story 13.14 (cross-story extension to 13.10.5 scaffold).
+   * Maps to Python's `source_date_iso: source_date.isoformat() if source_date else None`.
+   */
+  sourceDateIso?: string | null;
 }
 
 @Injectable()
@@ -21,15 +28,19 @@ export class TriggerDeepDreamUseCase {
   constructor(private readonly temporal: TemporalClientService) {}
 
   async execute(input: TriggerDeepDreamInput): Promise<void> {
+    const trigger = input.trigger ?? 'manual';
+    const sourceDateIso = input.sourceDateIso ?? null;
     this.logger.log({
       message: 'dream.triggerDeep.dispatch',
       event: 'dream.triggerDeep.dispatch',
       targetDate: input.targetDate,
-      trigger: input.trigger ?? 'manual',
+      trigger,
+      sourceDateIso,
     });
     await this.temporal.signalCoordinator('deep', {
       target_date: input.targetDate,
-      trigger: input.trigger ?? 'manual',
+      trigger,
+      source_date_iso: sourceDateIso,
     });
   }
 }
