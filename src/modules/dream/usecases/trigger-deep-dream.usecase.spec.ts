@@ -32,7 +32,7 @@ describe('TriggerDeepDreamUseCase', () => {
     jest.clearAllMocks();
   });
 
-  it('manual with sourceDateIso — signal includes source_date_iso key (AC #3)', async () => {
+  it('should include source_date_iso in signal payload when sourceDateIso is provided', async () => {
     // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-04-20',
@@ -52,7 +52,7 @@ describe('TriggerDeepDreamUseCase', () => {
     });
   });
 
-  it('manual without sourceDateIso (null) — source_date_iso is null in signal', async () => {
+  it('should set source_date_iso to null in signal payload when sourceDateIso is null', async () => {
     // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-09',
@@ -71,7 +71,7 @@ describe('TriggerDeepDreamUseCase', () => {
     });
   });
 
-  it('auto/schedule call (sourceDateIso omitted) — source_date_iso defaults to null (backwards compat with 13.13)', async () => {
+  it('should default source_date_iso to null when sourceDateIso is omitted (schedule path backwards compat)', async () => {
     // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-08',
@@ -90,7 +90,7 @@ describe('TriggerDeepDreamUseCase', () => {
     });
   });
 
-  it('defaults trigger to manual when omitted', async () => {
+  it('should default trigger to manual when trigger field is omitted', async () => {
     // Arrange
     const input: TriggerDeepDreamInput = {
       targetDate: '2026-05-08',
