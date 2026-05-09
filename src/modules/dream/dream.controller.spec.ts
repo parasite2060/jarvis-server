@@ -40,7 +40,7 @@ describe('DreamController', () => {
   });
 
   describe('POST /dream', () => {
-    it('empty body — defaults to today UTC + manual trigger + sourceDateIso null', async () => {
+    it('should default to today UTC with manual trigger when body is empty', async () => {
       // Arrange
       jest.useFakeTimers().setSystemTime(FIXED_NOW);
       const request = new TriggerDreamRequest();
@@ -57,7 +57,7 @@ describe('DreamController', () => {
       });
     });
 
-    it('with sourceDate — uses that date + manual-backfill trigger + sourceDateIso set', async () => {
+    it('should use provided date with manual-backfill trigger when sourceDate is given', async () => {
       // Arrange
       const request = new TriggerDreamRequest();
       request.sourceDate = '2026-04-20';
@@ -73,7 +73,7 @@ describe('DreamController', () => {
       });
     });
 
-    it('Q7 — snake_case source_date (plugin wire) also works', async () => {
+    it('should accept snake_case source_date when plugin sends legacy wire format', async () => {
       // Arrange
       const request = new TriggerDreamRequest();
       request.source_date = '2026-04-20';
@@ -89,7 +89,7 @@ describe('DreamController', () => {
       });
     });
 
-    it('camelCase sourceDate takes priority over snake_case source_date', async () => {
+    it('should prioritise camelCase sourceDate when both sourceDate and source_date are provided', async () => {
       // Arrange
       const request = new TriggerDreamRequest();
       request.sourceDate = '2026-05-01';
@@ -106,7 +106,7 @@ describe('DreamController', () => {
       });
     });
 
-    it('returns HttpApiResponse with status queued (HTTP 202 via @HttpCode)', async () => {
+    it('should return queued status wrapped in HttpApiResponse when dream is triggered', async () => {
       // Arrange
       mockTriggerDeep.execute.mockResolvedValue(undefined);
       const request = new TriggerDreamRequest();
