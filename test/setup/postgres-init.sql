@@ -8,3 +8,4 @@
 -- only for the e2e harness.
 CREATE SCHEMA IF NOT EXISTS "jarvis";
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
