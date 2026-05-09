@@ -111,9 +111,16 @@ async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void
     throw new Error(`coordinator: missing or non-string ${cfg.idKey} in ${req.kind} payload`);
   }
   const childId = `${req.kind}-${idValue}`;
+  // Child workflow-level retry policy: do NOT retry the whole child workflow
+  // on failure. Child workflows manage their own per-activity RetryPolicies
+  // (Stories 13.10–13.12). If the child workflow itself fails (e.g. all
+  // activity retries exhausted), the coordinator swallows the error and
+  // moves on to the next queued signal. Retrying the child workflow here
+  // would stall the coordinator loop indefinitely.
   await executeChild(cfg.workflowType, {
     workflowId: childId,
     taskQueue,
     args: [req.payload],
+    retry: { maximumAttempts: 1 },
   });
 }

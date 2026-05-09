@@ -85,6 +85,8 @@ export class TemporalClientService implements OnApplicationShutdown {
   private clientPromise: Promise<Client> | null = null;
   private connection: Connection | null = null;
   private shutdownComplete = false;
+  /** Coordinator workflow ID. Overridable in tests via `(svc as any).coordinatorWorkflowId = id`. */
+  coordinatorWorkflowId: string = COORDINATOR_WORKFLOW_ID;
 
   constructor(private readonly appConfig: AppConfigService) {}
 
@@ -141,7 +143,7 @@ export class TemporalClientService implements OnApplicationShutdown {
 
     // Boundary try/catch: signal RPC errors map to TEMPORAL_SIGNAL_FAILED.
     try {
-      const handle = client.workflow.getHandle(COORDINATOR_WORKFLOW_ID);
+      const handle = client.workflow.getHandle(this.coordinatorWorkflowId);
       await handle.signal(signalName, payload);
     } catch (err) {
       this.logger.error({
@@ -157,7 +159,7 @@ export class TemporalClientService implements OnApplicationShutdown {
       message: 'temporal coordinator signal sent',
       event: 'temporalClient.signalCoordinator.completed',
       kind,
-      workflowId: COORDINATOR_WORKFLOW_ID,
+      workflowId: this.coordinatorWorkflowId,
       signalName,
       ...this.sanitiseLogMeta(payload),
     });
@@ -172,7 +174,7 @@ export class TemporalClientService implements OnApplicationShutdown {
     // Any other error maps to TEMPORAL_WORKFLOW_START_FAILED.
     try {
       await client.workflow.start(COORDINATOR_WORKFLOW_TYPE, {
-        workflowId: COORDINATOR_WORKFLOW_ID,
+        workflowId: this.coordinatorWorkflowId,
         taskQueue,
         workflowIdReusePolicy: WorkflowIdReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
         args: [],
@@ -182,7 +184,7 @@ export class TemporalClientService implements OnApplicationShutdown {
         this.logger.log({
           message: 'temporal coordinator workflow already running',
           event: 'temporalClient.coordinatorStart.skipped',
-          workflowId: COORDINATOR_WORKFLOW_ID,
+          workflowId: this.coordinatorWorkflowId,
           reason: 'alreadyRunning',
         });
         return;
@@ -193,7 +195,7 @@ export class TemporalClientService implements OnApplicationShutdown {
     this.logger.log({
       message: 'temporal coordinator workflow started',
       event: 'temporalClient.coordinatorStart.completed',
-      workflowId: COORDINATOR_WORKFLOW_ID,
+      workflowId: this.coordinatorWorkflowId,
     });
   }
 
