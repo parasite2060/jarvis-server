@@ -38,13 +38,7 @@ export const configValidationSchema = Joi.object({
   REDIS_PASS: Joi.string().allow('').optional(),
   REDIS_DB: Joi.number().default(0),
 
-  // MongoDB
-  // TODO [Story 13.16.5]: remove MongoDB env keys when MongoDBModule is deleted.
-  MONGODB_URI: Joi.string().required(),
-  MONGODB_RETRY_ATTEMPTS: Joi.number().required(),
-  MONGODB_RETRY_DELAY: Joi.number().required(),
-  MONGODB_CONNECT_TIMEOUT: Joi.number().required(),
-  MONGODB_TIMEOUT: Joi.number().required(),
+  // MongoDB — removed in Story 13.16.5 (Jarvis is Postgres-only)
 
   // Postgres
   DATABASE_HOST: Joi.string().required(),
@@ -57,18 +51,7 @@ export const configValidationSchema = Joi.object({
   DATABASE_POOL_SIZE: Joi.number().default(10),
   DB_POOL_STATS: Joi.boolean().default(false),
 
-  // Kafka
-  // TODO [Story 13.16.5]: prune Kafka env keys when domain-event Kafka path is removed.
-  KAFKA_DEFAULT_BROKER_URL: Joi.string().required(),
-  KAFKA_DEFAULT_CLIENT_ID: Joi.string().required(),
-  KAFKA_DEFAULT_GROUP_ID: Joi.string().required(),
-  KAFKA_DEFAULT_AUTO_CREATE_TOPIC: Joi.boolean().default(false),
-  KAFKA_DEFAULT_SSL: Joi.boolean().default(false),
-  KAFKA_DEFAULT_MECHANISM: Joi.string().optional(),
-  KAFKA_DEFAULT_USERNAME: Joi.string().optional(),
-  KAFKA_DEFAULT_PASSWORD: Joi.string().optional(),
-  KAFKA_DEFAULT_REQUEST_TIMEOUT: Joi.number().optional(),
-  KAFKA_DEFAULT_CONCURRENTLY: Joi.number().optional(),
+  // Kafka — removed in Story 13.16.5 (Jarvis MVP does not publish to Kafka)
 
   // ─────────────────────────────────────────────────────────────────────────
   // Jarvis-specific keys (Story 13.1 AC #1)
