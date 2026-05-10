@@ -10,7 +10,12 @@
  * `timestamp` is a Date so callers can pass `new Date()` directly; the handler
  * formats it via `formatPythonIso()` for consistent log output.
  */
-export type InvalidateContextCacheReason = 'light-dream-completed' | 'deep-dream-completed' | 'weekly-review-completed' | 'manual';
+export type InvalidateContextCacheReason =
+  | 'light-dream-completed'
+  | 'deep-dream-completed'
+  | 'weekly-review-completed'
+  | 'manual'
+  | 'periodic-vault-sync';
 
 export class InvalidateContextCacheCommand {
   constructor(public readonly payload: { reason: InvalidateContextCacheReason; timestamp: Date }) {}

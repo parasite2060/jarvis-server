@@ -156,4 +156,8 @@ export const configValidationSchema = Joi.object({
   SCORING_WEIGHT_CONSISTENCY: Joi.number().default(0.2),
   SCORING_WEIGHT_BREADTH: Joi.number().default(0.1),
   SCORING_DECAY_RATE: Joi.number().default(0.03),
+
+  // Periodic vault sync interval (Story 13.17.1).
+  // Minimum 60 s to avoid hammering git operations on underpowered hardware.
+  VAULT_SYNC_INTERVAL_SECONDS: Joi.number().integer().min(60).default(1800),
 });

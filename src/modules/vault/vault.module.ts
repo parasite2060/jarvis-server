@@ -12,9 +12,10 @@ import { Module } from '@nestjs/common';
 import { CommandHandlers } from './commands/handlers';
 import { UseCases } from './usecases';
 import { VaultController } from './vault.controller';
+import { VaultSyncService } from './vault-sync.service';
 
 @Module({
   controllers: [VaultController],
-  providers: [...UseCases, ...CommandHandlers],
+  providers: [...UseCases, ...CommandHandlers, VaultSyncService],
 })
 export class VaultModule {}
