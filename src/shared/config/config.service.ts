@@ -178,6 +178,10 @@ export class AppConfigService {
     return this.configService.getOrThrow<string>('VAULT_GIT_REMOTE');
   }
 
+  get vaultSyncIntervalSeconds(): number {
+    return this.configService.get<number>('VAULT_SYNC_INTERVAL_SECONDS', 1800);
+  }
+
   // GitHub
   get ghToken(): string {
     return this.configService.getOrThrow<string>('GH_TOKEN');
