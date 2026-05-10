@@ -110,6 +110,7 @@ describe('dreamCoordinatorWorkflow (unit, mocked @temporalio/workflow)', () => {
         workflowId: 'light-s1',
         taskQueue: 'jarvis-dream-test',
         args: [{ session_id: 's1', transcript_id: 't1' }],
+        retry: { maximumAttempts: 1 },
       },
     });
 
