@@ -75,10 +75,9 @@ describe('WeeklyReviewWorkflow E2E (Story 13.16 AC3)', () => {
       const startMs = Date.now();
       let dream: { kind: string; outcome: string } | null = null;
       while (Date.now() - startMs < 180_000) {
-        const rows = await setup.dataSource.query(
-          `SELECT kind, outcome FROM jarvis.dreams WHERE kind = 'weekly' AND target_date = $1 LIMIT 1`,
-          [weekStart],
-        );
+        const rows = await setup.dataSource.query(`SELECT kind, outcome FROM jarvis.dreams WHERE kind = 'weekly' AND target_date = $1 LIMIT 1`, [
+          weekStart,
+        ]);
         if (rows.length > 0 && rows[0].outcome !== null) {
           dream = rows[0];
           break;

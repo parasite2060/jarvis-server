@@ -70,10 +70,7 @@ async function buildHarness(scenarioId: string): Promise<Harness> {
   await app.init();
 
   const nativeConnection = await NativeConnection.connect({ address: TEMPORAL_ADDRESS });
-  const workflowsPath = path.resolve(
-    __dirname,
-    '../../src/modules/dream/temporal/workflows',
-  );
+  const workflowsPath = path.resolve(__dirname, '../../src/modules/dream/temporal/workflows');
   const activities = app.get(TemporalWorkerService).collectActivities(app);
 
   const worker = await Worker.create({
@@ -94,7 +91,10 @@ async function buildHarness(scenarioId: string): Promise<Harness> {
 }
 
 async function teardown(testClient: Client, harness: Harness): Promise<void> {
-  await testClient.workflow.getHandle(harness.coordId).terminate('test-cleanup').catch(() => undefined);
+  await testClient.workflow
+    .getHandle(harness.coordId)
+    .terminate('test-cleanup')
+    .catch(() => undefined);
   harness.worker.shutdown();
   await harness.runPromise;
   await harness.nativeConnection.close();
@@ -124,10 +124,7 @@ describe('DreamCoordinatorWorkflow — serialisation invariant (Story 13.16 AC4)
       // Act — submit two light signals concurrently (race them at the HTTP layer)
       const payload1 = { session_id: 'sess-001', transcript_id: 1 };
       const payload2 = { session_id: 'sess-002', transcript_id: 2 };
-      await Promise.all([
-        harness.client.signalCoordinator('light', payload1),
-        harness.client.signalCoordinator('light', payload2),
-      ]);
+      await Promise.all([harness.client.signalCoordinator('light', payload1), harness.client.signalCoordinator('light', payload2)]);
 
       // Wait for both children to have started by polling the coordinator history
       const coordHandle = testClient.workflow.getHandle(harness.coordId);
