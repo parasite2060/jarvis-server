@@ -22,9 +22,12 @@ describe('DeepAgentFactory', () => {
 
   function setupMockConfig(
     overrides: {
-      llmProvider?: 'azure' | 'openrouter' | 'llamacpp';
+      llmProvider?: 'azure' | 'openrouter' | 'llamacpp' | 'openai-compatible';
       azureKey?: string;
       openrouterKey?: string | undefined;
+      openaiCompatibleBaseUrl?: string;
+      openaiCompatibleModel?: string;
+      openaiCompatibleApiKey?: string;
     } = {},
   ): void {
     mockConfig = createMock<AppConfigService>();
@@ -39,6 +42,9 @@ describe('DeepAgentFactory', () => {
     Object.defineProperty(mockConfig, 'llamacppApiKey', { get: () => 'not-needed' });
     Object.defineProperty(mockConfig, 'llamacppModel', { get: () => 'local' });
     Object.defineProperty(mockConfig, 'llamacppBaseUrl', { get: () => 'http://0.0.0.0:8080/v1' });
+    Object.defineProperty(mockConfig, 'openaiCompatibleBaseUrl', { get: () => overrides.openaiCompatibleBaseUrl ?? 'https://api.example.com/v1' });
+    Object.defineProperty(mockConfig, 'openaiCompatibleModel', { get: () => overrides.openaiCompatibleModel ?? 'gpt-4o' });
+    Object.defineProperty(mockConfig, 'openaiCompatibleApiKey', { get: () => overrides.openaiCompatibleApiKey ?? 'sk-fake-key' });
   }
 
   async function buildTarget(): Promise<void> {
@@ -161,6 +167,46 @@ describe('DeepAgentFactory', () => {
       const { createDeepAgent } = jest.requireMock('deepagents') as { createDeepAgent: jest.Mock };
       const lastCall = createDeepAgent.mock.calls[createDeepAgent.mock.calls.length - 1]?.[0];
       expect(lastCall?.model).toBeInstanceOf(ChatOpenAI);
+    });
+
+    it('should build an openai-compatible agent when LLM_PROVIDER=openai-compatible', () => {
+      // Arrange
+      setupMockConfig({
+        llmProvider: 'openai-compatible',
+        openaiCompatibleBaseUrl: 'https://api.example.com/v1',
+        openaiCompatibleModel: 'gpt-4o',
+        openaiCompatibleApiKey: 'sk-fake-key',
+      });
+
+      // Act
+      const factory = new DeepAgentFactory(mockConfig);
+      factory.create({
+        systemPrompt: '',
+        tools: [],
+        output: z.object({}),
+        usageLimits: { totalTokens: 1, toolCalls: 1 },
+      });
+
+      // Assert — ChatOpenAI instance created (OpenAI-compatible uses ChatOpenAI)
+      const { createDeepAgent } = jest.requireMock('deepagents') as { createDeepAgent: jest.Mock };
+      const lastCall = createDeepAgent.mock.calls[createDeepAgent.mock.calls.length - 1]?.[0];
+      expect(lastCall?.model).toBeInstanceOf(ChatOpenAI);
+    });
+
+    it('should throw LLM_PROVIDER_CONFIG_INVALID when LLM_PROVIDER=openai-compatible and OPENAI_COMPATIBLE_BASE_URL is empty', () => {
+      // Arrange
+      setupMockConfig({ llmProvider: 'openai-compatible', openaiCompatibleBaseUrl: '' });
+      const factory = new DeepAgentFactory(mockConfig);
+
+      // Act + Assert
+      expect(() =>
+        factory.create({
+          systemPrompt: '',
+          tools: [],
+          output: z.object({}),
+          usageLimits: { totalTokens: 1, toolCalls: 1 },
+        }),
+      ).toThrow(expect.objectContaining({ code: ErrorCode.LLM_PROVIDER_CONFIG_INVALID }));
     });
 
     it('should throw LLM_PROVIDER_CONFIG_INVALID when LLM_PROVIDER=openrouter and OPENROUTER_API_KEY is missing', () => {

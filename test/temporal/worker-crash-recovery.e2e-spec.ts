@@ -32,6 +32,16 @@ import { Pgvector1746662400001 } from '../../src/shared/postgres/migration/17466
 
 const RUN_CHAOS = process.env['JARVIS_E2E_CHAOS'] === '1';
 
+// Tier 2 — real GH token enables git ops (PR creation) tests independently of chaos gate
+const E2E_GH_TOKEN = process.env['JARVIS_E2E_GH_TOKEN'];
+const TIER2_GH_AVAILABLE = Boolean(E2E_GH_TOKEN && E2E_GH_TOKEN !== '');
+
+// Tier 2 — real OpenAI-compatible endpoint enables live LLM calls
+const OPENAI_URL = process.env['JARVIS_E2E_OPENAI_URL'];
+const OPENAI_TOKEN = process.env['JARVIS_E2E_OPENAI_TOKEN'];
+const OPENAI_MODEL = process.env['JARVIS_E2E_OPENAI_MODEL'];
+const LIVE_LLM_AVAILABLE = Boolean(OPENAI_URL && OPENAI_TOKEN && OPENAI_MODEL);
+
 async function waitForPhase(dataSource: DataSource, dreamId: number, phase: string, timeoutMs: number): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -55,6 +65,23 @@ const suiteDescribe = RUN_CHAOS ? describe : describe.skip;
 
 suiteDescribe('WorkerCrashRecovery chaos test (Story 13.16 AC5)', () => {
   jest.setTimeout(600_000);
+
+  // Wire Tier 2 credentials into process.env before any test runs.
+  // GH_TOKEN override is INDEPENDENT of JARVIS_E2E_CHAOS — PR tests are
+  // skipped when JARVIS_E2E_GH_TOKEN is absent even with CHAOS=1.
+  if (TIER2_GH_AVAILABLE) {
+    process.env['GH_TOKEN'] = E2E_GH_TOKEN!;
+  }
+  if (LIVE_LLM_AVAILABLE) {
+    process.env['LLM_PROVIDER'] = 'openai-compatible';
+    process.env['OPENAI_COMPATIBLE_BASE_URL'] = OPENAI_URL!;
+    process.env['OPENAI_COMPATIBLE_API_KEY'] = OPENAI_TOKEN!;
+    process.env['OPENAI_COMPATIBLE_MODEL'] = OPENAI_MODEL!;
+  }
+
+  if (!TIER2_GH_AVAILABLE) {
+    it.todo('Tier 2 git ops tests require JARVIS_E2E_GH_TOKEN env var');
+  }
 
   let dataSource: DataSource;
 
@@ -83,11 +110,19 @@ suiteDescribe('WorkerCrashRecovery chaos test (Story 13.16 AC5)', () => {
   it('should resume deep dream from phase3 when worker is SIGKILL-ed after phase2 completes', async () => {
     // Arrange — spawn worker in a child process so we can SIGKILL it
     const workerScript = path.resolve(__dirname, '../../src/main.ts');
-    const workerEnv = {
-      ...process.env,
-      LLM_PROVIDER: 'llamacpp',
-      LLAMACPP_BASE_URL: process.env['LLAMACPP_BASE_URL'] ?? 'http://localhost:11435/v1',
-    };
+    const workerEnv: NodeJS.ProcessEnv = LIVE_LLM_AVAILABLE
+      ? {
+          ...process.env,
+          LLM_PROVIDER: 'openai-compatible',
+          OPENAI_COMPATIBLE_BASE_URL: OPENAI_URL!,
+          OPENAI_COMPATIBLE_API_KEY: OPENAI_TOKEN!,
+          OPENAI_COMPATIBLE_MODEL: OPENAI_MODEL!,
+        }
+      : {
+          ...process.env,
+          LLM_PROVIDER: 'llamacpp',
+          LLAMACPP_BASE_URL: process.env['LLAMACPP_BASE_URL'] ?? 'http://localhost:11435/v1',
+        };
 
     const workerChild = child_process.fork(workerScript, [], {
       env: workerEnv,
