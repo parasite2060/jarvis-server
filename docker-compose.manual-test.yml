@@ -1,0 +1,265 @@
+# Tier 2 Manual Test Environment — jarvis-server-ts
+#
+# Mirrors the production homelab as closely as possible:
+#   - jarvis-server-ts built from source (Bun multi-stage Dockerfile)
+#   - Real LLM via OpenAI-compatible endpoint (local llama.cpp or cloud)
+#   - Real ai-memory GitHub repo (cloned inside the server container)
+#   - Real Temporal (start-dev mode, same as homelab)
+#   - Real MemU + Postgres (pgvector) + Redis
+#
+# Usage:
+#   cp .env.manual-test.example .env.manual-test
+#   # Fill in secrets in .env.manual-test (never commit real values)
+#   docker compose -f docker-compose.manual-test.yml up -d --wait
+#   # Run manual tests against http://localhost:8100
+#   docker compose -f docker-compose.manual-test.yml down -v   # teardown
+
+name: jarvis-manual-test
+
+services:
+
+  # ── Postgres 17 + pgvector ───────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manual-test-secret}
+      POSTGRES_DB: jarvis_manual
+    ports:
+      - "15432:5432"   # exposed on 15432 to avoid conflict with local PG
+    volumes:
+      - postgres_manual_data:/var/lib/postgresql/data
+      - ./test/setup/postgres-init.sql:/docker-entrypoint-initdb.d/01-jarvis-schema.sql:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d jarvis_manual']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "16379:6379"   # exposed on 16379 to avoid conflict with local Redis
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ── Temporal (single-node dev cluster) ───────────────────────────────────
+  temporal:
+    image: temporalio/temporal:1.7.0
+    restart: unless-stopped
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --namespace
+      - jarvis          # matches homelab TEMPORAL_NAMESPACE
+      - --log-level
+      - warn
+    ports:
+      - "17233:7233"   # gRPC
+      - "18233:8233"   # Web UI — open http://localhost:18233 to inspect workflows
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'namespace', 'describe', 'jarvis', '--address', 'localhost:7233']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ── MemU (semantic memory — GHCR image, same as production) ──────────────
+  memu-server:
+    image: ghcr.io/parasite2060/memu-server:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "18001:8000"   # http://localhost:18001
+    environment:
+      # Point at the LLM endpoint (same as jarvis-server-ts)
+      - OPENAI_API_KEY=${LLM_API_KEY:-not-needed}
+      - OPENAI_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8080/v1}
+      - EMBEDDING_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8080/v1}
+      - EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL:-text-embedding-3-large}
+      - DEFAULT_LLM_MODEL=${LLM_MODEL:-local}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-manual-test-secret}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=jarvis_manual
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'python3', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:8000/")']
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # ── jarvis-server-ts (built from source) ─────────────────────────────────
+  jarvis-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    ports:
+      - "8100:3000"    # http://localhost:8100  (avoids 8000 conflict with Python server)
+    environment:
+      # Runtime
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Auth
+      API_KEY: ${JARVIS_API_KEY}
+
+      # Postgres
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-manual-test-secret}
+      DATABASE_NAME: jarvis_manual
+      DATABASE_SCHEMA: public
+      DATABASE_SYNCHRONIZE: "false"
+      DATABASE_POOL_SIZE: "5"
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASS: ""
+      REDIS_DB: "0"
+
+      # Vault — cloned inside the container at startup via GH_TOKEN
+      VAULT_PATH: /app/ai-memory
+      VAULT_GIT_REMOTE: ${AI_MEMORY_REPO:-git@github.com:thuantan2060/ai-memory.git}
+
+      # GitHub (for vault git ops and PR creation)
+      GH_TOKEN: ${GH_TOKEN}
+
+      # Temporal
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: jarvis
+      TEMPORAL_TASK_QUEUE: jarvis-dream
+
+      # LLM provider
+      LLM_PROVIDER: ${LLM_PROVIDER:-llamacpp}
+      LLAMACPP_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8080/v1}
+      LLAMACPP_MODEL: ${LLM_MODEL:-local}
+      LLAMACPP_API_KEY: ${LLM_API_KEY:-not-needed}
+
+      # Azure OpenAI (used when LLM_PROVIDER=azure)
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_API_INSTANCE_NAME: ${AZURE_OPENAI_API_INSTANCE_NAME:-}
+      AZURE_OPENAI_API_DEPLOYMENT_NAME: ${AZURE_OPENAI_API_DEPLOYMENT_NAME:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-05-01-preview}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME:-}
+
+      # openai-compatible (used when LLM_PROVIDER=openai-compatible)
+      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
+      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
+      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-not-needed}
+
+      # MemU
+      MEMU_API_URL: http://memu-server:8000
+      MEMU_USER_ID: ${MEMU_USER_ID:-jarvis}
+      MEMU_AGENT_ID: ${MEMU_AGENT_ID:-claude}
+
+      # Phase budgets (same as production homelab defaults)
+      JARVIS_LIGHT_EXTRACTION_MAX_TOKENS: "1500000"
+      JARVIS_LIGHT_EXTRACTION_MAX_ITERATIONS: "300"
+      JARVIS_LIGHT_RECORD_MAX_TOKENS: "1500000"
+      JARVIS_LIGHT_RECORD_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE1_MAX_TOKENS: "1500000"
+      JARVIS_DEEP_PHASE1_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE2_MAX_TOKENS: "1500000"
+      JARVIS_DEEP_PHASE2_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE3_MAX_TOKENS: "2000000"
+      JARVIS_DEEP_PHASE3_MAX_ITERATIONS: "300"
+      JARVIS_HEALTH_FIX_MAX_TOKENS: "1500000"
+      JARVIS_HEALTH_FIX_MAX_ITERATIONS: "300"
+      JARVIS_WEEKLY_REVIEW_MAX_TOKENS: "1500000"
+      JARVIS_WEEKLY_REVIEW_MAX_ITERATIONS: "300"
+
+      # Vault sync interval (30 min, same as homelab)
+      VAULT_SYNC_INTERVAL_SECONDS: "1800"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      memu-server:
+        condition: service_healthy
+    volumes:
+      # Named volume so the vault persists across container restarts
+      - vault_data:/app/ai-memory
+      # Prompts directory (read-only from source)
+      - ./prompts:/app/prompts:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'bun', '-e', "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # ── Vault init sidecar ────────────────────────────────────────────────────
+  # One-shot container that clones the ai-memory repo into the shared
+  # vault_data volume before jarvis-server reads it. Exits immediately after.
+  # Uses the same git + gh CLI image as the production server.
+  vault-init:
+    image: alpine/git:2.43.0
+    restart: "no"
+    environment:
+      GH_TOKEN: ${GH_TOKEN}
+      VAULT_GIT_REMOTE: ${AI_MEMORY_REPO:-https://github.com/thuantan2060/ai-memory.git}
+    volumes:
+      - vault_data:/vault
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -d /vault/.git ]; then
+          echo "Vault already initialized — pulling latest main"
+          git -C /vault pull --ff-only origin main
+        else
+          echo "Cloning vault from $$VAULT_GIT_REMOTE"
+          # Use HTTPS with token for cloning (avoids SSH key setup in container)
+          HTTPS_REMOTE=$$(echo "$$VAULT_GIT_REMOTE" | sed 's|git@github.com:|https://github.com/|; s|git@personal.github.com:|https://github.com/|')
+          if [ -n "$$GH_TOKEN" ]; then
+            HTTPS_REMOTE=$$(echo "$$HTTPS_REMOTE" | sed "s|https://|https://$$GH_TOKEN@|")
+          fi
+          git clone "$$HTTPS_REMOTE" /vault
+        fi
+        # Ensure git config so the server can commit
+        git -C /vault config user.email "jarvis@manual-test"
+        git -C /vault config user.name "Jarvis Manual Test"
+        echo "Vault ready at /vault"
+        ls /vault | head -10
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_manual_data:
+  vault_data:

@@ -44,3 +44,6 @@ report
 # Some local files
 .env.local
 docker-compose.local.yml
+
+# Tier 2 manual test secrets (never commit real credentials)
+.env.manual-test
