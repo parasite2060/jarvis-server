@@ -32,33 +32,21 @@ import { Pgvector1746662400001 } from '../../src/shared/postgres/migration/17466
 
 const RUN_CHAOS = process.env['JARVIS_E2E_CHAOS'] === '1';
 
-async function waitForPhase(
-  dataSource: DataSource,
-  dreamId: number,
-  phase: string,
-  timeoutMs: number,
-): Promise<boolean> {
+async function waitForPhase(dataSource: DataSource, dreamId: number, phase: string, timeoutMs: number): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const rows = await dataSource.query(
-      `SELECT id FROM jarvis.dream_phases WHERE dream_id = $1 AND phase = $2 AND outcome = 'success' LIMIT 1`,
-      [dreamId, phase],
-    );
+    const rows = await dataSource.query(`SELECT id FROM jarvis.dream_phases WHERE dream_id = $1 AND phase = $2 AND outcome = 'success' LIMIT 1`, [
+      dreamId,
+      phase,
+    ]);
     if (rows.length > 0) return true;
     await new Promise((r) => setTimeout(r, 2_000));
   }
   return false;
 }
 
-async function countPhasesForDream(
-  dataSource: DataSource,
-  dreamId: number,
-  phase: string,
-): Promise<number> {
-  const rows = await dataSource.query(
-    `SELECT COUNT(*) as count FROM jarvis.dream_phases WHERE dream_id = $1 AND phase = $2`,
-    [dreamId, phase],
-  );
+async function countPhasesForDream(dataSource: DataSource, dreamId: number, phase: string): Promise<number> {
+  const rows = await dataSource.query(`SELECT COUNT(*) as count FROM jarvis.dream_phases WHERE dream_id = $1 AND phase = $2`, [dreamId, phase]);
   return Number(rows[0].count);
 }
 
@@ -98,7 +86,7 @@ suiteDescribe('WorkerCrashRecovery chaos test (Story 13.16 AC5)', () => {
     const workerEnv = {
       ...process.env,
       LLM_PROVIDER: 'llamacpp',
-      LLAMACPP_BASE_URL: process.env['LLAMACPP_BASE_URL'] ?? 'http://0.0.0.0:8080/v1',
+      LLAMACPP_BASE_URL: process.env['LLAMACPP_BASE_URL'] ?? 'http://localhost:11435/v1',
     };
 
     const workerChild = child_process.fork(workerScript, [], {
@@ -124,9 +112,11 @@ suiteDescribe('WorkerCrashRecovery chaos test (Story 13.16 AC5)', () => {
     const triggerDream = () =>
       new Promise<void>((resolve, reject) => {
         const req = http.request(
-          { hostname: 'localhost', port: 8000, path: '/dream', method: 'POST',
-            headers: { 'Content-Type': 'application/json' } },
-          (res) => { res.resume(); res.on('end', resolve); },
+          { hostname: 'localhost', port: 8000, path: '/dream', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+          (res) => {
+            res.resume();
+            res.on('end', resolve);
+          },
         );
         req.on('error', reject);
         req.end(JSON.stringify({}));
