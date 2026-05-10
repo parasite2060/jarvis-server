@@ -54,9 +54,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
     };
 
     // Act
-    const response = await request(setup.httpServer)
-      .post('/conversations')
-      .send(transcriptPayload);
+    const response = await request(setup.httpServer).post('/conversations').send(transcriptPayload);
 
     // Assert
     expect(response.status).toBe(202);
@@ -64,10 +62,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
 
     if (!LIVE_LLM) {
       // Tier 1: assert the signal was dispatched to the coordinator
-      expect(signalSpy).toHaveBeenCalledWith(
-        'light',
-        expect.objectContaining({ session_id: 'test-light-001' }),
-      );
+      expect(signalSpy).toHaveBeenCalledWith('light', expect.objectContaining({ session_id: 'test-light-001' }));
     }
   });
 
@@ -90,9 +85,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
       };
 
       // Act
-      const ingestResponse = await request(setup.httpServer)
-        .post('/conversations')
-        .send(transcriptPayload);
+      const ingestResponse = await request(setup.httpServer).post('/conversations').send(transcriptPayload);
       expect(ingestResponse.status).toBe(202);
 
       // Wait for light dream to complete (poll dream table)

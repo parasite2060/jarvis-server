@@ -61,9 +61,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
     const sourceDate = '2026-04-20';
 
     // Act
-    const response = await request(setup.httpServer)
-      .post('/dream')
-      .send({ sourceDate });
+    const response = await request(setup.httpServer).post('/dream').send({ sourceDate });
 
     // Assert
     expect(response.status).toBe(202);
@@ -85,9 +83,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
     const badDate = 'not-a-date';
 
     // Act
-    const response = await request(setup.httpServer)
-      .post('/dream')
-      .send({ sourceDate: badDate });
+    const response = await request(setup.httpServer).post('/dream').send({ sourceDate: badDate });
 
     // Assert
     expect(response.status).toBe(400);
@@ -117,9 +113,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
            ORDER BY dp.started_at`,
           [targetDate],
         );
-        const hasAllPhases = ['phase1', 'phase2', 'phase3'].every((p) =>
-          phases.some((r) => r.phase === p && r.outcome === 'success'),
-        );
+        const hasAllPhases = ['phase1', 'phase2', 'phase3'].every((p) => phases.some((r) => r.phase === p && r.outcome === 'success'));
         if (hasAllPhases) break;
         await new Promise((r) => setTimeout(r, 5_000));
       }

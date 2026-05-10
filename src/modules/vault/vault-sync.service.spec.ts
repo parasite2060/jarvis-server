@@ -159,7 +159,7 @@ describe('VaultSyncService', () => {
       const secondHandle = (target as unknown as { intervalHandle: NodeJS.Timeout | null }).intervalHandle;
 
       // Assert — two separate intervals created
-      expect((global.setInterval as jest.Mock)).toHaveBeenCalledTimes(2);
+      expect(global.setInterval as jest.Mock).toHaveBeenCalledTimes(2);
       expect(firstHandle).not.toBe(secondHandle);
     });
   });
