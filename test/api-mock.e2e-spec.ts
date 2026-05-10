@@ -64,7 +64,7 @@ describe('api-mock-server smoke test', () => {
       choices: Array<{ message: { content: string } }>;
     };
     expect(body.id).toBe('chatcmpl-smoke-001');
-    expect(body.choices[0].message.content).toBe('Hello from stub');
+    expect(body.choices[0]?.message.content).toBe('Hello from stub');
   });
 
   it('returns 503 when no stub is registered', async () => {
