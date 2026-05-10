@@ -80,7 +80,7 @@ export const configValidationSchema = Joi.object({
   // agent-build time. Joi accepts the three values; runtime validation that
   // the chosen provider's credentials are non-empty happens inside the factory
   // (LLM_PROVIDER_CONFIG_INVALID at -400170).
-  LLM_PROVIDER: Joi.string().valid('azure', 'openrouter', 'llamacpp').default('azure'),
+  LLM_PROVIDER: Joi.string().valid('azure', 'openrouter', 'llamacpp', 'openai-compatible').default('azure'),
 
   // Azure OpenAI — required when LLM_PROVIDER='azure', optional otherwise.
   // Azure remains the production default (Story 13.17 cutover keeps this).
@@ -105,6 +105,21 @@ export const configValidationSchema = Joi.object({
   LLAMACPP_BASE_URL: Joi.string().uri().default('http://0.0.0.0:8080/v1'),
   LLAMACPP_MODEL: Joi.string().default('local'),
   LLAMACPP_API_KEY: Joi.string().default('not-needed'),
+
+  // OpenAI-compatible (Story 13.16.6) — used when LLM_PROVIDER='openai-compatible'.
+  // Points at any OpenAI-compatible endpoint (e.g., hosted inference, proxy).
+  // Tier 2 E2E tests inject real values via JARVIS_E2E_OPENAI_* env vars.
+  OPENAI_COMPATIBLE_BASE_URL: Joi.string().uri().when('LLM_PROVIDER', {
+    is: 'openai-compatible',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  OPENAI_COMPATIBLE_MODEL: Joi.string().when('LLM_PROVIDER', {
+    is: 'openai-compatible',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  OPENAI_COMPATIBLE_API_KEY: Joi.string().optional().default('not-needed'),
 
   // MemU
   MEMU_API_URL: Joi.string().uri().required(),

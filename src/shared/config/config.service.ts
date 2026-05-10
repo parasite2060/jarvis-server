@@ -196,9 +196,9 @@ export class AppConfigService {
     return this.configService.get<string>('TEMPORAL_TASK_QUEUE', 'jarvis-dream');
   }
 
-  // LLM provider switch (Story 13.10 / Addendum 1+2)
-  get llmProvider(): 'azure' | 'openrouter' | 'llamacpp' {
-    return this.configService.get<'azure' | 'openrouter' | 'llamacpp'>('LLM_PROVIDER', 'azure');
+  // LLM provider switch (Story 13.10 / Addendum 1+2; Story 13.16.6 adds openai-compatible)
+  get llmProvider(): 'azure' | 'openrouter' | 'llamacpp' | 'openai-compatible' {
+    return this.configService.get<'azure' | 'openrouter' | 'llamacpp' | 'openai-compatible'>('LLM_PROVIDER', 'azure');
   }
 
   // OpenRouter (Story 13.10 / Addendum 1)
@@ -225,6 +225,19 @@ export class AppConfigService {
 
   get llamacppApiKey(): string {
     return this.configService.get<string>('LLAMACPP_API_KEY', 'not-needed');
+  }
+
+  // OpenAI-compatible (Story 13.16.6) — any OpenAI-compatible endpoint
+  get openaiCompatibleBaseUrl(): string {
+    return this.configService.get<string>('OPENAI_COMPATIBLE_BASE_URL', '');
+  }
+
+  get openaiCompatibleModel(): string {
+    return this.configService.get<string>('OPENAI_COMPATIBLE_MODEL', '');
+  }
+
+  get openaiCompatibleApiKey(): string {
+    return this.configService.get<string>('OPENAI_COMPATIBLE_API_KEY', 'not-needed');
   }
 
   // Azure OpenAI

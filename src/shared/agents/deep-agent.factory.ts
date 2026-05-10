@@ -375,6 +375,18 @@ export class DeepAgentFactory {
           temperature: 0.0,
         }) as unknown as BaseLanguageModel;
       }
+      case 'openai-compatible': {
+        const baseUrl = this.appConfig.openaiCompatibleBaseUrl;
+        if (!baseUrl) {
+          throw new InternalException(ErrorCode.LLM_PROVIDER_CONFIG_INVALID, "LLM_PROVIDER='openai-compatible' requires OPENAI_COMPATIBLE_BASE_URL");
+        }
+        return new ChatOpenAI({
+          apiKey: this.appConfig.openaiCompatibleApiKey,
+          model: this.appConfig.openaiCompatibleModel,
+          configuration: { baseURL: baseUrl },
+          temperature: 0.0,
+        }) as unknown as BaseLanguageModel;
+      }
       case 'azure':
       default: {
         const azureKey = this.appConfig.azureOpenAIApiKey;
