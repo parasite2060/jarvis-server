@@ -29,6 +29,7 @@ const baselineEnv: Record<string, string> = {
   VAULT_PATH: '/tmp/test-vault',
   VAULT_GIT_REMOTE: 'https://github.com/test/ai-memory.git',
   GH_TOKEN: 'test-token',
+  MEMORY_STORAGE_MODE: 'github',
   AZURE_OPENAI_API_KEY: 'test-azure-key',
   AZURE_OPENAI_API_INSTANCE_NAME: 'test-instance',
   AZURE_OPENAI_API_DEPLOYMENT_NAME: 'gpt-test',

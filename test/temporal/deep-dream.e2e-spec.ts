@@ -1,37 +1,54 @@
 /**
  * Deep dream end-to-end test (Story 13.16 AC2).
  *
- * Tier 1 (always): POST /dream triggers coordinator signal, response is 202,
- * signal payload has correct shape. No live Temporal or LLM needed.
+ * Always runs against the api-mock-server (http://localhost:11435/v1).
  *
- * Tier 2 (JARVIS_E2E_LIVE_LLM=1): full pipeline — Dream row created,
- * dream_phases rows for phases 1–3 exist with outcome='success',
- * MEMORY.md updated, PR created. Byte-equivalence fixture recorded
- * in Story 13.16.1.
+ * HTTP shape tests: spy signalCoordinator — only checks request/response
+ * shape without needing a live coordinator workflow.
  *
- * Run Tier 1: `bun run e2e:infra:up && bun run test:e2e -- --testPathPattern="deep-dream.e2e"`
- * Run Tier 2: `JARVIS_E2E_LIVE_LLM=1 bun run test:e2e -- --testPathPattern="deep-dream.e2e"`
+ * Pipeline test: seeds vault dailys, starts the coordinator workflow, registers
+ * phase 1/2/3 + health-fix agent stubs, then polls until all dream_phases rows
+ * complete.
+ *
+ * Run: `bun run e2e:infra:up && bun run test:e2e -- --testPathPattern="deep-dream.e2e"`
  */
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import * as request from 'supertest';
 import { E2ETestSetup } from '../setup/e2e-setup';
 import { TemporalClientService } from '../../src/shared/temporal/temporal-client.service';
+import { ApiMockHelper } from '../helpers';
 import { ErrorCode } from '../../src/utils/error.code';
+import { phase1Stub, phase2Stub, phase3Stub, healthFixStub } from '../fixtures/llm-stubs';
 
-const LIVE_LLM = process.env['JARVIS_E2E_LIVE_LLM'] === '1';
+const VAULT_ROOT = process.env['VAULT_PATH'] ?? '/tmp/jarvis-e2e-vault';
+
+async function seedDaily(isoDate: string): Promise<void> {
+  const abs = path.join(VAULT_ROOT, 'dailys', `${isoDate}.md`);
+  await fs.mkdir(path.dirname(abs), { recursive: true });
+  await fs.writeFile(abs, `# Daily ${isoDate}\n\nContent for ${isoDate}.\n`, 'utf-8');
+}
 
 describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
-  jest.setTimeout(180_000);
+  jest.setTimeout(300_000);
 
   let setup: E2ETestSetup;
   let signalSpy: jest.SpyInstance;
+  const mock = new ApiMockHelper();
 
   beforeAll(async () => {
+    // Seed dailys for the deep-dream test window (past 30 days to ensure coverage)
+    E2ETestSetup.ensureVaultCloned();
+    for (let i = 1; i <= 30; i++) {
+      const d = new Date('2026-05-08T00:00:00Z');
+      d.setDate(d.getDate() - i);
+      await seedDaily(d.toISOString().slice(0, 10));
+    }
+
     setup = new E2ETestSetup();
     await setup.init();
-    if (!LIVE_LLM) {
-      const temporal = setup.app.get(TemporalClientService);
-      signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
-    }
+    const temporal = setup.app.get(TemporalClientService);
+    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
   }, 90_000);
 
   afterAll(async () => {
@@ -40,87 +57,97 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
 
   beforeEach(async () => {
     await setup.cleanup();
-    signalSpy?.mockClear();
+    await mock.clear();
+    signalSpy.mockClear();
+  });
+
+  afterEach(async () => {
+    await mock.clear();
   });
 
   it('should return 202 with queued status when POST /dream is called', async () => {
-    // Arrange — empty body (today's deep dream)
-    const body = {};
+    // WHEN
+    const response = await request(setup.httpServer).post('/dream').send({});
 
-    // Act
-    const response = await request(setup.httpServer).post('/dream').send(body);
-
-    // Assert
+    // THEN
     expect(response.status).toBe(202);
     expect(response.body.code).toBe(ErrorCode.SUCCESS);
     expect(response.body.data.status).toBe('queued');
   });
 
   it('should dispatch submitDeep signal with correct payload when POST /dream is called with sourceDate', async () => {
-    // Arrange
     const sourceDate = '2026-04-20';
 
-    // Act
+    // WHEN
     const response = await request(setup.httpServer).post('/dream').send({ sourceDate });
 
-    // Assert
+    // THEN
     expect(response.status).toBe(202);
-
-    if (!LIVE_LLM) {
-      expect(signalSpy).toHaveBeenCalledWith(
-        'deep',
-        expect.objectContaining({
-          trigger: 'manual-backfill',
-          source_date_iso: sourceDate,
-          target_date: sourceDate,
-        }),
-      );
-    }
+    expect(signalSpy).toHaveBeenCalledWith(
+      'deep',
+      expect.objectContaining({
+        trigger: 'manual-backfill',
+        source_date_iso: sourceDate,
+        target_date: sourceDate,
+      }),
+    );
   });
 
   it('should return 400 when POST /dream is called with invalid sourceDate format', async () => {
-    // Arrange
-    const badDate = 'not-a-date';
+    // WHEN
+    const response = await request(setup.httpServer).post('/dream').send({ sourceDate: 'not-a-date' });
 
-    // Act
-    const response = await request(setup.httpServer).post('/dream').send({ sourceDate: badDate });
-
-    // Assert
+    // THEN
     expect(response.status).toBe(400);
   });
 
-  // Tier 2 only — requires live Temporal + LLM
-  const tier2 = LIVE_LLM ? describe : describe.skip;
-
-  tier2('Tier 2 — full pipeline with live LLM', () => {
+  describe('full pipeline with api-mock LLM', () => {
     it('should create dream_phases rows for all three phases when deep dream completes end-to-end', async () => {
-      // Arrange
-      const targetDate = new Date().toISOString().slice(0, 10);
+      // GIVEN: Vault seeded with dailys (30 days) and coordinator workflow running.
+      signalSpy.mockRestore();
+      await setup.startWorker();
 
-      // Act
-      const triggerResponse = await request(setup.httpServer).post('/dream').send({});
+      const temporal = setup.app.get(TemporalClientService);
+      temporal.coordinatorWorkflowId = `coord-deep-e2e-${Date.now()}`;
+      await temporal.ensureCoordinatorRunning();
+
+      await mock.register(phase1Stub());
+      await mock.register(phase2Stub());
+      await mock.register(phase3Stub());
+      await mock.register(healthFixStub());
+
+      const testStartedAt = new Date();
+      // Use a sourceDate that exists in the seeded dailys (2026-05-08).
+      // Using today's date (2026-05-11) would fail with emptyInputs since
+      // the vault only has dailys up to 2026-05-08 in local mode.
+      const sourceDate = '2026-05-07';
+
+      // WHEN: Trigger deep dream pipeline via HTTP
+      const triggerResponse = await request(setup.httpServer).post('/dream').send({ sourceDate });
       expect(triggerResponse.status).toBe(202);
 
-      // Wait for deep dream to complete
+      // THEN: Poll until all three phases complete
       const startMs = Date.now();
-      let phases: Array<{ phase: string; outcome: string }> = [];
-      while (Date.now() - startMs < 300_000) {
+      let phases: Array<{ phase: string; status: string }> = [];
+      while (Date.now() - startMs < 240_000) {
         phases = await setup.dataSource.query(
-          `SELECT dp.phase, dp.outcome
+          `SELECT dp.phase, dp.status
            FROM jarvis.dream_phases dp
            JOIN jarvis.dreams d ON d.id = dp.dream_id
-           WHERE d.kind = 'deep' AND d.target_date = $1
+           WHERE d.type = 'deep' AND d.created_at >= $1
            ORDER BY dp.started_at`,
-          [targetDate],
+          [testStartedAt],
         );
-        const hasAllPhases = ['phase1', 'phase2', 'phase3'].every((p) => phases.some((r) => r.phase === p && r.outcome === 'success'));
+        const hasAllPhases = ['phase1_light_sleep', 'phase2_rem_sleep', 'phase3_deep_sleep'].every((p) =>
+          phases.some((r) => r.phase === p && r.status === 'completed'),
+        );
         if (hasAllPhases) break;
-        await new Promise((r) => setTimeout(r, 5_000));
+        await new Promise((r) => setTimeout(r, 3_000));
       }
 
-      // Assert
-      expect(phases.some((p) => p.phase === 'phase1' && p.outcome === 'success')).toBe(true);
-      expect(phases.some((p) => p.phase === 'phase3' && p.outcome === 'success')).toBe(true);
+      expect(phases.some((p) => p.phase === 'phase1_light_sleep' && p.status === 'completed')).toBe(true);
+      expect(phases.some((p) => p.phase === 'phase2_rem_sleep' && p.status === 'completed')).toBe(true);
+      expect(phases.some((p) => p.phase === 'phase3_deep_sleep' && p.status === 'completed')).toBe(true);
     });
   });
 });

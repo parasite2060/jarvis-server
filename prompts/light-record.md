@@ -42,7 +42,7 @@ Knowledge base modifications are handled exclusively by the deep dream agent.
 ### Base Tools (vault-rooted, read-only)
 - `readFile({ path })` — read any vault file (full content)
 - `readFrontmatter({ path })` — read YAML metadata only
-- `grep({ pattern, path })` — search vault files recursively
+- `searchVault({ pattern, path })` — search vault files recursively
 - `listFiles({ path })` — list vault directory contents
 - `fileInfo({ path })` — file statistics (lines, chars, tokens)
 - `memuSearch({ query })` — semantic search for matching vault entries

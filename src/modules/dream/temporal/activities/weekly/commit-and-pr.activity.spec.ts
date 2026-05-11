@@ -27,7 +27,7 @@ describe('WeeklyCommitAndPrActivity', () => {
     jest.clearAllMocks();
   });
 
-  it('writes triples on new branch, creates PR with byte-equivalent body', async () => {
+  it('should write triples and create PR with correct body when vault_writes has entries', async () => {
     // Arrange
     mockGitOps.createPullRequest.mockResolvedValue({ url: 'https://github.com/x/y/pull/42' });
 
@@ -55,7 +55,7 @@ describe('WeeklyCommitAndPrActivity', () => {
     expect(prCall.autoMerge).toBe(false);
   });
 
-  it('returns no_files when both files_modified and vault_writes empty', async () => {
+  it('should return no_files when both files_modified and vault_writes are empty', async () => {
     // Act
     const result = await target.commitAndPr({
       dream_id: 13,
@@ -69,7 +69,7 @@ describe('WeeklyCommitAndPrActivity', () => {
     expect(mockGitOps.createBranch).not.toHaveBeenCalled();
   });
 
-  it('throws WEEKLY_REVIEW_COMMIT_AND_PR_FAILED on gitOps error', async () => {
+  it('should throw WEEKLY_REVIEW_COMMIT_AND_PR_FAILED when gitOps throws an error', async () => {
     // Arrange
     mockGitOps.pullLatestMain.mockRejectedValue(new Error('git failure'));
 

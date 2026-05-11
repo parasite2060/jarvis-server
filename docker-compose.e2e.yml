@@ -6,9 +6,6 @@ name: service-template-e2e-test
 
 services:
   postgres:
-    # pgvector/pgvector:pg16 — Postgres 16 with the `pgvector` extension preinstalled.
-    # Story 13.2 ships migration `0002-pgvector.ts` that runs `CREATE EXTENSION IF NOT EXISTS vector`;
-    # production homelab Postgres has the extension (used by MemU). The e2e image must match.
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
@@ -18,10 +15,6 @@ services:
       - 5433:5432 # E2E: 5433, Local: 5432
     volumes:
       - postgres_e2e_data:/var/lib/postgresql/data
-      # Init script — pre-creates the `jarvis` schema so the boilerplate's
-      # `synchronize: true` (e2e env) can place schema-qualified entities
-      # introduced in Story 13.2. Production uses migrations and creates the
-      # schema explicitly in `0001-init-jarvis.ts`.
       - ./test/setup/postgres-init.sql:/docker-entrypoint-initdb.d/01-jarvis-schema.sql:ro
     security_opt:
       - no-new-privileges:true
@@ -91,14 +84,6 @@ services:
       retries: 5
       start_period: 5s
 
-  # Real Temporal cluster for e2e + integration tests.
-  # Uses `temporalio/temporal` (the CLI image) running `server start-dev` —
-  # the canonical zero-dependency dev mode that bundles an in-memory or
-  # SQLite-backed cluster. The `default` namespace is auto-created.
-  # Integration specs (Story 13.8 + 13.9 + 13.10+) connect to localhost:7234
-  # instead of spawning the in-process Java Test Server, so the wire
-  # contract (gRPC, signal delivery, worker registration, retry policies,
-  # replay) gets exercised against a real server — not an embedded simulator.
   temporal:
     image: temporalio/temporal:1.7.0
     restart: unless-stopped
@@ -123,9 +108,6 @@ services:
       retries: 10
       start_period: 15s
 
-  # MemU — semantic memory service used by IngestTranscriptUseCase and dream pipelines.
-  # Uses the same GHCR image as production. Pointed at the e2e Postgres and the
-  # local llama.cpp instance for embeddings. Port 8001 matches MEMU_API_URL in .env.e2e.
   memu-server:
     image: ghcr.io/parasite2060/memu-server:latest
     platform: linux/amd64

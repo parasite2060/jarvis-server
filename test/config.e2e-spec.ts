@@ -85,9 +85,7 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
 
   describe('PATCH /config', () => {
     it('(b) updates autoMerge and returns updated config', async () => {
-      const res = await request(setup.httpServer)
-        .patch('/config')
-        .send({ autoMerge: false });
+      const res = await request(setup.httpServer).patch('/config').send({ autoMerge: false });
 
       expect(res.status).toBe(200);
       const body = res.body.data ?? res.body;
@@ -99,9 +97,7 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
     });
 
     it('(c) updates deepDreamCron and returns updated config', async () => {
-      const res = await request(setup.httpServer)
-        .patch('/config')
-        .send({ deepDreamCron: '0 22 * * *' });
+      const res = await request(setup.httpServer).patch('/config').send({ deepDreamCron: '0 22 * * *' });
 
       expect(res.status).toBe(200);
       const body = res.body.data ?? res.body;
@@ -109,25 +105,19 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
     });
 
     it('(d) rejects invalid cron string with 400', async () => {
-      const res = await request(setup.httpServer)
-        .patch('/config')
-        .send({ deepDreamCron: 'not-a-cron' });
+      const res = await request(setup.httpServer).patch('/config').send({ deepDreamCron: 'not-a-cron' });
 
       expect(res.status).toBe(400);
     });
 
     it('(e) rejects maxMemoryLines below minimum (50) with 400', async () => {
-      const res = await request(setup.httpServer)
-        .patch('/config')
-        .send({ maxMemoryLines: 10 });
+      const res = await request(setup.httpServer).patch('/config').send({ maxMemoryLines: 10 });
 
       expect(res.status).toBe(400);
     });
 
     it('(e) rejects maxMemoryLines above maximum (500) with 400', async () => {
-      const res = await request(setup.httpServer)
-        .patch('/config')
-        .send({ maxMemoryLines: 999 });
+      const res = await request(setup.httpServer).patch('/config').send({ maxMemoryLines: 999 });
 
       expect(res.status).toBe(400);
     });

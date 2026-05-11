@@ -20,6 +20,10 @@ import { AppConfigService } from '../src/shared/config/config.service';
 import { GitOpsRebaseConflictError } from '../src/shared/git/errors';
 import { GitOpsService } from '../src/shared/git/git-ops.service';
 import { ErrorCode } from '../src/utils/error.code';
+import { LOCAL_GIT_OPS_BACKEND, GITHUB_GIT_OPS_BACKEND } from '../src/shared/git/backends/index';
+import { LocalGitOpsBackend } from '../src/shared/git/backends/local.backend';
+import { GitHubGitOpsBackend } from '../src/shared/git/backends/github.backend';
+import { GitOpsBackendFactory } from '../src/shared/git/git-ops-backend.factory';
 
 describe('GitOpsService (integration — real bare repo)', () => {
   let tmpRoot: string;
@@ -72,10 +76,10 @@ describe('GitOpsService (integration — real bare repo)', () => {
     await wg.rebase(['--abort']).catch(() => undefined);
     await wg.checkout(['-B', 'main', 'origin/main']);
 
-    // Provide GitOpsService directly with a stub AppConfigService rather than
-    // importing GitModule — @Global modules don't import their own deps and
-    // the test isn't exercising the global wiring (that's covered by AppModule
-    // bootstrap in production). This is the simpler, more isolated fixture.
+    // Provide GitOpsService with GitOpsBackendFactory and both backends — the
+    // service is now a facade that delegates to the factory, which needs both
+    // backend instances registered. Backend choice is driven by memoryStorageMode
+    // (stubbed as 'local' here).
     const moduleRef = await Test.createTestingModule({
       providers: [
         GitOpsService,
@@ -84,7 +88,23 @@ describe('GitOpsService (integration — real bare repo)', () => {
           useValue: {
             vaultPath: workingDir,
             ghToken: 'fake-gh-token',
+            memoryStorageMode: 'local' as const,
           } as unknown as AppConfigService,
+        },
+        {
+          provide: LOCAL_GIT_OPS_BACKEND,
+          useFactory: (cfg: AppConfigService) => new LocalGitOpsBackend(cfg.vaultPath),
+          inject: [AppConfigService],
+        },
+        {
+          provide: GITHUB_GIT_OPS_BACKEND,
+          useFactory: (cfg: AppConfigService) => new GitHubGitOpsBackend(cfg.vaultPath, cfg.ghToken),
+          inject: [AppConfigService],
+        },
+        {
+          provide: GitOpsBackendFactory,
+          useFactory: (local: LocalGitOpsBackend, github: GitHubGitOpsBackend) => new GitOpsBackendFactory(local, github),
+          inject: [LOCAL_GIT_OPS_BACKEND, GITHUB_GIT_OPS_BACKEND],
         },
       ],
     }).compile();

@@ -63,10 +63,18 @@ export const configValidationSchema = Joi.object({
 
   // Vault
   VAULT_PATH: Joi.string().required(),
-  VAULT_GIT_REMOTE: Joi.string().uri().required(),
+  // Only required when MEMORY_STORAGE_MODE=github (used as push remote).
+  // In local mode this is unused — the local backend operates on the bare repo at VAULT_PATH.
+  VAULT_GIT_REMOTE: Joi.string().uri().when('MEMORY_STORAGE_MODE', {
+    is: 'github',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
 
-  // GitHub
-  GH_TOKEN: Joi.string().required(),
+  // GitHub — only required when MEMORY_STORAGE_MODE=github (gh CLI for PR creation).
+  // In local mode, createPullRequest is a no-op that returns { url: '' }.
+  GH_TOKEN: Joi.string().when('MEMORY_STORAGE_MODE', { is: 'github', then: Joi.required(), otherwise: Joi.optional() }),
+  MEMORY_STORAGE_MODE: Joi.string().valid('local', 'github').default('local'),
 
   // Temporal (external homelab service)
   TEMPORAL_ADDRESS: Joi.string().default('192.168.50.129:7233'),

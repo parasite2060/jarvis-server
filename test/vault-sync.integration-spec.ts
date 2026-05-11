@@ -104,9 +104,7 @@ describe('VaultSyncService integration', () => {
     expect(mockGitOps.pullLatestMain).toHaveBeenCalledTimes(1);
     expect(mockBuildManifest.execute).toHaveBeenCalledTimes(1);
     expect(mockFileManifestRepo.syncFromManifest).toHaveBeenCalledTimes(1);
-    expect(mockCommandBus.execute).toHaveBeenCalledWith(
-      expect.any(InvalidateContextCacheCommand),
-    );
+    expect(mockCommandBus.execute).toHaveBeenCalledWith(expect.any(InvalidateContextCacheCommand));
   });
 
   // ─── (b) file added → manifest updated ────────────────────────────────────

@@ -8,8 +8,7 @@
   },
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/src/$1",
-    "^deepagents$": "<rootDir>/test/mocks/deepagents.mock.ts",
-    "^@langchain/openai$": "<rootDir>/test/mocks/langchain-openai.mock.ts"
+    "^@langchain/langgraph-sdk$": "<rootDir>/test/mocks/langchain-langgraph-sdk.mock.ts"
   },
   "setupFilesAfterEnv": ["<rootDir>/test/setup/global-setup.ts"],
   "testTimeout": 30000,

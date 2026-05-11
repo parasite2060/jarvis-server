@@ -40,7 +40,7 @@ export interface DreamDeps {
 export interface ExtractionToolFactories {
   /** Reads a vault file. Caller injects with the activity's vault helper. */
   readFile: (input: { path: string; offset?: number; limit?: number }) => Promise<string>;
-  grep: (input: { pattern: string; path?: string }) => Promise<string>;
+  searchVault: (input: { pattern: string; path?: string }) => Promise<string>;
   listFiles: (input: { path?: string }) => Promise<string>;
   fileInfo: (input: { path: string }) => Promise<string>;
   readFrontmatter: (input: { path: string }) => Promise<string>;
@@ -242,10 +242,10 @@ function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTo
 
   tools.push(
     new DynamicStructuredTool({
-      name: 'grep',
+      name: 'searchVault',
       description: 'Recursively search vault files for a regex pattern. Capped at 100 matches.',
       schema: z.object({ pattern: z.string(), path: z.string().optional() }),
-      func: async (input) => factories.grep(input),
+      func: async (input) => factories.searchVault(input),
     }),
   );
 

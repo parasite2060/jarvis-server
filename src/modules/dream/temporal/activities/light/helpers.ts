@@ -32,7 +32,7 @@ export const SHORT_SESSION_THRESHOLD = 3;
 export function buildExtractionToolFactories(deps: VaultToolDeps): ExtractionToolFactories {
   return {
     readFile: (input) => readFileTool(deps, input),
-    grep: (input) => grepTool(deps, input),
+    searchVault: (input) => grepTool(deps, input),
     listFiles: (input) => listFilesTool(deps, input),
     fileInfo: (input) => fileInfoTool(deps, input),
     readFrontmatter: (input) => readFrontmatterTool(deps, input),

@@ -8,10 +8,12 @@
  */
 import { Global, Module } from '@nestjs/common';
 import { GitOpsService } from './git-ops.service';
+import { GitOpsBackendFactory } from './git-ops-backend.factory';
+import { GitOpsBackendProviders } from './backends/index';
 
 @Global()
 @Module({
-  providers: [GitOpsService],
+  providers: [GitOpsService, GitOpsBackendFactory, ...GitOpsBackendProviders],
   exports: [GitOpsService],
 })
 export class GitModule {}
