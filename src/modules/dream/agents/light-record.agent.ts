@@ -38,7 +38,7 @@ export interface RecordDeps {
 export interface RecordToolFactories {
   /** Reads a vault file (full content). Used by updateReinforcement / flagContradiction for frontmatter mutation. */
   readFile: (input: { path: string; offset?: number; limit?: number }) => Promise<string>;
-  grep: (input: { pattern: string; path?: string }) => Promise<string>;
+  searchVault: (input: { pattern: string; path?: string }) => Promise<string>;
   listFiles: (input: { path?: string }) => Promise<string>;
   fileInfo: (input: { path: string }) => Promise<string>;
   readFrontmatter: (input: { path: string }) => Promise<string>;
@@ -178,10 +178,10 @@ function buildBaseTools(factories: RecordToolFactories): DynamicStructuredTool[]
   );
   tools.push(
     new DynamicStructuredTool({
-      name: 'grep',
+      name: 'searchVault',
       description: 'Recursively search vault files.',
       schema: z.object({ pattern: z.string(), path: z.string().optional() }),
-      func: async (input) => factories.grep(input),
+      func: async (input) => factories.searchVault(input),
     }),
   );
   tools.push(

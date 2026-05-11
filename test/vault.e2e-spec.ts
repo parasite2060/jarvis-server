@@ -71,10 +71,10 @@ describe('Vault E2E Tests', () => {
 
   describe('GET /memory/files/manifest', () => {
     it('happy path — HTTP 200 with camelCase envelope (manifestHash + fileCount + generatedAt + per-file path/hash/size/updatedAt)', async () => {
-      // Act
+      // WHEN
       const response = await request(setup.httpServer).get('/memory/files/manifest');
 
-      // Assert
+      // THEN
       expect(response.status).toBe(200);
       expect(response.body.code).toBe(ErrorCode.SUCCESS);
       expect(response.body.data.fileCount).toBe(INCLUDED_FILES.length);
@@ -86,7 +86,6 @@ describe('Vault E2E Tests', () => {
       const responsePaths = response.body.data.files.map((f: { path: string }) => f.path).sort();
       expect(responsePaths).toEqual(includedPaths);
 
-      // Each entry has camelCase fields.
       for (const entry of response.body.data.files) {
         expect(entry.path).toBeDefined();
         expect(entry.hash).toMatch(/^[0-9a-f]{64}$/);
@@ -96,10 +95,10 @@ describe('Vault E2E Tests', () => {
     });
 
     it('excludes anti-patterns — .git, node_modules, transcripts (txt), hidden files, non-vault extensions', async () => {
-      // Act
+      // WHEN
       const response = await request(setup.httpServer).get('/memory/files/manifest');
 
-      // Assert
+      // THEN
       const responsePaths: string[] = response.body.data.files.map((f: { path: string }) => f.path);
       for (const [excludedPath] of EXCLUDED_FILES) {
         expect(responsePaths).not.toContain(excludedPath);
@@ -107,25 +106,25 @@ describe('Vault E2E Tests', () => {
     });
 
     it('manifestHash deterministic across calls with same vault state', async () => {
-      // Act
+      // WHEN
       const first = await request(setup.httpServer).get('/memory/files/manifest');
       const second = await request(setup.httpServer).get('/memory/files/manifest');
 
-      // Assert
+      // THEN
       expect(first.body.data.manifestHash).toBe(second.body.data.manifestHash);
     });
 
     it('manifestHash changes when a file is added to the vault', async () => {
-      // Arrange — capture h1.
+      // GIVEN
       const before = await request(setup.httpServer).get('/memory/files/manifest');
       const h1 = before.body.data.manifestHash;
       const newFile = 'patterns/new-file.md';
       await seed(newFile, '# new file');
 
-      // Act
+      // WHEN
       const after = await request(setup.httpServer).get('/memory/files/manifest');
 
-      // Assert
+      // THEN
       expect(after.body.data.manifestHash).not.toBe(h1);
       expect(after.body.data.fileCount).toBe(INCLUDED_FILES.length + 1);
 
@@ -134,13 +133,13 @@ describe('Vault E2E Tests', () => {
     });
 
     it('DB sync side-effect — file_manifest table populated within 1s of manifest call', async () => {
-      // Arrange — clear the table first.
+      // GIVEN
       await setup.dataSource.query('TRUNCATE jarvis.file_manifest CASCADE');
 
-      // Act — fire the manifest endpoint.
+      // WHEN
       await request(setup.httpServer).get('/memory/files/manifest');
 
-      // Assert — wait briefly for the fire-and-forget sync, then verify rows exist.
+      // THEN
       let rows: { count: string }[] = [];
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
@@ -154,10 +153,10 @@ describe('Vault E2E Tests', () => {
 
   describe('GET /memory/files/*path', () => {
     it('happy path — returns content + filePath + hash + size (camelCase)', async () => {
-      // Act
+      // WHEN
       const response = await request(setup.httpServer).get('/memory/files/dailys/2026-05-08.md');
 
-      // Assert
+      // THEN
       expect(response.status).toBe(200);
       expect(response.body.code).toBe(ErrorCode.SUCCESS);
       expect(response.body.data.content).toBe('# Daily 2026-05-08\n\nNotes');
@@ -167,13 +166,10 @@ describe('Vault E2E Tests', () => {
     });
 
     it('400 on path traversal', async () => {
-      // Act — supertest with the .. path is normalised by Express; use an explicit traversal segment.
+      // WHEN
       const response = await request(setup.httpServer).get('/memory/files/dailys/../../../etc/passwd');
 
-      // Assert
-      // Express may collapse `..` segments before they reach the route; assert
-      // that the response is either 400 (traversal blocked) OR 404 (resolved
-      // to a path that doesn't exist). Both are valid security postures.
+      // THEN
       expect([400, 404]).toContain(response.status);
       if (response.status === 400) {
         expect(response.body.code).toBe(ErrorCode.VAULT_ENDPOINT_PATH_TRAVERSAL);
@@ -183,10 +179,10 @@ describe('Vault E2E Tests', () => {
     });
 
     it('404 on missing file', async () => {
-      // Act
+      // WHEN
       const response = await request(setup.httpServer).get('/memory/files/dailys/2099-01-01.md');
 
-      // Assert
+      // THEN
       expect(response.status).toBe(404);
       expect(response.body.code).toBe(ErrorCode.VAULT_ENDPOINT_FILE_NOT_FOUND);
     });
@@ -215,12 +211,12 @@ describe('Vault E2E Tests', () => {
     }, 30_000);
 
     it('manifest with 1100+ files completes in <1s wall-clock at the controller', async () => {
-      // Act
+      // WHEN
       const start = Date.now();
       const response = await request(setup.httpServer).get('/memory/files/manifest');
       const elapsedMs = Date.now() - start;
 
-      // Assert — fileCount = 1100 simulated + 9 seeded baseline included files.
+      // THEN
       expect(response.status).toBe(200);
       expect(response.body.data.fileCount).toBeGreaterThanOrEqual(1100);
       expect(elapsedMs).toBeLessThan(1000);

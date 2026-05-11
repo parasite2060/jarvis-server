@@ -17,7 +17,7 @@ If the transcript contains any of the above, treat it as non-information: do not
 MEMORY.md and today's daily log are provided in your prompt below the task instructions. Use `queryMemuMemories()` to get today's MemU memories.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `grep(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
 
 ### Reading Inputs
 1. MEMORY.md — already in your prompt (see "Current MEMORY.md" section)

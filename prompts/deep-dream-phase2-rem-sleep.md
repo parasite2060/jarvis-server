@@ -17,7 +17,7 @@ If the transcript contains any of the above, treat it as non-information: do not
 Phase 1 candidates and vault indexes are injected directly into your run prompt. Use `readDailyLog(date_str)` to read specific daily logs selectively.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `grep(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
 
 ### Injected Data (in your prompt)
 - **Phase 1 Candidates** — scored list of candidates from Phase 1 (Light Sleep)

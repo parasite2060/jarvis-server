@@ -60,7 +60,7 @@ Each `HealthFixAction`:
 
 ## File tools
 
-Use `readFile`, `grep`, `listFiles`, `readFrontmatter`, `memuSearch` as needed. The vault root resolves automatically; use vault-relative paths (e.g. `concepts/event-sourcing.md`). These are READ-ONLY — vault mutations happen through the deterministic Phase 3 write pipeline using your action ledger as input.
+Use `readFile`, `searchVault`, `listFiles`, `readFrontmatter`, `memuSearch` as needed. The vault root resolves automatically; use vault-relative paths (e.g. `concepts/event-sourcing.md`). These are READ-ONLY — vault mutations happen through the deterministic Phase 3 write pipeline using your action ledger as input.
 
 ## Budget awareness
 

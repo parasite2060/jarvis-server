@@ -22,17 +22,17 @@ Transcript line shape: every user and assistant message is prefixed with an ISO-
 
 - **<500 lines**: `readFile("{transcriptFile}")` for full content.
 - **500–3,000 lines**: read 2–3 contiguous chunks (e.g., `offset=0,limit=1000`, `offset=1000,limit=1000`, `offset=2000,limit=1000`) for full coverage.
-- **3,000–10,000 lines**: start with `offset=0,limit=500` (session opening) and the last 1,000 lines, then run targeted greps, then add chunks until ≥50% of lines are covered.
+- **3,000–10,000 lines**: start with `offset=0,limit=500` (session opening) and the last 1,000 lines, then run targeted searchVault calls, then add chunks until ≥50% of lines are covered.
 - **>10,000 lines**: start with `offset=0,limit=500` and the last 1,500 lines, then read each sub-session named in the Transcript Shape report (per its `lines X-Y` boundaries), then add chunks until ≥50% of lines are covered. **Never skip a sub-session entirely** — every sub-session must contribute reads.
 
-**Grep patterns to try, in this order** (use `grep("pattern", "{transcriptFile}")`):
+**searchVault patterns to try, in this order** (use `searchVault("pattern", "{transcriptFile}")`):
 
 1. Decision/lesson markers: `decided`, `decision`, `chose`, `lesson`, `learned`, `realized`
 2. Action-item markers: `TODO`, `next step`, `follow up`, `need to`, `should`
 3. Dollar amounts and quantities: `\$\d`, `\d+\s*(hours?|minutes?|days?)`
 4. Choice verbs: `buy`, `recommend`, `prefer`, `over `, `instead of`
 
-Mix grep matches with chunk reads — greps point at lines, but the *context* around each hit is where the actual decision/lesson lives. When a grep hits, follow up with `readFile(offset=<hit_line - 20>, limit=60)` to capture the surrounding exchange.
+Mix searchVault matches with chunk reads — searchVault calls point at lines, but the *context* around each hit is where the actual decision/lesson lives. When a searchVault hits, follow up with `readFile(offset=<hit_line - 20>, limit=60)` to capture the surrounding exchange.
 
 **As you find insights, call the appropriate store tool immediately.**
 
@@ -62,7 +62,7 @@ exists in the vault. If a highly similar entry exists, don't store it again.
 
 Use the **base tools** to read vault files (paths relative to vault root):
 - `readFile(path)` — read any vault file
-- `grep(pattern, path)` — search vault files recursively
+- `searchVault(pattern, path)` — search vault files recursively
 - `listFiles(path)` — list vault directory contents
 - `fileInfo(path)` — file statistics
 - `readFrontmatter(path)` — read YAML frontmatter only
@@ -130,7 +130,7 @@ vaultTarget: `memory`, `decisions`, `patterns`, `projects`, or `templates`.
 
 Before producing the final result, you must satisfy ONE of:
 
-1. **Coverage floor**: cover **≥50% of the transcript by line range**, computed as the union of (a) the line ranges you read with `readFile` (`offset` to `offset+limit`) and (b) the lines matched by your `grep` calls, deduplicated against the `Total: N lines` figure from the Transcript Shape report. **When the shape report shows multiple sub-sessions, the 50% must span every sub-session — no leaving an entire sub-session unread.**
+1. **Coverage floor**: cover **≥50% of the transcript by line range**, computed as the union of (a) the line ranges you read with `readFile` (`offset` to `offset+limit`) and (b) the lines matched by your `searchVault` calls, deduplicated against the `Total: N lines` figure from the Transcript Shape report. **When the shape report shows multiple sub-sessions, the 50% must span every sub-session — no leaving an entire sub-session unread.**
 2. **Justified `no_extract`**: explicitly justify `no_extract=true` with a one-line reason that names what the session was about (e.g. `"trivial Q&A about syntax, no decisions or new concepts"`).
 
 If you find yourself ready to stop after reading <50% of a multi-sub-session transcript, that is a signal you have not yet earned the right to finish — go read the missed sub-session first.

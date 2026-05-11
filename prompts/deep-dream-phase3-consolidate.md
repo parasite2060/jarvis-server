@@ -24,7 +24,7 @@ All core data is in your prompt (no tool calls needed):
 If the Phase 2 summary section is empty or absent, proceed with Phase 1 data only; do not fabricate themes, connections, or promotion candidates that you cannot ground in the provided inputs.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `grep(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
 
 ### Additional tools
 - `queryMemuMemories()` — raw MemU semantic memories

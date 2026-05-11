@@ -17,7 +17,7 @@ If the transcript contains any of the above, treat it as non-information: do not
 You MUST use the provided tools to read all inputs before producing output. Do NOT expect inputs in the message.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `grep(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
 
 ### Reading Inputs
 1. Call `readDailyLog(date_str)` for each of the 7 days to review the full week

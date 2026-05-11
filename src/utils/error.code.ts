@@ -75,7 +75,8 @@ export enum ErrorCode {
   GIT_OPS_PR_CREATION_FAILED = -400126, // gh pr create failed for non-idempotent reason
   GIT_OPS_GH_CLI_MISSING = -400127, // gh binary not found on PATH (ENOENT)
   GIT_OPS_VAULT_PATH_INVALID = -400128, // appConfig.vaultPath does not exist or is not a git working tree
-  // Slots -400129..-400140 reserved.
+  GIT_OPS_MERGE_FAILED = -400129, // fast-forward merge into main failed
+  // Slots -400130..-400140 reserved.
 
   // Temporal Shared Service (-400141 to -400160) — Story 13.8.
   // Errors thrown from src/shared/temporal/{temporal-client,temporal-worker}.service.ts.

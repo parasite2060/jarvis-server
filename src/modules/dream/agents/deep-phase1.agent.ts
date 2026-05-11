@@ -57,7 +57,7 @@ function buildBase7Tools(deps: VaultToolDeps): DynamicStructuredTool[] {
       func: async (input) => readFileTool(deps, input),
     }),
     new DynamicStructuredTool({
-      name: 'grep',
+      name: 'searchVault',
       description: 'Recursively search vault files for a regex pattern. Capped at 100 matches.',
       schema: z.object({ pattern: z.string(), path: z.string().optional() }),
       func: async (input) => grepTool(deps, input),

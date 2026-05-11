@@ -28,7 +28,7 @@ describe('LightCommitAndPrActivity', () => {
     jest.clearAllMocks();
   });
 
-  it('returns no_changes when session_log_writes is empty', async () => {
+  it('should return no_changes when session_log_writes is empty', async () => {
     // Act
     const result = await target.commitAndPr({
       dream_id: 1,
@@ -46,7 +46,7 @@ describe('LightCommitAndPrActivity', () => {
     expect(mockGitOps.createBranch).not.toHaveBeenCalled();
   });
 
-  it('writes triples and creates PR on the new branch', async () => {
+  it('should write triples and create PR on the new branch when session_log_writes has entries', async () => {
     // Arrange
     mockGitOps.pullLatestMain.mockResolvedValue();
     mockGitOps.createBranch.mockResolvedValue();
@@ -74,7 +74,7 @@ describe('LightCommitAndPrActivity', () => {
     expect(result.git_pr_status).toBe('created');
   });
 
-  it('throws LIGHT_DREAM_COMMIT_AND_PR_FAILED on git error', async () => {
+  it('should throw LIGHT_DREAM_COMMIT_AND_PR_FAILED when gitOps throws an error', async () => {
     // Arrange
     mockGitOps.pullLatestMain.mockRejectedValue(new Error('network'));
 

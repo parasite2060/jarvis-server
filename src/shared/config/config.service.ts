@@ -175,16 +175,20 @@ export class AppConfigService {
   }
 
   get vaultGitRemote(): string {
-    return this.configService.getOrThrow<string>('VAULT_GIT_REMOTE');
+    return this.configService.get<string>('VAULT_GIT_REMOTE') ?? '';
   }
 
   get vaultSyncIntervalSeconds(): number {
     return this.configService.get<number>('VAULT_SYNC_INTERVAL_SECONDS', 1800);
   }
 
-  // GitHub
+  // GitHub — GH_TOKEN is optional when MEMORY_STORAGE_MODE=local (gh CLI not used).
   get ghToken(): string {
-    return this.configService.getOrThrow<string>('GH_TOKEN');
+    return this.configService.get<string>('GH_TOKEN') ?? '';
+  }
+
+  get memoryStorageMode(): 'local' | 'github' {
+    return this.configService.get<'local' | 'github'>('MEMORY_STORAGE_MODE', 'local');
   }
 
   // Temporal (defaults declared in Joi schema)

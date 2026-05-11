@@ -41,6 +41,9 @@ const ALLOWLIST: string[] = [
   // `process.env` directly (GH_TOKEN comes from `appConfig.ghToken`).
   // Story 13.7.
   'shared/git/git-ops.service.ts',
+  // GitHub backend passes GH_TOKEN from config, but inherits the rest of
+  // the subprocess env from process.env so gh CLI has access to PATH/HOME.
+  'shared/git/backends/github.backend.ts',
 ];
 
 async function walk(dir: string, accumulator: string[] = []): Promise<string[]> {
