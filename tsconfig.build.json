@@ -11,7 +11,6 @@
     "dist",
     "**/*spec.ts",
     "*.ts",
-    "tools",
-    "src/modules/dream/temporal/workflows/**"
+    "tools"
   ]
 }

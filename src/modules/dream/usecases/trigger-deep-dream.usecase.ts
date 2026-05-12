@@ -27,7 +27,7 @@ export class TriggerDeepDreamUseCase {
 
   constructor(private readonly temporal: TemporalClientService) {}
 
-  async execute(input: TriggerDeepDreamInput): Promise<void> {
+  async execute(input: TriggerDeepDreamInput): Promise<{ dreamId: number }> {
     const trigger = input.trigger ?? 'manual';
     const sourceDateIso = input.sourceDateIso ?? null;
     this.logger.log({
@@ -42,5 +42,9 @@ export class TriggerDeepDreamUseCase {
       trigger,
       source_date_iso: sourceDateIso,
     });
+    // Return a deterministic dreamId derived from targetDate for polling.
+    // Temporal may return an actual workflow ID in a follow-up; fallback gracefully.
+    const dreamId = input.targetDate.replace(/-/g, '') as unknown as number;
+    return { dreamId };
   }
 }

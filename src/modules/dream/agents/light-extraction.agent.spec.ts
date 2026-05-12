@@ -53,7 +53,7 @@ describe('buildLightExtractionAgent — store tools', () => {
       deps,
       baseToolFactories: {
         readFile: async () => '',
-        grep: async () => '',
+        searchVault: async () => '',
         listFiles: async () => '',
         fileInfo: async () => '',
         readFrontmatter: async () => '',
@@ -73,12 +73,12 @@ describe('buildLightExtractionAgent — store tools', () => {
   it('exposes all 7 base + 8 store tools (15 total)', () => {
     expect(capturedTools.map((t) => t.name).sort()).toEqual([
       'fileInfo',
-      'grep',
       'listFiles',
       'memuCategories',
       'memuSearch',
       'readFile',
       'readFrontmatter',
+      'searchVault',
       'storeActionItem',
       'storeConcept',
       'storeConnection',

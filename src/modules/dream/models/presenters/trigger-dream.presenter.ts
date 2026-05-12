@@ -5,5 +5,11 @@
  * produce byte-equivalent `{ data: { status: 'queued' }, status: 'ok' }`.
  */
 export class TriggerDreamPresenter {
-  constructor(public readonly status: string) {}
+  constructor(
+    public readonly status: string,
+    public readonly dreamId?: number,
+    public readonly trigger?: string,
+    public readonly sourceDateIso?: string,
+    public readonly targetDate?: string,
+  ) {}
 }

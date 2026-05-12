@@ -25,6 +25,19 @@ export const MAX_MEMORY_LINES = 200;
 
 // Verbatim port of Python `context_assembly.py:18-24`. Preserved as a single
 // concatenated string so the wire output stays byte-equivalent to Python.
+export interface AssembledContext {
+  soul: string | null;
+  identity: string | null;
+  memory: string | null;
+  recentDailys: Array<{ label: string; content: string }>;
+  decisionsIndex: string | null;
+  projectsIndex: string | null;
+  patternsIndex: string | null;
+  templatesIndex: string | null;
+  assembled_at: string;
+  health: string | null;
+}
+
 export const MEMORY_TOOLS_TEXT =
   'You have access to memory tools during this session:\n' +
   '- `memory_search`: Search past memories semantically. ' +
@@ -47,9 +60,7 @@ export class AssembleContextUseCase {
     @Inject(DREAM_REPOSITORY) private readonly dreamRepo: IDreamRepository,
   ) {}
 
-  async execute(): Promise<string> {
-    // Server-side date computation in UTC. Matches Python's date.today() because
-    // production runs with TZ=UTC. If TZ env changes, document the deviation.
+  async execute(): Promise<AssembledContext> {
     const today = new Date().toISOString().slice(0, 10);
     const yesterdayDate = new Date(Date.now() - 86_400_000);
     const yesterday = yesterdayDate.toISOString().slice(0, 10);
@@ -66,32 +77,48 @@ export class AssembleContextUseCase {
       { label: 'TEMPLATES INDEX', path: 'templates/_index.md' },
     ];
 
-    const sections: string[] = [];
+    const results: Record<string, string | null> = {};
     for (const spec of sectionSpecs) {
-      const section = await this.readSection(spec);
-      if (section !== null) {
-        sections.push(section);
-      }
+      const content = await this.readSectionContent(spec);
+      results[spec.label] = content;
     }
 
     const healthSection = await this.composeHealthSection();
-    if (healthSection !== null) {
-      sections.push(healthSection);
-    }
 
-    sections.push(`## MEMORY TOOLS\n\n${MEMORY_TOOLS_TEXT}`);
-
-    const assembled = sections.join('\n\n');
     this.logger.log({
       message: 'context assembly completed',
       event: 'context.assembly.completed',
-      sectionCount: sections.length,
-      length: assembled.length,
+      sectionCount: Object.values(results).filter((v) => v !== null).length + (healthSection !== null ? 1 : 0) + 1,
+      length: Object.values(results)
+        .filter((v) => v !== null)
+        .join('\n\n').length,
     });
-    return assembled;
+
+    const todayContent = results[`TODAY (${today})`];
+    const yesterdayContent = results[`YESTERDAY (${yesterday})`];
+    const recentDailys: Array<{ label: string; content: string }> = [];
+    if (todayContent) {
+      recentDailys.push({ label: `TODAY (${today})`, content: todayContent });
+    }
+    if (yesterdayContent) {
+      recentDailys.push({ label: `YESTERDAY (${yesterday})`, content: yesterdayContent });
+    }
+
+    return {
+      soul: results['SOUL'] ?? null,
+      identity: results['IDENTITY'] ?? null,
+      memory: results['MEMORY'] ?? null,
+      recentDailys,
+      decisionsIndex: results['DECISIONS INDEX'] ?? null,
+      projectsIndex: results['PROJECTS INDEX'] ?? null,
+      patternsIndex: results['PATTERNS INDEX'] ?? null,
+      templatesIndex: results['TEMPLATES INDEX'] ?? null,
+      assembled_at: today,
+      health: healthSection,
+    };
   }
 
-  private async readSection(spec: SectionSpec): Promise<string | null> {
+  private async readSectionContent(spec: SectionSpec): Promise<string | null> {
     const result = await this.commandBus.execute<GetVaultFileCommand, GetVaultFileResult>(
       new GetVaultFileCommand({ path: spec.path, max_lines: spec.maxLines }),
     );
@@ -104,7 +131,7 @@ export class AssembleContextUseCase {
       });
       return null;
     }
-    return `## ${spec.label}\n\n${result.content}`;
+    return result.content;
   }
 
   private async composeHealthSection(): Promise<string | null> {
@@ -112,6 +139,6 @@ export class AssembleContextUseCase {
     if (report === null) return null;
     const summary = formatHealthSummary(report);
     if (summary === '') return null;
-    return `## VAULT HEALTH\n\n${summary}`;
+    return summary;
   }
 }

@@ -48,13 +48,14 @@ describe('LocalGitOpsBackend', () => {
       await expect(target.pullLatestMain()).rejects.toMatchObject({ code: ErrorCode.GIT_OPS_PULL_NON_FF });
     });
 
-    it('should bubble network errors unchanged when pull fails with ENOTFOUND', async () => {
-      // Arrange
+    it('should catch network errors and log gracefully when pull fails with ENOTFOUND in local mode', async () => {
+      // Arrange — in local mode, pull fails with ENOTFOUND when no remote exists.
+      // The backend catches and logs the error instead of propagating it.
       const netErr = new Error('getaddrinfo ENOTFOUND');
       mockGit.pull.mockRejectedValueOnce(netErr);
 
-      // Act & Assert
-      await expect(target.pullLatestMain()).rejects.toBe(netErr);
+      // Act — should complete without throwing (error is logged and swallowed)
+      await expect(target.pullLatestMain()).resolves.toBeUndefined();
     });
   });
 
