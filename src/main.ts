@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
+import * as express from 'express';
 import { INestApplication, Logger, LoggerService, ValidationPipe } from '@nestjs/common';
 import { HttpAdapterHost, NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
