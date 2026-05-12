@@ -8,9 +8,19 @@
  * Plugin keeps working; TS honours camelCase per Q1. No plugin code change.
  */
 import { Expose } from 'class-transformer';
-import { IsOptional, Matches } from 'class-validator';
+import { IsOptional, Matches, IsIn } from 'class-validator';
 
 export class TriggerDreamRequest {
+  /**
+   * Dream type discriminator — 'light' or 'deep'.
+   * Deep (default): full deep-dream pipeline with Phase 1-3.
+   * Light: lightweight session-summary pipeline.
+   */
+  @IsOptional()
+  @IsIn(['light', 'deep'], { message: 'type must be "light" or "deep"' })
+  @Expose({ name: 'type' })
+  type?: 'light' | 'deep';
+
   /**
    * camelCase wire format per Story 13.6 Q1.
    * Optional; when omitted targetDate defaults to today UTC.

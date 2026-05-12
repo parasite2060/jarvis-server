@@ -15,33 +15,51 @@ import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { TriggerDreamRequest } from './models/requests/trigger-dream.request';
 import { TriggerDreamPresenter } from './models/presenters/trigger-dream.presenter';
 import { TriggerDeepDreamUseCase } from './usecases/trigger-deep-dream.usecase';
+import { TriggerLightDreamUseCase } from './usecases/trigger-light-dream.usecase';
 import { HttpApiResponse } from 'src/utils/api-http.response';
 
 @Controller()
 export class DreamController {
   private readonly logger = new Logger(DreamController.name);
 
-  constructor(private readonly triggerDeep: TriggerDeepDreamUseCase) {}
+  constructor(
+    private readonly triggerDeep: TriggerDeepDreamUseCase,
+    private readonly triggerLight: TriggerLightDreamUseCase,
+  ) {}
 
   @Post('dream')
   @HttpCode(202)
   async trigger(@Body() request: TriggerDreamRequest): Promise<HttpApiResponse<TriggerDreamPresenter>> {
-    // Q2 SM pick: UTC today via .toISOString(). Python date.today() is UTC in prod.
     const todayUtc = new Date().toISOString().slice(0, 10);
-    // Normalise: accept camelCase sourceDate OR snake_case source_date (Q7 SM pick).
     const rawSource = request.sourceDate ?? request.source_date ?? null;
     const targetDate = rawSource ?? todayUtc;
     const trigger = rawSource ? 'manual-backfill' : 'manual';
     const sourceDateIso = rawSource;
 
-    await this.triggerDeep.execute({ targetDate, trigger, sourceDateIso });
+    const useLight = request.type === 'light';
+
+    if (useLight) {
+      this.logger.log({
+        event: 'dream.manualTrigger.light',
+        trigger,
+        ...(sourceDateIso && { sourceDate: sourceDateIso }),
+      });
+      // Light dream does not return a dreamId — signal and return.
+      await this.triggerLight.execute({
+        sessionId: 'manual',
+        transcriptId: 0,
+      });
+      return HttpApiResponse.success(new TriggerDreamPresenter('queued', undefined, trigger, sourceDateIso ?? undefined, targetDate));
+    }
+
+    const { dreamId } = await this.triggerDeep.execute({ targetDate, trigger, sourceDateIso });
 
     this.logger.log({
-      event: 'dream.manualTrigger.queued',
+      event: 'dream.manualTrigger.deep',
       trigger,
       ...(sourceDateIso && { sourceDate: sourceDateIso }),
     });
 
-    return HttpApiResponse.success(new TriggerDreamPresenter('queued'));
+    return HttpApiResponse.success(new TriggerDreamPresenter('queued', dreamId, trigger, sourceDateIso ?? undefined, targetDate));
   }
 }

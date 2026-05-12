@@ -35,7 +35,21 @@ describe('ContextCacheService', () => {
 
   it('get returns CachedContext on hit', async () => {
     // Arrange
-    const cached = { context: 'hello', assembled_at: '2026-05-08T13:00:00.000000+00:00' };
+    const cached = {
+      soul: 'soul content',
+      identity: 'identity content',
+      memory: 'memory content',
+      recentDailys: [
+        { label: 'TODAY (2026-05-08)', content: 'daily1 content' },
+        { label: 'YESTERDAY (2026-05-07)', content: 'daily2 content' },
+      ],
+      decisionsIndex: 'decisions content',
+      projectsIndex: 'projects content',
+      patternsIndex: 'patterns content',
+      templatesIndex: 'templates content',
+      assembled_at: '2026-05-08T13:00:00.000000+00:00',
+      health: null,
+    };
     mockCacheManager.get.mockResolvedValue(cached);
 
     // Act
@@ -47,14 +61,25 @@ describe('ContextCacheService', () => {
 
   it('set writes payload + 30-min TTL under the canonical key', async () => {
     // Arrange / Act
-    await target.set('content', '2026-05-08T13:00:00.000000+00:00');
+    const data = {
+      soul: 'soul content',
+      identity: 'identity content',
+      memory: 'memory content',
+      recentDailys: [
+        { label: 'TODAY (2026-05-08)', content: 'daily1' },
+        { label: 'YESTERDAY (2026-05-07)', content: 'daily2' },
+      ],
+      decisionsIndex: 'decisions content',
+      projectsIndex: 'projects content',
+      patternsIndex: 'patterns content',
+      templatesIndex: 'templates content',
+      assembled_at: '2026-05-08T13:00:00.000000+00:00',
+      health: null,
+    };
+    await target.set(data);
 
     // Assert
-    expect(mockCacheManager.set).toHaveBeenCalledWith(
-      'context:assembled',
-      { context: 'content', assembled_at: '2026-05-08T13:00:00.000000+00:00' },
-      30 * 60 * 1000,
-    );
+    expect(mockCacheManager.set).toHaveBeenCalledWith('context:assembled', data, 30 * 60 * 1000);
   });
 
   it('clear deletes the canonical key', async () => {

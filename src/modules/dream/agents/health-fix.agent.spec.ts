@@ -27,6 +27,6 @@ describe('buildHealthFixAgent', () => {
     expect(args.output).toBe(HealthFixOutputSchema);
     expect(args.tools).toHaveLength(7);
     const toolNames = args.tools.map((t: { name: string }) => t.name).sort();
-    expect(toolNames).toEqual(['fileInfo', 'grep', 'listFiles', 'memuCategories', 'memuSearch', 'readFile', 'readFrontmatter']);
+    expect(toolNames).toEqual(['fileInfo', 'listFiles', 'memuCategories', 'memuSearch', 'readFile', 'readFrontmatter', 'searchVault']);
   });
 });

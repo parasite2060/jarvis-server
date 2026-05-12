@@ -132,6 +132,8 @@ services:
     environment:
       # Runtime
       NODE_ENV: production
+      RUNTIME_ENV: test
+      HOST: 0.0.0.0
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
@@ -171,6 +173,9 @@ services:
       OPENAI_COMPATIBLE_BASE_URL: ${JARVIS_MANUAL_OPENAI_URL}
       OPENAI_COMPATIBLE_MODEL: ${JARVIS_MANUAL_OPENAI_MODEL}
       OPENAI_COMPATIBLE_API_KEY: ${JARVIS_MANUAL_OPENAI_TOKEN}
+
+      # Prompts (must match the volume mount below)
+      PROMPTS_PATH: /app/prompts
 
       # MemU
       MEMU_API_URL: http://memu-server:8000

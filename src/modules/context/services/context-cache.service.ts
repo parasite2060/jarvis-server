@@ -16,8 +16,16 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 
 export interface CachedContext {
-  context: string;
+  soul: string | null;
+  identity: string | null;
+  memory: string | null;
+  recentDailys: Array<{ label: string; content: string }>;
+  decisionsIndex: string | null;
+  projectsIndex: string | null;
+  patternsIndex: string | null;
+  templatesIndex: string | null;
   assembled_at: string;
+  health: string | null;
 }
 
 const CACHE_KEY = 'context:assembled';
@@ -32,8 +40,8 @@ export class ContextCacheService {
     return cached ?? null;
   }
 
-  async set(content: string, assembledAt: string): Promise<void> {
-    await this.cacheManager.set<CachedContext>(CACHE_KEY, { context: content, assembled_at: assembledAt }, TTL_MS);
+  async set(data: CachedContext): Promise<void> {
+    await this.cacheManager.set<CachedContext>(CACHE_KEY, data, TTL_MS);
   }
 
   async clear(): Promise<void> {

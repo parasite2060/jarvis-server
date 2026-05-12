@@ -72,7 +72,7 @@ describe('buildLightRecordAgent', () => {
     const memu = cm<IMemuApi>();
     return {
       readFile: (input) => readFileTool({ vaultPath: vaultRoot, memuApi: memu }, input),
-      grep: async () => '(no matches)',
+      searchVault: async () => '[]',
       listFiles: async () => '(empty directory)',
       fileInfo: async () => 'path=x lines=0 chars=0 estimated_tokens=0',
       readFrontmatter: async () => '(no frontmatter)',

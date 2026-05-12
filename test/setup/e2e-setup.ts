@@ -149,8 +149,19 @@ export class E2ETestSetup {
     execSync(`git -C "${vaultPath}" config user.name "E2E Test"`, { env: gitEnv, stdio: 'pipe' });
 
     // Seed minimal vault structure
-    for (const dir of ['dailys', 'decisions', 'patterns', 'projects', 'templates',
-                       'concepts', 'connections', 'lessons', 'references', 'reviews', 'topics']) {
+    for (const dir of [
+      'dailys',
+      'decisions',
+      'patterns',
+      'projects',
+      'templates',
+      'concepts',
+      'connections',
+      'lessons',
+      'references',
+      'reviews',
+      'topics',
+    ]) {
       fs.mkdirSync(path.join(vaultPath, dir), { recursive: true });
     }
 
