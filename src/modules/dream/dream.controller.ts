@@ -17,6 +17,7 @@ import { TriggerDreamPresenter } from './models/presenters/trigger-dream.present
 import { TriggerDeepDreamUseCase } from './usecases/trigger-deep-dream.usecase';
 import { TriggerLightDreamUseCase } from './usecases/trigger-light-dream.usecase';
 import { HttpApiResponse } from 'src/utils/api-http.response';
+import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 
 @Controller()
 export class DreamController {
@@ -25,6 +26,7 @@ export class DreamController {
   constructor(
     private readonly triggerDeep: TriggerDeepDreamUseCase,
     private readonly triggerLight: TriggerLightDreamUseCase,
+    private readonly temporal: TemporalClientService,
   ) {}
 
   @Post('dream')
@@ -37,6 +39,7 @@ export class DreamController {
     const sourceDateIso = rawSource;
 
     const useLight = request.type === 'light';
+    const useWeeklyReview = request.type === 'weekly-review';
 
     if (useLight) {
       this.logger.log({
@@ -48,6 +51,19 @@ export class DreamController {
       await this.triggerLight.execute({
         sessionId: 'manual',
         transcriptId: 0,
+      });
+      return HttpApiResponse.success(new TriggerDreamPresenter('queued', undefined, trigger, sourceDateIso ?? undefined, targetDate));
+    }
+
+    if (useWeeklyReview) {
+      this.logger.log({
+        event: 'dream.manualTrigger.weekly-review',
+        trigger,
+        ...(sourceDateIso && { sourceDate: sourceDateIso }),
+      });
+      await this.temporal.signalCoordinator('weekly', {
+        session_id: 'manual',
+        transcript_id: 0,
       });
       return HttpApiResponse.success(new TriggerDreamPresenter('queued', undefined, trigger, sourceDateIso ?? undefined, targetDate));
     }
