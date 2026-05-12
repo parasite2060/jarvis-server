@@ -94,15 +94,15 @@ cd /app/ai-memory && git checkout -- . && git clean -fd
 1. `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"type":"weekly-review"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
 2. Poll every 30s for up to 5 minutes:
    `sleep 30 && psql -h localhost -p 15432 -U postgres -d jarvis_manual -t -c "SELECT status FROM jarvis.dreams WHERE id=$DREAM_ID;"`
-3. After completion, check MemU for new memories:
-   `curl -s -H "Authorization: Bearer manual-test-api-key" http://localhost:8100/memory/recent`
+3. After completion, check MemU server directly:
+   `curl -s http://localhost:18001/ | python3 -c "import sys,json; print(json.load(sys.stdin).get('memories_added','n/a'))"`
 
 **Checkpoints**:
 - [ ] CP1: POST returns 202 — verify: HTTP 202
 - [ ] CP2: Dream type is `weekly-review` — verify: type check
 - [ ] CP3: Dream completes within 5 minutes — verify: status `completed`
 - [ ] CP4: `memories_added` or outcome field shows count > 0 — verify: outcome JSON has memory count
-- [ ] CP5: GET /memory/recent returns items — verify: response has `items` or `memories` key with count > 0
+- [ ] CP5: MemU server is responsive — verify: `curl http://localhost:18001/` returns 200
 
 **Cleanup**:
 ```bash

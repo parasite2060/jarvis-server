@@ -13,6 +13,7 @@ import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { DreamController } from './dream.controller';
 import { TriggerDeepDreamUseCase } from './usecases/trigger-deep-dream.usecase';
 import { TriggerLightDreamUseCase } from './usecases/trigger-light-dream.usecase';
+import { TriggerWeeklyReviewUseCase } from './usecases/trigger-weekly-review.usecase';
 import { TriggerDreamRequest } from './models/requests/trigger-dream.request';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { ErrorCode } from 'src/utils/error.code';
@@ -24,16 +25,19 @@ describe('DreamController', () => {
   let target: DreamController;
   let mockTriggerDeep: DeepMocked<TriggerDeepDreamUseCase>;
   let mockTriggerLight: DeepMocked<TriggerLightDreamUseCase>;
+  let mockTriggerWeekly: DeepMocked<TriggerWeeklyReviewUseCase>;
 
   beforeEach(async () => {
     jest.useFakeTimers().setSystemTime(FIXED_NOW);
     mockTriggerDeep = createMock<TriggerDeepDreamUseCase>();
     mockTriggerLight = createMock<TriggerLightDreamUseCase>();
+    mockTriggerWeekly = createMock<TriggerWeeklyReviewUseCase>();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [DreamController],
       providers: [
         { provide: TriggerDeepDreamUseCase, useValue: mockTriggerDeep },
         { provide: TriggerLightDreamUseCase, useValue: mockTriggerLight },
+        { provide: TriggerWeeklyReviewUseCase, useValue: mockTriggerWeekly },
       ],
     })
       .setLogger(new MockLoggerService())
@@ -123,6 +127,23 @@ describe('DreamController', () => {
       expect(mockTriggerLight.execute).toHaveBeenCalledTimes(1);
       expect(mockTriggerDeep.execute).not.toHaveBeenCalled();
       expect(result.data.status).toBe('queued');
+      expect(result.code).toBe(ErrorCode.SUCCESS);
+    });
+
+    it('should trigger weekly review when type=weekly-review', async () => {
+      mockTriggerWeekly.execute.mockResolvedValue({ dreamId: 42 });
+      const request = new TriggerDreamRequest();
+      request.type = 'weekly-review';
+
+      const result = await target.trigger(request);
+
+      expect(mockTriggerWeekly.execute).toHaveBeenCalledTimes(1);
+      expect(mockTriggerWeekly.execute).toHaveBeenCalledWith({
+        weekStart: '2026-05-04', // Monday of FIXED_NOW (2026-05-08)
+        trigger: 'manual',
+      });
+      expect(result.data.status).toBe('queued');
+      expect(result.data.dreamId).toBe(42);
       expect(result.code).toBe(ErrorCode.SUCCESS);
     });
 

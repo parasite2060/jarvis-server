@@ -16,8 +16,17 @@ import { TriggerDreamRequest } from './models/requests/trigger-dream.request';
 import { TriggerDreamPresenter } from './models/presenters/trigger-dream.presenter';
 import { TriggerDeepDreamUseCase } from './usecases/trigger-deep-dream.usecase';
 import { TriggerLightDreamUseCase } from './usecases/trigger-light-dream.usecase';
+import { TriggerWeeklyReviewUseCase } from './usecases/trigger-weekly-review.usecase';
 import { HttpApiResponse } from 'src/utils/api-http.response';
-import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
+
+/** Return Monday (YYYY-MM-DD) of the week containing the given ISO date. */
+function mondayOfWeek(isoDate: string): string {
+  const d = new Date(isoDate + 'T00:00:00Z');
+  const day = d.getUTCDay(); // 0=Sun, 1=Mon, ...
+  const diff = day === 0 ? -6 : 1 - day; // adjust to Monday
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
 
 @Controller()
 export class DreamController {
@@ -26,7 +35,7 @@ export class DreamController {
   constructor(
     private readonly triggerDeep: TriggerDeepDreamUseCase,
     private readonly triggerLight: TriggerLightDreamUseCase,
-    private readonly temporal: TemporalClientService,
+    private readonly triggerWeekly: TriggerWeeklyReviewUseCase,
   ) {}
 
   @Post('dream')
@@ -47,12 +56,15 @@ export class DreamController {
         trigger,
         ...(sourceDateIso && { sourceDate: sourceDateIso }),
       });
-      // Light dream does not return a dreamId — signal and return.
-      await this.triggerLight.execute({
+      // Story 13.22 AC #1: create DB record before signaling
+      const { dreamId } = await this.triggerLight.execute({
         sessionId: 'manual',
         transcriptId: 0,
+        targetDate,
+        trigger,
+        sourceDateIso,
       });
-      return HttpApiResponse.success(new TriggerDreamPresenter('queued', undefined, trigger, sourceDateIso ?? undefined, targetDate));
+      return HttpApiResponse.success(new TriggerDreamPresenter('queued', dreamId, trigger, sourceDateIso ?? undefined, targetDate));
     }
 
     if (useWeeklyReview) {
@@ -61,13 +73,13 @@ export class DreamController {
         trigger,
         ...(sourceDateIso && { sourceDate: sourceDateIso }),
       });
-      await this.temporal.signalCoordinator('weekly', {
-        session_id: 'manual',
-        transcript_id: 0,
-      });
-      return HttpApiResponse.success(new TriggerDreamPresenter('queued', undefined, trigger, sourceDateIso ?? undefined, targetDate));
+      // Story 13.22 AC #2: create DB record before signaling coordinator
+      const weekStart = mondayOfWeek(targetDate);
+      const { dreamId } = await this.triggerWeekly.execute({ weekStart, trigger });
+      return HttpApiResponse.success(new TriggerDreamPresenter('queued', dreamId, trigger, sourceDateIso ?? undefined, targetDate));
     }
 
+    // Deep dream — already returns { dreamId } from DB insert (Story 13.22 refactor)
     const { dreamId } = await this.triggerDeep.execute({ targetDate, trigger, sourceDateIso });
 
     this.logger.log({

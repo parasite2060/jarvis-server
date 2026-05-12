@@ -133,7 +133,7 @@ export class TemporalClientService implements OnApplicationShutdown {
     }
   }
 
-  async signalCoordinator(kind: CoordinatorSignalKind, payload: Record<string, unknown>): Promise<void> {
+  async signalCoordinator(kind: CoordinatorSignalKind, payload: Record<string, unknown>): Promise<{ dreamId: number }> {
     const signalName = `submit_${kind}`;
     // Connect failure (TEMPORAL_CONNECTION_FAILED) bubbles unchanged from
     // getRawClient — no wrapper try/catch needed; the caller (Story 13.3
@@ -163,6 +163,9 @@ export class TemporalClientService implements OnApplicationShutdown {
       signalName,
       ...this.sanitiseLogMeta(payload),
     });
+
+    // Story 13.22: pass dream_id back to caller so controller can include it in response
+    return { dreamId: (payload['dream_id'] as number) ?? 0 };
   }
 
   async ensureCoordinatorRunning(): Promise<void> {

@@ -1,10 +1,12 @@
 /**
- * TriggerWeeklyReviewUseCase — placeholder body (Story 13.10.5 / Q1).
+ * TriggerWeeklyReviewUseCase — Story 13.22.
  *
- * Module-map §1 line 108 prescribes this use case. Story 13.13 (Temporal
- * Schedules) wires the functional body — invoked via Schedule relay.
+ * Creates a `jarvis.dreams` record before signaling Temporal coordinator,
+ * then returns the inserted ID so the controller can include `dreamId` in
+ * the POST /dream response.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DREAM_REPOSITORY, IDreamRepository } from 'src/shared/domain/repositories/dream.repository.interface';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 
 export interface TriggerWeeklyReviewInput {
@@ -18,18 +20,36 @@ export interface TriggerWeeklyReviewInput {
 export class TriggerWeeklyReviewUseCase {
   private readonly logger = new Logger(TriggerWeeklyReviewUseCase.name);
 
-  constructor(private readonly temporal: TemporalClientService) {}
+  constructor(
+    private readonly temporal: TemporalClientService,
+    @Inject(DREAM_REPOSITORY) private readonly dreamRepo: IDreamRepository,
+  ) {}
 
-  async execute(input: TriggerWeeklyReviewInput): Promise<void> {
+  async execute(input: TriggerWeeklyReviewInput): Promise<{ dreamId: number }> {
+    const trigger = input.trigger ?? 'manual';
+
+    // Story 13.22 AC #2: create DB record before signaling
+    const dream = await this.dreamRepo.createDream({
+      type: 'weekly-review',
+      status: 'queued',
+      trigger,
+      transcriptId: 0,
+    });
+
     this.logger.log({
       message: 'dream.triggerWeekly.dispatch',
       event: 'dream.triggerWeekly.dispatch',
+      dreamId: dream.id,
       weekStart: input.weekStart,
-      trigger: input.trigger ?? 'manual',
+      trigger,
     });
+
     await this.temporal.signalCoordinator('weekly', {
       week_start: input.weekStart,
-      trigger: input.trigger ?? 'manual',
+      trigger,
+      dream_id: dream.id,
     });
+
+    return { dreamId: dream.id };
   }
 }

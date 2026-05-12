@@ -1,40 +1,54 @@
 /**
- * TriggerLightDreamUseCase — placeholder body (Story 13.10.5 / Q1).
+ * TriggerLightDreamUseCase — Story 13.22.
  *
- * Module-map §1 line 106 prescribes this use case. Story 13.14 (POST /dream
- * REST endpoint) AND/OR the Q2 `TriggerLightDreamCommand` handler may use it
- * as the in-process entry point that signals the Temporal coordinator. Here
- * we only scaffold the class so the module structure conforms to §1.
+ * Creates a `jarvis.dreams` record before signaling Temporal coordinator,
+ * then returns the inserted ID so the controller can include `dreamId` in
+ * the POST /dream response. Mirrors the deep-dream pattern.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DREAM_REPOSITORY, IDreamRepository } from 'src/shared/domain/repositories/dream.repository.interface';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 
 export interface TriggerLightDreamInput {
   sessionId: string;
   transcriptId: number;
+  targetDate?: string;
+  trigger?: string;
+  sourceDateIso?: string | null;
 }
 
 @Injectable()
 export class TriggerLightDreamUseCase {
   private readonly logger = new Logger(TriggerLightDreamUseCase.name);
 
-  constructor(private readonly temporal: TemporalClientService) {}
+  constructor(
+    private readonly temporal: TemporalClientService,
+    @Inject(DREAM_REPOSITORY) private readonly dreamRepo: IDreamRepository,
+  ) {}
 
-  /**
-   * Signals the Temporal coordinator with `submit_light` payload. Mirrors
-   * the path Q2's `TriggerLightDreamHandler` takes — both are valid entry
-   * points until Story 13.14 chooses the canonical caller.
-   */
-  async execute(input: TriggerLightDreamInput): Promise<void> {
+  async execute(input: TriggerLightDreamInput): Promise<{ dreamId: number }> {
+    // Story 13.22 AC #1: create DB record before signaling
+    const dream = await this.dreamRepo.createDream({
+      type: 'light',
+      status: 'queued',
+      trigger: input.trigger,
+      transcriptId: input.transcriptId,
+    });
+
     this.logger.log({
       message: 'dream.triggerLight.dispatch',
       event: 'dream.triggerLight.dispatch',
+      dreamId: dream.id,
       sessionId: input.sessionId,
       transcriptId: input.transcriptId,
     });
+
     await this.temporal.signalCoordinator('light', {
       session_id: input.sessionId,
       transcript_id: input.transcriptId,
+      dream_id: dream.id,
     });
+
+    return { dreamId: dream.id };
   }
 }
