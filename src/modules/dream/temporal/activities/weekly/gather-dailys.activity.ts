@@ -57,7 +57,12 @@ export class GatherDailysActivity {
     for (let i = 0; i < DAILY_LOG_WINDOW_DAYS; i++) {
       const d = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
       const iso = d.toISOString().slice(0, 10);
-      const content = await safeReadVault(this.config.vaultPath, `dailys/${iso}.md`);
+      const yearMonth = iso.slice(0, 7); // YYYY-MM
+      // Try flat path first (dailys/YYYY-MM-DD.md), then subdirectory path
+      let content = await safeReadVault(this.config.vaultPath, `dailys/${iso}.md`);
+      if (content === null) {
+        content = await safeReadVault(this.config.vaultPath, `dailys/${yearMonth}/${iso}.md`);
+      }
       if (content !== null && content.length > 0) {
         dailyLogs[iso] = content;
       }

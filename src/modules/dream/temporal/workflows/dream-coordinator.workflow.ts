@@ -86,12 +86,6 @@ export async function dreamCoordinatorWorkflow(): Promise<void> {
     running = true;
     try {
       await dispatchChild(req, taskQueue);
-    } catch {
-      // Swallow per single-active-dream policy — a failed child workflow
-      // MUST NOT block subsequent submissions. Children handle their own
-      // retry/outcome semantics (Stories 13.10–13.12 own per-kind RetryPolicy).
-      // Coordinator observability for failures lives in `dream_phases.outcome`
-      // populated by children, NOT in coordinator logs (workflow code can't log).
     } finally {
       running = false;
     }
