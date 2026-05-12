@@ -17,9 +17,9 @@ export class TriggerDreamRequest {
    * Light: lightweight session-summary pipeline.
    */
   @IsOptional()
-  @IsIn(['light', 'deep'], { message: 'type must be "light" or "deep"' })
+  @IsIn(['light', 'deep', 'weekly-review'], { message: 'type must be "light", "deep", or "weekly-review"' })
   @Expose({ name: 'type' })
-  type?: 'light' | 'deep';
+  type?: 'light' | 'deep' | 'weekly-review';
 
   /**
    * camelCase wire format per Story 13.6 Q1.
