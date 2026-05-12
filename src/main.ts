@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import express from 'express';
 import { INestApplication, Logger, LoggerService, ValidationPipe } from '@nestjs/common';
 import { HttpAdapterHost, NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -80,6 +81,10 @@ function configure(app: INestApplication) {
   app.useGlobalFilters(new MemuUnavailableExceptionFilter(httpAdapter));
 
   app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
+
+  // Story 13.20 — enforce max body size to prevent 10MB payload crash (SEC-03)
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   app.enableShutdownHooks();
 }
