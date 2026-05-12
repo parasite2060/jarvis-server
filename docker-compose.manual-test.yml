@@ -256,7 +256,9 @@ services:
         fi
         git -C /vault config user.email "jarvis@manual-test"
         git -C /vault config user.name  "Jarvis Manual Test"
-        echo "Vault ready:"
+        # jarvis-server runs as uid 1000 (bun) — chown so it can write vault files
+        chown -R 1000:1000 /vault
+        echo "Vault ready (owned by bun):"
         ls /vault | head -10
     depends_on:
       postgres:

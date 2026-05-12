@@ -32,7 +32,7 @@ export class TriggerLightDreamUseCase {
       type: 'light',
       status: 'queued',
       trigger: input.trigger,
-      transcriptId: input.transcriptId,
+      transcriptId: input.sessionId === 'manual' ? null : input.transcriptId,
     });
 
     this.logger.log({
@@ -45,7 +45,7 @@ export class TriggerLightDreamUseCase {
 
     await this.temporal.signalCoordinator('light', {
       session_id: input.sessionId,
-      transcript_id: input.transcriptId,
+      transcript_id: input.sessionId === 'manual' ? null : input.transcriptId,
       dream_id: dream.id,
     });
 
