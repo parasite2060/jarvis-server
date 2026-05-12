@@ -33,7 +33,7 @@ export class TriggerWeeklyReviewUseCase {
       type: 'weekly-review',
       status: 'queued',
       trigger,
-      transcriptId: 0,
+      transcriptId: null,
     });
 
     this.logger.log({

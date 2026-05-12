@@ -7,15 +7,16 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ApiKeyGuard } from './guards/api-key.guard';
+import { AppConfigModule } from 'src/shared/config/config.module';
 
 @Global()
 @Module({
+  imports: [AppConfigModule],
   providers: [
     {
       provide: APP_GUARD,
       useClass: ApiKeyGuard,
     },
   ],
-  exports: [ApiKeyGuard],
 })
 export class AuthModule {}

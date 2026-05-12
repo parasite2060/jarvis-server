@@ -50,10 +50,14 @@ import type { FileAction } from '../../agents/record-result.schema';
 /**
  * Workflow entry payload (signaled to coordinator via `submit_light`).
  * `session_id` is the Claude session UUID; `transcript_id` is the DB row PK.
+ * For manual triggers (`session_id === 'manual'`), `transcript_id` is null and
+ * `dream_id` must be supplied so the workflow can create phase rows without
+ * calling loadTranscript.
  */
 export interface LightDreamPayload {
   session_id: string;
-  transcript_id: number;
+  transcript_id: number | null;
+  dream_id: number;
 }
 
 /**
@@ -67,7 +71,7 @@ export interface LightDreamResult {
 
 export interface LoadTranscriptInput {
   session_id: string;
-  transcript_id: number;
+  transcript_id: number | null;
 }
 
 export interface LoadTranscriptResult {
@@ -283,6 +287,78 @@ export function deriveSessionStart(createdAtIso: string | null): string {
 // ---------------------------------------------------------------------------
 
 export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<LightDreamResult> {
+  // ---- manual trigger path: no transcript available ----
+  // When transcript_id is null the session was triggered manually (sessionId='manual')
+  // and there is no real transcript to process. We still run the extraction step with
+  // empty input so that phase rows are created (satisfying the TC-02 requirement that
+  // at least 1 phase completes) while avoiding a loadTranscript call that would fail
+  // looking up a null transcript ID.
+  if (payload.transcript_id === null) {
+    const dreamId = payload.dream_id;
+
+    const extractionOutput = await acts.runExtraction({
+      dream_id: dreamId,
+      session_id: payload.session_id,
+      parsed_text: '',
+      project: null,
+      token_count: null,
+      transcript_file: null,
+    });
+
+    if (extractionOutput.no_extract) {
+      await acts.markDreamOutcome({ dream_id: dreamId, outcome: 'success' });
+      return { dream_id: dreamId, pr_url: null };
+    }
+
+    await acts.persistSessionLog({
+      dream_id: dreamId,
+      session_log_json: extractionOutput.session_log_json,
+    });
+
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const sourceDateIso = deriveSourceDate(extractionOutput.session_log_json, nowIso);
+
+    let recordOutput: RecordAgentOutput;
+    let softFailed = false;
+    try {
+      recordOutput = await acts.runRecord({
+        dream_id: dreamId,
+        session_id: payload.session_id,
+        session_log_json: extractionOutput.session_log_json,
+        source_date_iso: sourceDateIso,
+        session_start_iso: '00:00',
+        summary: extractionOutput.summary,
+        is_continuation: false,
+      });
+    } catch (err) {
+      log.warn('lightDream.record.softFailed', { dream_id: dreamId, error: (err as Error).message });
+      recordOutput = { session_log_writes: [], files_modified: [], files: [], summary: '' };
+      softFailed = true;
+    }
+
+    let prUrl: string | null = null;
+    if (recordOutput.files_modified.length > 0) {
+      const commitResult = await acts.commitAndPr({
+        dream_id: dreamId,
+        session_id: payload.session_id,
+        source_date_iso: sourceDateIso,
+        summary: extractionOutput.summary,
+        files_modified: recordOutput.files_modified,
+        extraction_summary: extractionOutput.summary,
+        session_log_writes: recordOutput.session_log_writes,
+      });
+      prUrl = commitResult.git_pr_url;
+      await acts.invalidateContextCache({ dream_id: dreamId });
+    }
+
+    const outcome: 'success' | 'partial' = softFailed ? 'partial' : 'success';
+    await acts.markDreamOutcome({ dream_id: dreamId, outcome });
+    return { dream_id: dreamId, pr_url: prUrl };
+  }
+
+  // ---- normal (transcript-backed) flow ----
+
   // Step 1: load transcript + create dream row.
   const loadResult = await acts.loadTranscript({
     session_id: payload.session_id,

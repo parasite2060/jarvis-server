@@ -19,18 +19,23 @@ export class LoadTranscriptActivity {
 
   @TemporalActivity('light.load_transcript')
   async loadTranscript(inp: LoadTranscriptInput): Promise<LoadTranscriptResult> {
+    if (inp.transcript_id === null) {
+      throw new InternalException(ErrorCode.LIGHT_DREAM_LOAD_TRANSCRIPT_NOT_FOUND, 'transcript_id cannot be null');
+    }
+    const transcriptId: number = inp.transcript_id;
+
     return this.dataSource.transaction(async (manager) => {
       const transcriptRepo = manager.getRepository(TranscriptSchema);
       const dreamRepo = manager.getRepository(DreamSchema);
-      const transcript = await transcriptRepo.findOne({ where: { id: inp.transcript_id } });
+      const transcript = await transcriptRepo.findOne({ where: { id: transcriptId } });
       if (transcript === null) {
-        throw new InternalException(ErrorCode.LIGHT_DREAM_LOAD_TRANSCRIPT_NOT_FOUND, `Transcript ${inp.transcript_id} not found`);
+        throw new InternalException(ErrorCode.LIGHT_DREAM_LOAD_TRANSCRIPT_NOT_FOUND, `Transcript ${transcriptId} not found`);
       }
 
       const sixtySecondsAgo = new Date(Date.now() - 60_000);
       const existing = await dreamRepo
         .createQueryBuilder('d')
-        .where('d.transcript_id = :tid', { tid: inp.transcript_id })
+        .where('d.transcript_id = :tid', { tid: transcriptId })
         .andWhere('d.type = :type', { type: 'light' })
         .andWhere('d.created_at >= :cutoff', { cutoff: sixtySecondsAgo })
         .orderBy('d.created_at', 'DESC')
@@ -45,12 +50,12 @@ export class LoadTranscriptActivity {
           type: 'light',
           trigger: 'auto',
           status: 'processing',
-          transcriptId: inp.transcript_id,
+          transcriptId: transcriptId,
           startedAt: new Date(),
         } satisfies Partial<Dream>);
         const saved = await dreamRepo.save(dream);
         dreamId = saved.id;
-        await transcriptRepo.update({ id: inp.transcript_id }, { lightDreamId: dreamId } satisfies Partial<Conversation>);
+        await transcriptRepo.update({ id: transcriptId }, { lightDreamId: dreamId } satisfies Partial<Conversation>);
       }
 
       this.logger.log({
