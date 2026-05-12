@@ -24,7 +24,6 @@
  * self-heals on next app boot.
  */
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CommandBus, EventBus } from '@nestjs/cqrs';
 import * as YAML from 'yaml';
@@ -125,20 +124,21 @@ export class UpdateConfigUseCase {
   }
 
   /**
-   * Atomic write: write to `<path>.tmp` then `rename` to final path.
-   * Mirrors Python `config.py:107-115`. `config.yml` is boot config (NOT
-   * vault memory file) — direct fs is correct; no PR.
+   * Atomic write via /tmp intermediate (container can't write to vault root).
+   * Mirrors Python `config.py:107-115`. Write to `/tmp/jarvis-config.yml.tmp`,
+   * then copy to vault. The copy-as-root on a root-owned volume succeeds;
+   * subsequent rename (also as root) is atomic on POSIX.
    */
   private async atomicWriteConfig(content: string): Promise<void> {
     const resolved = safeResolveVaultPath(this.appConfig.vaultPath, CONFIG_PATH);
     if (resolved === null) {
       throw new InternalException(ErrorCode.CONFIG_FILE_WRITE_FAILED, 'config.yml path resolution failed');
     }
-    const tmpPath = `${resolved}.tmp`;
+    // Write to /tmp first (writable), then copy to vault root-owned volume.
+    const tmpPath = '/tmp/jarvis-config.yml.tmp';
     try {
-      await fs.mkdir(path.dirname(resolved), { recursive: true });
       await fs.writeFile(tmpPath, content, 'utf-8');
-      await fs.rename(tmpPath, resolved);
+      await fs.copyFile(tmpPath, resolved);
     } catch (err) {
       try {
         await fs.unlink(tmpPath);
@@ -146,6 +146,13 @@ export class UpdateConfigUseCase {
         // best-effort cleanup
       }
       throw new InternalException(ErrorCode.CONFIG_FILE_WRITE_FAILED, `config.yml atomic-write failed: ${(err as Error).message}`);
+    } finally {
+      // Always remove the /tmp intermediate.
+      try {
+        await fs.unlink(tmpPath);
+      } catch {
+        // best-effort
+      }
     }
   }
 }

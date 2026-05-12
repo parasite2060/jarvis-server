@@ -13,15 +13,23 @@ import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { TriggerDeepDreamUseCase, TriggerDeepDreamInput } from './trigger-deep-dream.usecase';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
+import { DREAM_REPOSITORY, IDreamRepository } from 'src/shared/domain/repositories/dream.repository.interface';
 
 describe('TriggerDeepDreamUseCase', () => {
   let target: TriggerDeepDreamUseCase;
   let mockTemporal: DeepMocked<TemporalClientService>;
+  let mockDreamRepo: DeepMocked<IDreamRepository>;
 
   beforeEach(async () => {
     mockTemporal = createMock<TemporalClientService>();
+    mockDreamRepo = createMock<IDreamRepository>();
+    mockDreamRepo.createDream.mockResolvedValue({ id: 1 } as any);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [TriggerDeepDreamUseCase, { provide: TemporalClientService, useValue: mockTemporal }],
+      providers: [
+        TriggerDeepDreamUseCase,
+        { provide: TemporalClientService, useValue: mockTemporal },
+        { provide: DREAM_REPOSITORY, useValue: mockDreamRepo },
+      ],
     })
       .setLogger(new MockLoggerService())
       .compile();
@@ -49,6 +57,7 @@ describe('TriggerDeepDreamUseCase', () => {
       target_date: '2026-04-20',
       trigger: 'manual-backfill',
       source_date_iso: '2026-04-20',
+      dream_id: 1,
     });
   });
 
@@ -68,6 +77,7 @@ describe('TriggerDeepDreamUseCase', () => {
       target_date: '2026-05-09',
       trigger: 'manual',
       source_date_iso: null,
+      dream_id: 1,
     });
   });
 
@@ -87,6 +97,7 @@ describe('TriggerDeepDreamUseCase', () => {
       target_date: '2026-05-08',
       trigger: 'auto',
       source_date_iso: null,
+      dream_id: 1,
     });
   });
 
@@ -106,6 +117,7 @@ describe('TriggerDeepDreamUseCase', () => {
       target_date: '2026-05-08',
       trigger: 'manual',
       source_date_iso: null,
+      dream_id: 1,
     });
   });
 });

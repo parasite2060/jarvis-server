@@ -1,11 +1,12 @@
 /**
- * TriggerDeepDreamUseCase — POST /dream entry point.
+ * TriggerDeepDreamUseCase — Story 13.22.
  *
- * Module-map §1 line 107 prescribes this use case. Wires the functional body
- * (POST /dream + Temporal Schedule entry). Story 13.14 extends the signal
- * payload to include `source_date_iso` (MC3 frozen per Python `dream.py:40-47`).
+ * Creates a `jarvis.dreams` record before signaling Temporal coordinator,
+ * then returns the inserted ID so the controller can include `dreamId` in
+ * the POST /dream response. Mirrors the light-dream pattern.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DREAM_REPOSITORY, IDreamRepository } from 'src/shared/domain/repositories/dream.repository.interface';
 import { TemporalClientService } from 'src/shared/temporal/temporal-client.service';
 
 export interface TriggerDeepDreamInput {
@@ -15,7 +16,6 @@ export interface TriggerDeepDreamInput {
   trigger?: string;
   /**
    * ISO YYYY-MM-DD if user provided source_date in body; null otherwise.
-   * New in Story 13.14 (cross-story extension to 13.10.5 scaffold).
    * Maps to Python's `source_date_iso: source_date.isoformat() if source_date else None`.
    */
   sourceDateIso?: string | null;
@@ -25,26 +25,39 @@ export interface TriggerDeepDreamInput {
 export class TriggerDeepDreamUseCase {
   private readonly logger = new Logger(TriggerDeepDreamUseCase.name);
 
-  constructor(private readonly temporal: TemporalClientService) {}
+  constructor(
+    private readonly temporal: TemporalClientService,
+    @Inject(DREAM_REPOSITORY) private readonly dreamRepo: IDreamRepository,
+  ) {}
 
   async execute(input: TriggerDeepDreamInput): Promise<{ dreamId: number }> {
     const trigger = input.trigger ?? 'manual';
     const sourceDateIso = input.sourceDateIso ?? null;
+
+    // Story 13.22 AC #1 / #4: create DB record before signaling
+    const dream = await this.dreamRepo.createDream({
+      type: 'deep',
+      status: 'queued',
+      trigger,
+      transcriptId: 0,
+    });
+
     this.logger.log({
       message: 'dream.triggerDeep.dispatch',
       event: 'dream.triggerDeep.dispatch',
+      dreamId: dream.id,
       targetDate: input.targetDate,
       trigger,
       sourceDateIso,
     });
+
     await this.temporal.signalCoordinator('deep', {
       target_date: input.targetDate,
       trigger,
       source_date_iso: sourceDateIso,
+      dream_id: dream.id,
     });
-    // Return a deterministic dreamId derived from targetDate for polling.
-    // Temporal may return an actual workflow ID in a follow-up; fallback gracefully.
-    const dreamId = input.targetDate.replace(/-/g, '') as unknown as number;
-    return { dreamId };
+
+    return { dreamId: dream.id };
   }
 }
