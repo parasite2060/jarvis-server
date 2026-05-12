@@ -31,6 +31,9 @@ import { GitModule } from './shared/git/git.module';
 // Shared (global) module — Story 13.10
 import { AgentsModule } from './shared/agents/agents.module';
 
+// Shared (global) module — Story 13.19 — API key guard
+import { AuthModule } from './shared/auth/auth.module';
+
 @Module({
   imports: [
     AppConfigModule,
@@ -44,6 +47,7 @@ import { AgentsModule } from './shared/agents/agents.module';
     }),
     HealthModule,
     ApiModule,
+    AuthModule,
     EventModule,
     // Shared globals (Story 13.3 stubs — 13.8 / 13.15 retrofit)
     SecretRedactionModule,

@@ -9,6 +9,7 @@ import { RedisClientType } from 'redis';
 import { DBConnections } from '../postgres/utils/constaint';
 import { TemporalHealthIndicator } from './indicators/temporal.indicator';
 import { MemuHealthIndicator } from './indicators/memu.indicator';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('health')
 export class HealthController {
@@ -25,6 +26,7 @@ export class HealthController {
 
   @Get()
   @HealthCheck()
+  @Public()
   @SilentRequestLog()
   @SilentResponseLog()
   public async check(): Promise<HealthCheckResult> {

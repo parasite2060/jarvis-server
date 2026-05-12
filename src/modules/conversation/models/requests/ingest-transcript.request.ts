@@ -1,5 +1,6 @@
 import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { ErrorCode } from 'src/utils/error.code';
+import { NoControlChars } from 'src/shared/validation/decorators/no-control-chars.decorator';
 
 /**
  * POST /conversations request body.
@@ -12,6 +13,7 @@ import { ErrorCode } from 'src/utils/error.code';
 export class IngestTranscriptRequest {
   @IsNotEmpty({ context: { code: ErrorCode.CONVERSATION_SESSION_ID_INVALID, message: 'sessionId is required' } })
   @IsString({ context: { code: ErrorCode.CONVERSATION_SESSION_ID_INVALID, message: 'sessionId must be string' } })
+  @NoControlChars({ context: { code: ErrorCode.CONVERSATION_SESSION_ID_INVALID, message: 'sessionId contains control characters' } })
   sessionId!: string;
 
   @IsNotEmpty({ context: { code: ErrorCode.CONVERSATION_TRANSCRIPT_INVALID, message: 'transcript is required' } })
