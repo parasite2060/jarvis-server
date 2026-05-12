@@ -44,7 +44,7 @@ ENV NODE_ENV=production \
 
 # git + gh CLI required by GitOpsService (Story 13.7) for vault repo operations
 # and pull-request creation against the ai-memory repo.
-RUN apt-get update && apt-get install -y --no-install-recommends git gh \
+RUN apt-get update && apt-get install -y --no-install-recommends git gh ca-certificates \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && git --version && gh --version
 
