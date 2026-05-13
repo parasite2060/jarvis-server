@@ -59,7 +59,7 @@ export class DreamController {
       // Story 13.22 AC #1: create DB record before signaling
       const { dreamId } = await this.triggerLight.execute({
         sessionId: 'manual',
-        transcriptId: 0,
+        transcriptId: null,
         targetDate,
         trigger,
         sourceDateIso,

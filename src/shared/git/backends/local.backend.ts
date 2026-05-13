@@ -115,9 +115,11 @@ export class LocalGitOpsBackend implements IGitOpsBackend {
 
   private async recoverFromStaleLocal(branch: string): Promise<void> {
     this.logger.warn({ message: 'local backend: push non-FF — attempting rebase', event: 'backend.local.push.nonFastForward', branch });
-    await this.git.fetch('origin', 'main');
+    // Fetch the specific branch from origin so we can rebase onto its current state,
+    // handling the case where the branch already exists on remote with divergent history.
+    await this.git.fetch('origin', branch);
     try {
-      await this.git.rebase(['origin/main']);
+      await this.git.rebase([`origin/${branch}`]);
     } catch (rebaseErr) {
       await this.git.rebase(['--abort']).catch(() => undefined);
       throw new GitOpsRebaseConflictError(branch, this.parseConflictedFiles(rebaseErr));

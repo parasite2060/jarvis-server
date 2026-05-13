@@ -1,53 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ApplicationFailure } from '@temporalio/common';
-import { DataSource } from 'typeorm';
-import { InjectDataSource } from '@nestjs/typeorm';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
-import { Dream } from 'src/shared/domain/entities/dream.entity';
-import { DreamSchema } from 'src/shared/postgres/schema/dream.schema';
-import { DBConnections } from 'src/shared/postgres/utils/constaint';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
-import type { GatherDailysResult, WeeklyReviewPayload } from '../../workflows/weekly-review.workflow';
-import { DAILY_LOG_WINDOW_DAYS, SIXTY_SECONDS_MS, safeReadVault } from './helpers';
+import type { WeeklyReviewPayload } from '../../workflows/weekly-review.workflow';
+import { DAILY_LOG_WINDOW_DAYS, safeReadVault } from './helpers';
 
 @Injectable()
 export class GatherDailysActivity {
   private readonly logger = new Logger(GatherDailysActivity.name);
 
-  constructor(
-    @InjectDataSource(DBConnections.INTERNAL) private readonly dataSource: DataSource,
-    private readonly config: AppConfigService,
-  ) {}
+  constructor(private readonly config: AppConfigService) {}
 
   @TemporalActivity('weekly.gather_dailys')
-  async gatherDailys(payload: WeeklyReviewPayload): Promise<GatherDailysResult> {
+  async gatherDailys(payload: WeeklyReviewPayload): Promise<{ dream_id: number; week_start: string; daily_logs: Record<string, string> }> {
+    // B-03 fix: use dream_id passed from coordinator via workflow payload,
+    // instead of creating an internal dream (which caused DB ID mismatch).
+    const dreamId = payload.dream_id;
     const weekStart = payload.week_start;
-    const trigger = payload.trigger ?? 'auto';
-
-    const dreamId = await this.dataSource.transaction(async (manager) => {
-      const dreamRepo = manager.getRepository(DreamSchema);
-      const sixtySecondsAgo = new Date(Date.now() - SIXTY_SECONDS_MS);
-      const existing = await dreamRepo
-        .createQueryBuilder('d')
-        .where('d.type = :type', { type: 'weekly_review' })
-        .andWhere('d.created_at >= :cutoff', { cutoff: sixtySecondsAgo })
-        .orderBy('d.created_at', 'DESC')
-        .limit(1)
-        .getOne();
-      if (existing !== null) {
-        return existing.id;
-      }
-      const dream = dreamRepo.create({
-        type: 'weekly_review',
-        trigger,
-        status: 'processing',
-        startedAt: new Date(),
-      } satisfies Partial<Dream>);
-      const saved = await dreamRepo.save(dream);
-      return saved.id;
-    });
 
     const dailyLogs: Record<string, string> = {};
     const startDate = new Date(`${weekStart}T00:00:00Z`);

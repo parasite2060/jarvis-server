@@ -22,7 +22,7 @@ End-to-end validation with real LLM (not api-mock) and real GitHub vault.
 - [ ] JARVIS_API_KEY=manual-test-api-key
 
 **Steps**:
-1. `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"sourceDate":"2026-05-08"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
+1. `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"sourceDate":"2026-05-07"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
 2. echo "Dream ID: $DREAM_ID"
 3. Poll every 30s for up to 5 minutes:
    `sleep 30 && psql -h localhost -p 15432 -U postgres -d jarvis_manual -t -c "SELECT status FROM jarvis.dreams WHERE id=$DREAM_ID;"`
@@ -126,7 +126,7 @@ psql -h localhost -p 15432 -U postgres -d jarvis_manual -c "DELETE FROM jarvis.d
 **Steps**:
 1. `cd /app/ai-memory && git status` — confirm clean state
 2. Trigger deep dream:
-   `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"sourceDate":"2026-05-08"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
+   `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"sourceDate":"2026-05-07"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
 3. Wait for completion: `sleep 120 && psql -h localhost -p 15432 -U postgres -d jarvis_manual -t -c "SELECT status FROM jarvis.dreams WHERE id=$DREAM_ID;"`
 4. Check for PR:
    `gh pr list --repo $(echo $JARVIS_MANUAL_GH_REPO | sed 's|.*github.com/||' | sed 's|\.git||') --state=open --json number,title,state | python3 -c "import sys,json; print(json.load(sys.stdin))"`
@@ -190,16 +190,16 @@ cd /app/ai-memory && git rm -f test-tc-02-05.md && git commit -m "chore: remove 
 
 **Steps**:
 1. `curl -s -w "\nHTTP_STATUS:%{http_code}" -H "Authorization: Bearer manual-test-api-key" http://localhost:8100/config`
-2. `curl -s -w "\nHTTP_STATUS:%{http_code}" -X PATCH -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"JARVIS_LIGHT_EXTRACTION_MAX_TOKENS":2000000}' http://localhost:8100/config`
-3. `cat /app/ai-memory/config.yml | grep -A2 "JARVIS_LIGHT_EXTRACTION_MAX_TOKENS"`
-4. Restore original: `curl -s -X PATCH -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"JARVIS_LIGHT_EXTRACTION_MAX_TOKENS":1500000}' http://localhost:8100/config`
+2. `curl -s -w "\nHTTP_STATUS:%{http_code}" -X PATCH -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"maxMemoryLines":300}' http://localhost:8100/config`
+3. `cat /app/ai-memory/config.yml | grep -A2 "maxMemoryLines"`
+4. Restore original: `curl -s -X PATCH -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"maxMemoryLines":200}' http://localhost:8100/config`
 
 **Checkpoints**:
 - [ ] CP1: GET /config returns 200 — verify: HTTP 200
 - [ ] CP2: GET /config response is JSON — verify: parses
 - [ ] CP3: PATCH returns 200 — verify: HTTP 200
-- [ ] CP4: config.yml on disk updated — verify: grep shows new value 2000000
-- [ ] CP5: config.yml restored after cleanup — verify: grep shows original value 1500000
+- [ ] CP4: config.yml on disk updated — verify: grep shows new value 300
+- [ ] CP5: config.yml restored after cleanup — verify: grep shows original value 200
 
 **Cleanup**: PATCH back to original value (done in step 4)
 

@@ -37,7 +37,7 @@
  *     `DeepDream`, `WeeklyReview`.
  *   - Child workflow IDs: `${kind}-${payload[idKey]}`.
  */
-import { condition, defineSignal, executeChild, setHandler, workflowInfo } from '@temporalio/workflow';
+import { condition, defineSignal, executeChild, log, setHandler, workflowInfo } from '@temporalio/workflow';
 
 export type DreamKind = 'light' | 'deep' | 'weekly';
 
@@ -101,7 +101,7 @@ async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void
   const idValue = req.payload[cfg.idKey];
   if (typeof idValue !== 'string' || idValue.length === 0) {
     // Mirrors Python's ApplicationError on missing key. Caught by the
-    // swallow above so a malformed payload doesn't block the loop.
+    // swallow below so a malformed payload doesn't block the loop.
     throw new Error(`coordinator: missing or non-string ${cfg.idKey} in ${req.kind} payload`);
   }
   const childId = `${req.kind}-${idValue}`;
@@ -111,10 +111,18 @@ async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void
   // activity retries exhausted), the coordinator swallows the error and
   // moves on to the next queued signal. Retrying the child workflow here
   // would stall the coordinator loop indefinitely.
-  await executeChild(cfg.workflowType, {
-    workflowId: childId,
-    taskQueue,
-    args: [req.payload],
-    retry: { maximumAttempts: 1 },
-  });
+  try {
+    await executeChild(cfg.workflowType, {
+      workflowId: childId,
+      taskQueue,
+      args: [req.payload],
+      retry: { maximumAttempts: 1 },
+    });
+  } catch (err) {
+    // Swallow child failure — log for observability, continue processing queue.
+    // This is the single-active-dream invariant's escape hatch: a failed child
+    // must not terminate the coordinator loop, or subsequent dreams get
+    // WorkflowNotFoundError on signal.
+    log.warn(`coordinator.dispatchChild: child ${childId} failed, swallowing:`, { error: String(err) });
+  }
 }
