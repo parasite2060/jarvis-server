@@ -75,6 +75,8 @@ export interface WeeklyReviewPayload {
   /** ISO date YYYY-MM-DD — Monday of the review week. */
   week_start: string;
   trigger?: string;
+  /** Dream ID created by TriggerWeeklyReviewUseCase — used by gatherDailys to write phase rows. */
+  dream_id: number;
 }
 
 export interface WeeklyReviewResult {

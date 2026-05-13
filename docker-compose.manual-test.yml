@@ -256,6 +256,8 @@ services:
         fi
         git -C /vault config user.email "jarvis@manual-test"
         git -C /vault config user.name  "Jarvis Manual Test"
+        # Fix "dubious ownership" error on re-use (volume already has a git repo)
+        git -C /vault config --global --add safe.directory /vault
         # jarvis-server runs as uid 1000 (bun) — chown so it can write vault files
         chown -R 1000:1000 /vault
         echo "Vault ready (owned by bun):"

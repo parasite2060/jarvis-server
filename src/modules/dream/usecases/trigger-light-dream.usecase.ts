@@ -11,7 +11,7 @@ import { TemporalClientService } from 'src/shared/temporal/temporal-client.servi
 
 export interface TriggerLightDreamInput {
   sessionId: string;
-  transcriptId: number;
+  transcriptId: number | null;
   targetDate?: string;
   trigger?: string;
   sourceDateIso?: string | null;

@@ -45,6 +45,10 @@ import { AuthModule } from './shared/auth/auth.module';
       useFactory: defaultRedisConfig,
       inject: [AppConfigService],
     }),
+    // VaultModule must precede HealthModule so that VaultSyncService is initialized
+    // before VaultSyncHealthIndicator tries to inject it (NestJS initializes
+    // modules in import-array order).
+    VaultModule,
     HealthModule,
     ApiModule,
     AuthModule,
@@ -59,7 +63,6 @@ import { AuthModule } from './shared/auth/auth.module';
     // Business modules
     ConversationModule,
     MemoryModule,
-    VaultModule,
     ContextModule,
     DreamModule,
     JarvisConfigModule,

@@ -39,7 +39,7 @@ export class TriggerDeepDreamUseCase {
       type: 'deep',
       status: 'queued',
       trigger,
-      transcriptId: 0,
+      transcriptId: null,
     });
 
     this.logger.log({

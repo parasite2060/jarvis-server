@@ -46,7 +46,10 @@ ENV NODE_ENV=production \
 # and pull-request creation against the ai-memory repo.
 RUN apt-get update && apt-get install -y --no-install-recommends git gh ca-certificates \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && git --version && gh --version
+    && git --version && gh --version \
+    # Fix "dubious ownership" when vault volume was cloned by a different UID (vault-init sidecar)
+    && git config --global --add safe.directory /app/ai-memory \
+    && git config --global --add safe.directory '*'
 
 COPY --from=production-deps --chown=bun:bun /usr/src/app/node_modules ./node_modules
 COPY --from=build --chown=bun:bun /usr/src/app/dist ./dist

@@ -53,6 +53,19 @@ export class VaultSyncService implements OnApplicationBootstrap, OnModuleDestroy
     }
   }
 
+  async triggerSync(): Promise<void> {
+    return this.runSync();
+  }
+
+  /**
+   * Health probe for VaultSyncHealthIndicator — mirrors the Decision D pattern
+   * (always 'up', state encoded in message). Returns 'running' when the periodic
+   * interval handle is active, 'stopped' otherwise.
+   */
+  isHealthy(): { message: string } {
+    return this.intervalHandle !== null ? { message: 'running' } : { message: 'stopped' };
+  }
+
   async runSync(): Promise<void> {
     try {
       await this.gitOps.pullLatestMain();
