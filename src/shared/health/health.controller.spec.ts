@@ -8,20 +8,17 @@ import { HealthController } from './health.controller';
 import { RedisHealthIndicator, RedisToken } from '@nestjs-redis/kit';
 import { DBConnections } from '../postgres/utils/constaint';
 import { TemporalHealthIndicator } from './indicators/temporal.indicator';
-import { MemuHealthIndicator } from './indicators/memu.indicator';
 
 describe('HealthController', () => {
   let target: HealthController;
   let mockHealthService: DeepMocked<HealthCheckService>;
   let mockRedisHealthIndicator: DeepMocked<RedisHealthIndicator>;
   let mockTemporalIndicator: DeepMocked<TemporalHealthIndicator>;
-  let mockMemuIndicator: DeepMocked<MemuHealthIndicator>;
 
   beforeEach(async () => {
     mockHealthService = createMock<HealthCheckService>();
     mockRedisHealthIndicator = createMock<RedisHealthIndicator>();
     mockTemporalIndicator = createMock<TemporalHealthIndicator>();
-    mockMemuIndicator = createMock<MemuHealthIndicator>();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -52,10 +49,6 @@ describe('HealthController', () => {
         {
           provide: TemporalHealthIndicator,
           useValue: mockTemporalIndicator,
-        },
-        {
-          provide: MemuHealthIndicator,
-          useValue: mockMemuIndicator,
         },
       ],
       controllers: [HealthController],
@@ -117,23 +110,6 @@ describe('HealthController', () => {
 
       // Assert
       expect(mockTemporalIndicator.isHealthy).toHaveBeenCalledWith('temporal');
-    });
-
-    it('should include the memu indicator in the indicator list', async () => {
-      // Arrange
-      mockMemuIndicator.isHealthy.mockResolvedValue({
-        memu: { status: 'up', message: 'reachable' },
-      });
-      mockHealthService.check.mockImplementation(async (indicators) => {
-        await Promise.all(indicators.map((fn) => fn()));
-        return { status: 'ok', info: {}, error: {}, details: {} };
-      });
-
-      // Act
-      await target.check();
-
-      // Assert
-      expect(mockMemuIndicator.isHealthy).toHaveBeenCalledWith('memu');
     });
   });
 });
