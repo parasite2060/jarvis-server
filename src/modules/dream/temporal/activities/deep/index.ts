@@ -7,7 +7,6 @@ import { RunHealthCheckActivity } from './run-health-check.activity';
 import { RunHealthFixActivity } from './run-health-fix.activity';
 import { WriteFilesActivity } from './write-files.activity';
 import { DeepCommitAndPrActivity } from './commit-and-pr.activity';
-import { AlignMemuActivity } from './align-memu.activity';
 import { DeepInvalidateContextCacheActivity } from './invalidate-context-cache.activity';
 import { MarkDeepDreamOutcomeActivity } from './mark-deep-dream-outcome.activity';
 
@@ -21,7 +20,6 @@ export const Activities = [
   RunHealthFixActivity,
   WriteFilesActivity,
   DeepCommitAndPrActivity,
-  AlignMemuActivity,
   DeepInvalidateContextCacheActivity,
   MarkDeepDreamOutcomeActivity,
 ];
