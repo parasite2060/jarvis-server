@@ -8,7 +8,6 @@ import { InjectRedis, RedisHealthIndicator } from '@nestjs-redis/kit';
 import { RedisClientType } from 'redis';
 import { DBConnections } from '../postgres/utils/constaint';
 import { TemporalHealthIndicator } from './indicators/temporal.indicator';
-import { MemuHealthIndicator } from './indicators/memu.indicator';
 import { VaultSyncHealthIndicator } from './indicators/vault-sync.indicator';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -20,7 +19,6 @@ export class HealthController {
     private readonly db: TypeOrmHealthIndicator,
     @InjectRedis() private readonly redisClient: RedisClientType,
     private readonly temporal: TemporalHealthIndicator,
-    private readonly memu: MemuHealthIndicator,
     @Inject(forwardRef(() => VaultSyncHealthIndicator))
     private readonly vaultSync: VaultSyncHealthIndicator,
     @Inject(getDataSourceToken(DBConnections.INTERNAL))
@@ -38,7 +36,6 @@ export class HealthController {
       () => this.redis.isHealthy('redis', { client: this.redisClient }),
       () => this.db.pingCheck('postgres', { connection: this.dataSource }),
       () => this.temporal.isHealthy('temporal'),
-      () => this.memu.isHealthy('memu'),
       () => this.vaultSync.isHealthy('vaultSync'),
     ]);
   }
