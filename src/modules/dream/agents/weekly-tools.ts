@@ -15,10 +15,9 @@
  *     `gatherIndexes`. The vault indexes ARE already in memory — making
  *     them accessible via the tool fixes Python's prompt-vs-code drift.
  *
- * The base 7 tools (`readFile`, `grep`, `listFiles`, `fileInfo`,
- * `readFrontmatter`, `memuSearch`, `memuCategories`) are reused unchanged
- * from `vault-tools.ts` via `buildBase7Tools` exported by 13.11's
- * `deep-phase1.agent.ts`.
+ * The base tools (`readFile`, `grep`, `listFiles`, `fileInfo`,
+ * `readFrontmatter`) are reused unchanged from `vault-tools.ts` via
+ * `buildBaseTools` exported by 13.11's `deep-phase1.agent.ts`.
  */
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';

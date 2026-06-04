@@ -10,9 +10,8 @@
  *   Python prompt's `write_file` reference is a known fiction — stripped
  *   from the TS prompt port.
  *
- * Tools (7 = base 7 only):
- *   - readFile, grep, listFiles, fileInfo, readFrontmatter, memuSearch,
- *     memuCategories.
+ * Tools (base tools only):
+ *   - readFile, grep, listFiles, fileInfo, readFrontmatter.
  *
  * Output: `HealthFixOutputSchema`.
  *
@@ -24,7 +23,7 @@
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
 import { HealthFixOutputSchema } from './health-fix-output.schema';
 import { type VaultToolDeps } from './vault-tools';
-import { buildBase7Tools } from './deep-phase1.agent';
+import { buildBaseTools } from './deep-phase1.agent';
 
 export interface BuildHealthFixAgentOptions {
   systemPrompt: string;
@@ -36,8 +35,8 @@ export function buildHealthFixAgent(
   factory: DeepAgentFactory,
   options: BuildHealthFixAgentOptions,
 ): DeepAgentFactoryAgent<typeof HealthFixOutputSchema> {
-  // Q9: NO writeFile registered. Read-only base 7.
-  const tools = buildBase7Tools(options.toolDeps);
+  // Q9: NO writeFile registered. Read-only base tools.
+  const tools = buildBaseTools(options.toolDeps);
   return factory.create({
     systemPrompt: options.systemPrompt,
     tools,

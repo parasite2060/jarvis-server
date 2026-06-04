@@ -42,8 +42,6 @@ export interface RecordToolFactories {
   listFiles: (input: { path?: string }) => Promise<string>;
   fileInfo: (input: { path: string }) => Promise<string>;
   readFrontmatter: (input: { path: string }) => Promise<string>;
-  memuSearch: (input: { query: string; limit?: number }) => Promise<string>;
-  memuCategories: () => Promise<string>;
 }
 
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
@@ -198,22 +196,6 @@ function buildBaseTools(factories: RecordToolFactories): DynamicStructuredTool[]
       description: 'File statistics.',
       schema: z.object({ path: z.string() }),
       func: async (input) => factories.fileInfo(input),
-    }),
-  );
-  tools.push(
-    new DynamicStructuredTool({
-      name: 'memuSearch',
-      description: 'Semantic search across MemU.',
-      schema: z.object({ query: z.string(), limit: z.number().int().positive().optional() }),
-      func: async (input) => factories.memuSearch(input),
-    }),
-  );
-  tools.push(
-    new DynamicStructuredTool({
-      name: 'memuCategories',
-      description: 'List MemU categories.',
-      schema: z.object({}),
-      func: async () => factories.memuCategories(),
     }),
   );
   return tools;
