@@ -12,8 +12,6 @@
  *   - `listFiles(path?)` — directory listing.
  *   - `fileInfo(path)` — `path={p} lines={n} chars={n} estimated_tokens={n//4}`.
  *   - `readFrontmatter(path)` — extracts YAML between `---` markers.
- *   - `memuSearch(query, limit?)` — delegates to `IMemuApi.retrieve`.
- *   - `memuCategories()` — hardcoded list (Python parity).
  *
  * # Path discipline
  *   All paths are vault-relative. `safeResolveVaultPath` rejects traversal;
@@ -22,20 +20,13 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { Logger } from '@nestjs/common';
 import { safeResolveVaultPath } from 'src/shared/utils/path-validation';
-import type { IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
-
-const logger = new Logger('VaultTools');
 
 const GREP_MAX_MATCHES = 100;
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
 
-const HARDCODED_MEMU_CATEGORIES = ['decisions', 'preferences', 'patterns', 'corrections', 'facts', 'concepts', 'connections', 'lessons'];
-
 export interface VaultToolDeps {
   vaultPath: string;
-  memuApi: IMemuApi;
 }
 
 /**
@@ -206,21 +197,4 @@ export async function readFrontmatterTool(deps: VaultToolDeps, input: { path: st
     return '(no frontmatter)';
   }
   return match[1] ?? '';
-}
-
-/** `memuSearch` tool — delegates to MemU client (Story 13.4). */
-export async function memuSearchTool(deps: VaultToolDeps, input: { query: string; limit?: number }): Promise<string> {
-  try {
-    const result = await deps.memuApi.retrieve(input.query);
-    const memories = result.memories.slice(0, input.limit ?? 10);
-    return JSON.stringify(memories);
-  } catch (err) {
-    logger.warn({ message: 'memuSearch failed', event: 'tools.memuSearch.failed', error: (err as Error).message });
-    return `Error: memu retrieve failed: ${(err as Error).message}`;
-  }
-}
-
-/** `memuCategories` tool — hardcoded list (Python parity). */
-export async function memuCategoriesTool(): Promise<string> {
-  return JSON.stringify(HARDCODED_MEMU_CATEGORIES);
 }
