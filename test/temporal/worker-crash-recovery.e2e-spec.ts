@@ -14,7 +14,6 @@
  *
  * Also covers:
  *   - Crash during commitAndPr → exactly one PR exists.
- *   - Crash during alignMemu → MemU state matches a single successful run.
  *
  * Run: `JARVIS_E2E_CHAOS=1 JARVIS_E2E_LIVE_LLM=1 bun run test:e2e -- --testPathPattern="worker-crash-recovery"`
  */

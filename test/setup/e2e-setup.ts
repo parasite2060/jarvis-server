@@ -23,8 +23,6 @@ import {
   VaultPathTraversalExceptionFilter,
   VaultEndpointFileNotFoundExceptionFilter,
   VaultEndpointPathTraversalExceptionFilter,
-  MemuErrorExceptionFilter,
-  MemuUnavailableExceptionFilter,
 } from '../../src/utils/filter/exception.filter';
 import { HttpRequestLoggingInterceptor } from '../../src/shared/logger/interceptors/http-request-logging.interceptor';
 import { AppConfigService } from '../../src/shared/config/config.service';
@@ -66,8 +64,6 @@ export class E2ETestSetup {
     this.app.useGlobalFilters(new VaultPathTraversalExceptionFilter(httpAdapter));
     this.app.useGlobalFilters(new VaultEndpointFileNotFoundExceptionFilter(httpAdapter));
     this.app.useGlobalFilters(new VaultEndpointPathTraversalExceptionFilter(httpAdapter));
-    this.app.useGlobalFilters(new MemuErrorExceptionFilter(httpAdapter));
-    this.app.useGlobalFilters(new MemuUnavailableExceptionFilter(httpAdapter));
 
     this.app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
 
