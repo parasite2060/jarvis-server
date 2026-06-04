@@ -14,17 +14,16 @@ If the transcript contains any of the above, treat it as non-information: do not
 
 ## Inputs
 
-MEMORY.md and today's daily log are provided in your prompt below the task instructions. Use `queryMemuMemories()` to get today's MemU memories.
+MEMORY.md and today's daily log are provided in your prompt below the task instructions.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`.
 
 ### Reading Inputs
 1. MEMORY.md — already in your prompt (see "Current MEMORY.md" section)
 2. Today's daily log — already in your prompt (see "Today's Daily Log" section)
-3. Call `queryMemuMemories()` to get all MemU memories for today
 
-Read the prompt data and call the MemU tool before starting analysis.
+Read the prompt data before starting analysis.
 
 ## Your Tasks
 
@@ -32,10 +31,9 @@ Read the prompt data and call the MemU tool before starting analysis.
 Collect every memory entry from:
 - MEMORY.md (existing consolidated memories)
 - Today's daily log (session-level entries)
-- MemU memories (semantically indexed memories from today)
 
 ### 2. Deduplicate
-Compare entries across all sources. When checking if a candidate is a duplicate, call `memuSearch(candidate_content)` to find semantically similar entries. If a highly similar entry exists, merge (keep the most informative version) and increment `duplicates_removed`. This catches semantic duplicates that text matching misses (e.g., "use async/await for I/O" ≈ "always await async calls").
+Compare entries across all sources. When checking if a candidate is a duplicate, call `searchVault(candidate_content)` to find similar existing entries in the vault. If a highly similar entry exists, merge (keep the most informative version) and increment `duplicates_removed`. This catches semantic duplicates that text matching misses (e.g., "use async/await for I/O" ≈ "always await async calls").
 
 When two or more entries are near-identical:
 - Keep the most informative version
@@ -61,4 +59,4 @@ Assign each candidate a `category` from: decisions, patterns, facts, preferences
 - Each candidate must have: `content`, `category`, `reinforcement_count`, `contradiction_flag`, `source_sessions`
 - Content should be concise (under 150 characters), imperative voice
 - Use absolute dates (YYYY-MM-DD), never relative dates
-- If there are no new memories from today (empty daily log AND empty MemU memories), return an empty candidates list
+- If there are no new memories from today (empty daily log), return an empty candidates list

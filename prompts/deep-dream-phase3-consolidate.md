@@ -24,10 +24,9 @@ All core data is in your prompt (no tool calls needed):
 If the Phase 2 summary section is empty or absent, proceed with Phase 1 data only; do not fabricate themes, connections, or promotion candidates that you cannot ground in the provided inputs.
 
 ### Base Tools (vault-rooted, read-only)
-All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`, `memuSearch(query)`, `memuCategories()`.
+All agents share: `readFile(path)`, `searchVault(pattern, path)`, `listFiles(path)`, `fileInfo(path)`, `readFrontmatter(path)`.
 
 ### Additional tools
-- `queryMemuMemories()` — raw MemU semantic memories
 - `readDailyLog(date_str)` — read other days' logs (YYYY-MM-DD)
 - `readVaultIndex(folder)` — check vault folder contents
 - `readFrontmatter(path)` — read YAML metadata only (status, reinforcement_count, confidence, last_reviewed). Use before full file reads when you only need metadata.
@@ -86,7 +85,7 @@ last_reviewed: YYYY-MM-DD
 ## Stats Rules
 
 Count accurately:
-- `total_memories_processed`: Total number of MemU memories received as input
+- `total_memories_processed`: Total number of candidate memories received as input
 - `duplicates_removed`: Number of entries merged or removed as duplicates
 - `contradictions_resolved`: Number of CORRECTION entries created
 - `patterns_promoted`: Number of entries moved to Strong Patterns

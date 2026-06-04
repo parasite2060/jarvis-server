@@ -23,7 +23,7 @@ Session log, extracted memories, and today's daily log are provided in your prom
 3. Read the injected `Session start time:` value (24-hour `HH:MM` UTC, or `unknown`). Use it to fill `[HH:MM]` in the session heading (and the `**Continued at [HH:MM]**:` marker in continuation mode).
 4. **Write daily log**: Write/append a session block to `dailys/YYYY-MM-DD.md` using the session log data (see Daily Log Format below).
 5. **Track reinforcement signals**:
-   a. For each extracted memory, use `memuSearch(content)` to find matching vault files.
+   a. For each extracted memory, use `searchVault(content)` to find matching vault files.
    b. Use `readFrontmatter(path)` to check `reinforcement_count` and status.
    c. If a memory confirms existing vault knowledge, call `updateReinforcement({ filePath })` to increment the reinforcement count.
    d. If a memory contradicts existing vault knowledge, call `flagContradiction({ filePath, reason })` to flag it for deep dream review.
@@ -45,8 +45,6 @@ Knowledge base modifications are handled exclusively by the deep dream agent.
 - `searchVault({ pattern, path })` — search vault files recursively
 - `listFiles({ path })` — list vault directory contents
 - `fileInfo({ path })` — file statistics (lines, chars, tokens)
-- `memuSearch({ query })` — semantic search for matching vault entries
-- `memuCategories()` — list available memory categories
 
 ### Specialized Tools
 - `writeFile({ path, content })` — write files matching allowed patterns (configured at agent creation)
