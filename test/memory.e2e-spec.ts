@@ -16,6 +16,8 @@ import { ErrorCode } from '../src/utils/error.code';
 describe('Memory E2E Tests', () => {
   let setup: E2ETestSetup;
   let vaultRoot: string;
+  // ApiKeyGuard (global) protects the vault-file routes; /health is the only @Public() route.
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(30000);
 
@@ -52,7 +54,7 @@ describe('Memory E2E Tests', () => {
   describe('GET /memory/soul', () => {
     it('happy path — returns SOUL.md content with snake_case file_path', async () => {
       // Act
-      const response = await request(setup.httpServer).get('/memory/soul');
+      const response = await request(setup.httpServer).get('/memory/soul').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -67,7 +69,7 @@ describe('Memory E2E Tests', () => {
       await fs.unlink(soulPath);
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/soul');
+      const response = await request(setup.httpServer).get('/memory/soul').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(404);
@@ -82,7 +84,7 @@ describe('Memory E2E Tests', () => {
   describe('GET /memory/identity', () => {
     it('happy path — returns IDENTITY.md content with snake_case file_path', async () => {
       // Act
-      const response = await request(setup.httpServer).get('/memory/identity');
+      const response = await request(setup.httpServer).get('/memory/identity').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -94,7 +96,7 @@ describe('Memory E2E Tests', () => {
   describe('GET /memory/memory (Q3 / Amendment 2)', () => {
     it('happy path — returns MEMORY.md content with snake_case file_path', async () => {
       // Act
-      const response = await request(setup.httpServer).get('/memory/memory');
+      const response = await request(setup.httpServer).get('/memory/memory').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -108,7 +110,7 @@ describe('Memory E2E Tests', () => {
       await fs.unlink(memoryPath);
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/memory');
+      const response = await request(setup.httpServer).get('/memory/memory').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(404);
