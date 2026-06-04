@@ -34,7 +34,11 @@ export interface VaultToolDeps {
  * via `offset` (1-based line number, inclusive) + `limit` (lines).
  * Mirrors Python `read_vault_file_lines(path, offset, limit)` semantics.
  */
-export async function readFileTool(deps: VaultToolDeps, input: { path: string; offset?: number; limit?: number }): Promise<string> {
+export async function readFileTool(deps: VaultToolDeps, input: { path: string; offset?: number | null; limit?: number | null }): Promise<string> {
+  // Tool schemas are nullable (strict-mode requires all keys in `required`);
+  // normalise null → undefined so the original "omitted" semantics hold.
+  const offset = input.offset ?? undefined;
+  const limit = input.limit ?? undefined;
   const resolved = safeResolveVaultPath(deps.vaultPath, input.path);
   if (resolved === null) {
     return `Error: path '${input.path}' is outside the vault root`;
@@ -45,12 +49,12 @@ export async function readFileTool(deps: VaultToolDeps, input: { path: string; o
   } catch (err) {
     return `Error: failed to read '${input.path}': ${(err as Error).message}`;
   }
-  if (input.offset === undefined && input.limit === undefined) {
+  if (offset === undefined && limit === undefined) {
     return content;
   }
   const lines = content.split('\n');
-  const start = Math.max(0, (input.offset ?? 1) - 1);
-  const end = input.limit !== undefined ? start + input.limit : lines.length;
+  const start = Math.max(0, (offset ?? 1) - 1);
+  const end = limit !== undefined ? start + limit : lines.length;
   return lines.slice(start, end).join('\n');
 }
 

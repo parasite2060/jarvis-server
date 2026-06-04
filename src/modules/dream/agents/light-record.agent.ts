@@ -162,7 +162,7 @@ function buildBaseTools(factories: RecordToolFactories): DynamicStructuredTool[]
     new DynamicStructuredTool({
       name: 'readFile',
       description: 'Read a vault file.',
-      schema: z.object({ path: z.string(), offset: z.number().int().nonnegative().optional(), limit: z.number().int().positive().optional() }),
+      schema: z.object({ path: z.string(), offset: z.number().int().nonnegative().nullable(), limit: z.number().int().positive().nullable() }),
       func: async (input) => factories.readFile(input),
     }),
   );
@@ -178,7 +178,7 @@ function buildBaseTools(factories: RecordToolFactories): DynamicStructuredTool[]
     new DynamicStructuredTool({
       name: 'searchVault',
       description: 'Recursively search vault files.',
-      schema: z.object({ pattern: z.string(), path: z.string().optional() }),
+      schema: z.object({ pattern: z.string(), path: z.string().nullable() }),
       func: async (input) => factories.searchVault(input),
     }),
   );
@@ -186,7 +186,7 @@ function buildBaseTools(factories: RecordToolFactories): DynamicStructuredTool[]
     new DynamicStructuredTool({
       name: 'listFiles',
       description: 'List vault directory contents.',
-      schema: z.object({ path: z.string().optional() }),
+      schema: z.object({ path: z.string().nullable() }),
       func: async (input) => factories.listFiles(input),
     }),
   );
