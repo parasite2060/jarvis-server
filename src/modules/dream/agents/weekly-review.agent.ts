@@ -4,10 +4,10 @@
  * Mirrors Python `dream_agent.py:1226-1301` (`_get_weekly_review_agent` +
  * `run_weekly_review`).
  *
- * Tools (9 = base 7 + 2 weekly-specific):
- *   - Base 7: readFile, grep, listFiles, fileInfo, readFrontmatter,
- *     memuSearch, memuCategories (from 13.10's `vault-tools.ts` via
- *     `buildBase7Tools` exported by 13.11's `deep-phase1.agent.ts`).
+ * Tools (base tools + 2 weekly-specific):
+ *   - Base tools: readFile, grep, listFiles, fileInfo, readFrontmatter
+ *     (from 13.10's `vault-tools.ts` via `buildBaseTools` exported by
+ *     13.11's `deep-phase1.agent.ts`).
  *   - `readDailyLog(date_str)` — pre-loaded dict lookup (NOT live FS).
  *   - `readVaultIndex(folder)` — pre-loaded dict lookup (Q4 RESOLVED — TS
  *     port REGISTERS this tool, fixing Python prompt-vs-code drift).
@@ -22,7 +22,7 @@ import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsag
 import { WeeklyReviewOutputSchema } from './weekly-review-output.schema';
 import { type VaultToolDeps } from './vault-tools';
 import { readDailyLogPreloadedFactory, readVaultIndexPreloadedFactory } from './weekly-tools';
-import { buildBase7Tools } from './deep-phase1.agent';
+import { buildBaseTools } from './deep-phase1.agent';
 
 export interface BuildWeeklyReviewAgentOptions {
   systemPrompt: string;
@@ -39,7 +39,7 @@ export function buildWeeklyReviewAgent(
   options: BuildWeeklyReviewAgentOptions,
 ): DeepAgentFactoryAgent<typeof WeeklyReviewOutputSchema> {
   const tools = [
-    ...buildBase7Tools(options.toolDeps),
+    ...buildBaseTools(options.toolDeps),
     readDailyLogPreloadedFactory(options.dailyLogs),
     readVaultIndexPreloadedFactory(options.vaultIndexes),
   ];

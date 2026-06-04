@@ -3,8 +3,8 @@
  *
  * Mirrors Python `dream_agent.py:1167-1219` (`_get_phase2_agent`).
  *
- * Tools (8 = base 7 + 1 phase-specific):
- *   - Base 7 (from vault-tools.ts).
+ * Tools (base tools + 1 phase-specific):
+ *   - Base tools (from vault-tools.ts).
  *   - readDailyLog — Phase 2 variant — pre-loaded dict lookup.
  *
  * Output: `REMSleepOutputSchema` (snake_case Zod).
@@ -17,7 +17,7 @@ import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsag
 import { REMSleepOutputSchema } from './rem-sleep-output.schema';
 import { type VaultToolDeps } from './vault-tools';
 import { readDailyLogPreloadedFactory } from './deep-tools';
-import { buildBase7Tools } from './deep-phase1.agent';
+import { buildBaseTools } from './deep-phase1.agent';
 
 export interface BuildPhase2AgentOptions {
   systemPrompt: string;
@@ -28,7 +28,7 @@ export interface BuildPhase2AgentOptions {
 }
 
 export function buildPhase2Agent(factory: DeepAgentFactory, options: BuildPhase2AgentOptions): DeepAgentFactoryAgent<typeof REMSleepOutputSchema> {
-  const tools = [...buildBase7Tools(options.toolDeps), readDailyLogPreloadedFactory(options.dailyLogs)];
+  const tools = [...buildBaseTools(options.toolDeps), readDailyLogPreloadedFactory(options.dailyLogs)];
   return factory.create({
     systemPrompt: options.systemPrompt,
     tools,

@@ -1,7 +1,7 @@
 /**
  * Light-extraction agent builder (Story 13.10 / Task 7).
  *
- * Wraps `DeepAgentFactory.create({...})` with the 8 store-tools + 7 base
+ * Wraps `DeepAgentFactory.create({...})` with the 8 store-tools + base
  * tools that the extraction system prompt expects (camelCase tool names per
  * Q3.b). The store-tools mutate `deps.session_*` collections; the
  * post-run assembly in the activity overwrites the agent's own
@@ -44,8 +44,6 @@ export interface ExtractionToolFactories {
   listFiles: (input: { path?: string }) => Promise<string>;
   fileInfo: (input: { path: string }) => Promise<string>;
   readFrontmatter: (input: { path: string }) => Promise<string>;
-  memuSearch: (input: { query: string; limit?: number }) => Promise<string>;
-  memuCategories: () => Promise<string>;
 }
 
 const VAULT_TARGETS: VaultTarget[] = [
@@ -225,8 +223,8 @@ function buildStoreTools(deps: DreamDeps): DynamicStructuredTool[] {
 }
 
 /**
- * Build the 7 base tools (vault read + MemU access). Each delegates to a
- * caller-injected handler so the activity controls FS / HTTP boundaries.
+ * Build the base vault-read tools. Each delegates to a caller-injected
+ * handler so the activity controls FS boundaries.
  */
 function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTool[] {
   const tools: DynamicStructuredTool[] = [];
@@ -273,24 +271,6 @@ function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTo
       description: 'Extract YAML frontmatter (between --- markers) from a vault file.',
       schema: z.object({ path: z.string() }),
       func: async (input) => factories.readFrontmatter(input),
-    }),
-  );
-
-  tools.push(
-    new DynamicStructuredTool({
-      name: 'memuSearch',
-      description: 'Semantic search across MemU-managed knowledge.',
-      schema: z.object({ query: z.string(), limit: z.number().int().positive().optional() }),
-      func: async (input) => factories.memuSearch(input),
-    }),
-  );
-
-  tools.push(
-    new DynamicStructuredTool({
-      name: 'memuCategories',
-      description: 'List the available MemU memory categories.',
-      schema: z.object({}),
-      func: async () => factories.memuCategories(),
     }),
   );
 
