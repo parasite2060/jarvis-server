@@ -39,11 +39,9 @@ export interface AssembledContext {
 }
 
 export const MEMORY_TOOLS_TEXT =
-  'You have access to memory tools during this session:\n' +
-  '- `memory_search`: Search past memories semantically. ' +
-  "Use when you need context beyond what's in this injected memory.\n" +
-  '- `memory_add`: Store a new memory (decision, preference, pattern, ' +
-  'correction, fact). Use when you observe important context worth remembering.';
+  'You have access to a memory tool during this session:\n' +
+  '- `dream`: Trigger a manual memory consolidation (deep dream) on the Jarvis server. ' +
+  'Use to consolidate the day’s notes into the vault. Accepts an optional source_date (YYYY-MM-DD) to backfill a past day.';
 
 interface SectionSpec {
   label: string;
