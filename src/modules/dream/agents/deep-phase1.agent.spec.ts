@@ -15,12 +15,11 @@ describe('buildPhase1Agent', () => {
     });
   });
 
-  it('calls factory.create with the LightSleepOutputSchema and 8 tools (base 7 + queryMemuMemories)', () => {
+  it('calls factory.create with the LightSleepOutputSchema and the 5 base tools', () => {
     // Arrange / Act
     buildPhase1Agent(mockFactory, {
       systemPrompt: 'TEST',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
-      memuMemories: [{ content: 'mem' }],
+      toolDeps: { vaultPath: '/tmp/v' },
       usageLimits: { totalTokens: 100_000, toolCalls: 50 },
     });
 
@@ -28,7 +27,7 @@ describe('buildPhase1Agent', () => {
     expect(mockFactory.create).toHaveBeenCalledTimes(1);
     const args = mockFactory.create.mock.calls[0]![0];
     expect(args.output).toBe(LightSleepOutputSchema);
-    expect(args.tools).toHaveLength(8);
+    expect(args.tools).toHaveLength(5);
     expect(args.systemPrompt).toBe('TEST');
     expect(args.usageLimits).toEqual({ totalTokens: 100_000, toolCalls: 50 });
   });

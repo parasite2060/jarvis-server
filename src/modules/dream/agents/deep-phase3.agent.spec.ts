@@ -21,11 +21,10 @@ describe('buildPhase3Agent', () => {
     });
   });
 
-  it('calls factory.create with ConsolidationOutputSchema and 10 tools (base 7 + queryMemu + readDailyLog live + readVaultIndex)', () => {
+  it('calls factory.create with ConsolidationOutputSchema and 7 tools (base 5 + readDailyLog live + readVaultIndex)', () => {
     buildPhase3Agent(mockFactory, {
       systemPrompt: 'TEST',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
-      memuMemories: [],
+      toolDeps: { vaultPath: '/tmp/v' },
       vaultRoot: '/tmp/v',
       usageLimits: { totalTokens: 100, toolCalls: 10 },
     });
@@ -33,6 +32,6 @@ describe('buildPhase3Agent', () => {
     expect(mockFactory.create).toHaveBeenCalledTimes(1);
     const args = mockFactory.create.mock.calls[0]![0];
     expect(args.output).toBe(ConsolidationOutputSchema);
-    expect(args.tools).toHaveLength(10);
+    expect(args.tools).toHaveLength(7);
   });
 });

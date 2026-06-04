@@ -57,8 +57,6 @@ describe('buildLightExtractionAgent — store tools', () => {
         listFiles: async () => '',
         fileInfo: async () => '',
         readFrontmatter: async () => '',
-        memuSearch: async () => '',
-        memuCategories: async () => '',
       },
       usageLimits: { totalTokens: 1, toolCalls: 1 },
     });
@@ -70,12 +68,10 @@ describe('buildLightExtractionAgent — store tools', () => {
     return tool.func;
   }
 
-  it('exposes all 7 base + 8 store tools (15 total)', () => {
+  it('exposes all 5 base + 8 store tools (13 total)', () => {
     expect(capturedTools.map((t) => t.name).sort()).toEqual([
       'fileInfo',
       'listFiles',
-      'memuCategories',
-      'memuSearch',
       'readFile',
       'readFrontmatter',
       'searchVault',

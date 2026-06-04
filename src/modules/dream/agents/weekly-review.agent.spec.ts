@@ -15,11 +15,11 @@ describe('buildWeeklyReviewAgent', () => {
     });
   });
 
-  it('calls factory.create with WeeklyReviewOutputSchema and 9 tools (base 7 + readDailyLog + readVaultIndex)', () => {
+  it('calls factory.create with WeeklyReviewOutputSchema and 7 tools (base 5 + readDailyLog + readVaultIndex)', () => {
     // Arrange / Act
     buildWeeklyReviewAgent(mockFactory, {
       systemPrompt: 'WEEKLY-PROMPT',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
+      toolDeps: { vaultPath: '/tmp/v' },
       dailyLogs: { '2026-05-04': 'monday' },
       vaultIndexes: { decisions: 'idx' },
       usageLimits: { totalTokens: 1_500_000, toolCalls: 300 },
@@ -29,7 +29,7 @@ describe('buildWeeklyReviewAgent', () => {
     expect(mockFactory.create).toHaveBeenCalledTimes(1);
     const args = mockFactory.create.mock.calls[0]![0];
     expect(args.output).toBe(WeeklyReviewOutputSchema);
-    expect(args.tools).toHaveLength(9);
+    expect(args.tools).toHaveLength(7);
     expect(args.systemPrompt).toBe('WEEKLY-PROMPT');
     expect(args.usageLimits).toEqual({ totalTokens: 1_500_000, toolCalls: 300 });
     expect(args.retries).toBe(2);
@@ -40,7 +40,7 @@ describe('buildWeeklyReviewAgent', () => {
     // Arrange
     buildWeeklyReviewAgent(mockFactory, {
       systemPrompt: 'p',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
+      toolDeps: { vaultPath: '/tmp/v' },
       dailyLogs: { '2026-05-04': 'Monday content' },
       vaultIndexes: {},
       usageLimits: { totalTokens: 1, toolCalls: 1 },
@@ -58,7 +58,7 @@ describe('buildWeeklyReviewAgent', () => {
     // Arrange
     buildWeeklyReviewAgent(mockFactory, {
       systemPrompt: 'p',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
+      toolDeps: { vaultPath: '/tmp/v' },
       dailyLogs: {},
       vaultIndexes: { decisions: '- decision' },
       usageLimits: { totalTokens: 1, toolCalls: 1 },
