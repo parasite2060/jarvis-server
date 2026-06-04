@@ -273,23 +273,6 @@ export class AppConfigService {
     return this.configService.get<string>('LLM_MODEL');
   }
 
-  // MemU
-  get memuApiUrl(): string {
-    return this.configService.getOrThrow<string>('MEMU_API_URL');
-  }
-
-  get memuApiKey(): string | undefined {
-    return this.configService.get<string>('MEMU_API_KEY');
-  }
-
-  get memuUserId(): string {
-    return this.configService.get<string>('MEMU_USER_ID', 'jarvis');
-  }
-
-  get memuAgentId(): string {
-    return this.configService.get<string>('MEMU_AGENT_ID', 'claude');
-  }
-
   // Prompts (Story 13.10 / Q15) — directory for `prompts/*.md` loaded by
   // `PromptCacheService` at boot. Default `${cwd}/prompts` for local dev;
   // override `/app/prompts` in Docker via `PROMPTS_PATH` env var. The Joi
