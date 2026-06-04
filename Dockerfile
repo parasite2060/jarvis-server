@@ -54,6 +54,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git gh ca-certi
 COPY --from=production-deps --chown=bun:bun /usr/src/app/node_modules ./node_modules
 COPY --from=build --chown=bun:bun /usr/src/app/dist ./dist
 COPY --chown=bun:bun package.json ./
+# Dream agents load prompt templates at boot from `${cwd}/prompts` (PromptCacheService).
+# The production image must ship them; manual-test bind-mounts instead.
+COPY --chown=bun:bun prompts ./prompts
 
 USER bun
 
