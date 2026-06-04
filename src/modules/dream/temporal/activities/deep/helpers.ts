@@ -39,7 +39,7 @@ export async function safeWriteVault(vaultRoot: string, relPath: string, content
 export function buildPhase1RunPrompt(inp: Phase1Input): string {
   return [
     "Inventory, deduplicate, and score today's memories.",
-    'Use queryMemuMemories() for MemU data.',
+    'Use searchVault(query) to find similar existing entries in the vault.',
     '',
     '## Current MEMORY.md',
     inp.memory_md.length === 0 ? '(empty)' : inp.memory_md,
