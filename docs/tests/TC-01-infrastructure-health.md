@@ -3,7 +3,7 @@
 Manual smoke tests for the jarvis-server-ts critical path using API mock infrastructure.
 
 ## Prerequisites
-- [ ] `docker-compose.e2e.yml` is running (postgres :5433, redis :6380, temporal :7234+8234, memu-server :8001, api-mock :11435)
+- [ ] `docker-compose.e2e.yml` is running (postgres :5433, redis :6380, temporal :7234+8234, api-mock :11435)
 - [ ] jarvis-server is accessible on port 3000 (or configured PORT)
 - [ ] API_KEY is known (`jarvis-e2e-test-key` from `.env.e2e`)
 - [ ] `bun run test:e2e` completed successfully (20/21 suites, 102/103 tests) — confirms infra is healthy
@@ -15,7 +15,7 @@ Manual smoke tests for the jarvis-server-ts critical path using API mock infrast
 **Design Ref**: `test-design-epic-13.md` §P0 — GET /health
 
 **Preconditions**:
-- [ ] `docker-compose.e2e.yml` services all healthy (postgres, redis, temporal, memu-server)
+- [ ] `docker-compose.e2e.yml` services all healthy (postgres, redis, temporal)
 - [ ] jarvis-server is running on localhost:3000
 
 **Steps**:
@@ -142,7 +142,6 @@ psql -h localhost -p 5433 -U postgres -d e2e_test_db -c "DELETE FROM jarvis.tran
 
 **Preconditions**:
 - [ ] jarvis-server running on localhost:3000
-- [ ] MemU service healthy on :8001
 
 **Steps**:
 1. `curl -s -w "\nHTTP_STATUS:%{http_code}" -H "Authorization: Bearer $API_KEY" http://localhost:3000/memory/context`
@@ -265,24 +264,6 @@ psql -h localhost -p 5433 -U postgres -d e2e_test_db -c "DELETE FROM jarvis.drea
 
 ---
 
-### TC-01-11: Memory search — results returned
-**Priority**: High
-**Design Ref**: `test-design-epic-13.md` §P1 — Memory endpoints
-
-**Preconditions**:
-- [ ] jarvis-server running on localhost:3000
-- [ ] MemU service has indexed data
-
-**Steps**:
-1. `curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d '{"query":"testing","limit":5}' http://localhost:3000/memory/search`
-2. `curl -s -w "\nHTTP_STATUS:%{http_code}" -X GET -H "Authorization: Bearer $API_KEY" http://localhost:3000/memory/recent`
-
-**Checkpoints**:
-- [ ] CP1: Search returns 200 — verify: HTTP 200
-- [ ] CP2: Search response is JSON — verify: parses without error
-- [ ] CP3: Search response has `results` array — verify: `echo $RESP | python3 -c "import sys,json; d=json.load(sys.stdin); print('has_results' if 'results' in d else 'missing')"`
-- [ ] CP4: Recent returns 200 — verify: second HTTP 200
-- [ ] CP5: Recent response has `items` or `memories` array — verify: second response parses and has data key
-- [ ] CP6: No 500 errors — verify: neither request returned HTTP 5xx
-
-**Cleanup**: None
+### TC-01-11: Memory search — REMOVED (2026-06-04)
+`POST /memory/search` and `GET /memory/recent` were removed together with MemU.
+Those endpoints now return **404**. This case is retired.

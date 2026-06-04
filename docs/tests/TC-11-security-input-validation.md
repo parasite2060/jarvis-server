@@ -52,23 +52,9 @@ Verifies authentication behavior, input sanitization, and no injection vulnerabi
 
 ---
 
-### TC-11-03: XSS — /memory/add content field
-**Priority**: Critical
-**Design Ref**: `test-design-epic-13.md` §P1 — XSS blocked
-
-**Preconditions**: None
-
-**Steps**:
-1. `curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
-   -d '{"content": "<script>alert(1)</script> Stored XSS test", "metadata": {"xss":"test"}}' http://localhost:3000/memory/add`
-2. `curl -s -H "Authorization: Bearer $API_KEY" http://localhost:3000/memory/search | python3 -c "import sys,json,re; d=json.load(sys.stdin); c=str(d); print('XSS_REFLECTED' if '<script>' in c else 'SAFE')"`
-
-**Checkpoints**:
-- [ ] CP1: MemU accepts content without 500 error — verify: HTTP 200 returned
-- [ ] CP2: Search response does not reflect raw `<script>` tag — verify: tag is escaped or not present in response
-- [ ] CP3: MemU service is still healthy — verify: subsequent search returns 200
-
-**Cleanup**: None
+### TC-11-03: XSS — /memory/add content field — REMOVED (2026-06-04)
+`POST /memory/add` and `POST /memory/search` were removed together with MemU.
+Those endpoints now return **404**, so this stored-XSS case is retired.
 
 ---
 

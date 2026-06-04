@@ -7,7 +7,6 @@ End-to-end validation with real LLM (not api-mock) and real GitHub vault.
 - [ ] `.env.manual-test` created with all 5 `JARVIS_MANUAL_*` vars filled
 - [ ] `docker-compose.manual-test.yml --env-file .env.manual-test up -d --wait` completed
 - [ ] `curl -s http://localhost:8100/health` returns 200 with `application.status=up`
-- [ ] MemU service healthy: `curl -s http://localhost:18001/ | python3 -c "import sys,json; print('memu_ok')"` (no error)
 
 ---
 
@@ -94,15 +93,11 @@ cd /app/ai-memory && git checkout -- . && git clean -fd
 1. `DREAM_ID=$(curl -s -X POST -H "Authorization: Bearer manual-test-api-key" -H "Content-Type: application/json" -d '{"type":"weekly-review"}' http://localhost:8100/dream | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['dreamId'])")`
 2. Poll every 30s for up to 5 minutes:
    `sleep 30 && psql -h localhost -p 15432 -U postgres -d jarvis_manual -t -c "SELECT status FROM jarvis.dreams WHERE id=$DREAM_ID;"`
-3. After completion, check MemU server directly:
-   `curl -s http://localhost:18001/ | python3 -c "import sys,json; print(json.load(sys.stdin).get('memories_added','n/a'))"`
 
 **Checkpoints**:
 - [ ] CP1: POST returns 202 — verify: HTTP 202
 - [ ] CP2: Dream type is `weekly-review` — verify: type check
 - [ ] CP3: Dream completes within 5 minutes — verify: status `completed`
-- [ ] CP4: `memories_added` or outcome field shows count > 0 — verify: outcome JSON has memory count
-- [ ] CP5: MemU server is responsive — verify: `curl http://localhost:18001/` returns 200
 
 **Cleanup**:
 ```bash
@@ -212,7 +207,6 @@ cd /app/ai-memory && git rm -f test-tc-02-05.md && git commit -m "chore: remove 
 **Preconditions**:
 - [ ] jarvis-server running on localhost:8100
 - [ ] Vault populated with realistic content (dailys, decisions, lessons)
-- [ ] MemU has indexed memories
 
 **Steps**:
 1. Cold measurement (cache miss):

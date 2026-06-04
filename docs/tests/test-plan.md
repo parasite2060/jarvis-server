@@ -26,7 +26,6 @@ Manual testing covers two tiers:
 
 ### Out-of-Scope
 - Plugin MCP server (covered by `npx vitest run` in jarvis-claude-plugin)
-- MemU service internals (external, tested through proxy)
 - PostgreSQL schema migrations (covered by integration tests)
 
 ## 3. Design References
@@ -44,7 +43,7 @@ Manual testing covers two tiers:
 
 ```
 Infrastructure: docker-compose.e2e.yml
- Ports:         Postgres :5433, Redis :6380, Temporal :7234+8234, MemU :8001, API Mock :11435
+ Ports:         Postgres :5433, Redis :6380, Temporal :7234+8234, API Mock :11435
  Build:         bun install --frozen-lockfile (Bun)
  Auth:          API_KEY=jarvis-e2e-test-key (from .env.e2e)
  Vault:         /tmp/jarvis-e2e-vault (seeded by E2ETestSetup.ensureVaultCloned())
@@ -62,7 +61,7 @@ bun run test:e2e  # smoke: 20/21 suites, 102/103 tests passing
 
 ```
 Infrastructure: docker-compose.manual-test.yml
- Ports:         Postgres :15432, Redis :16379, Temporal :17233+18233, MemU :18001, jarvis-server :8100
+ Ports:         Postgres :15432, Redis :16379, Temporal :17233+18233, jarvis-server :8100
  Build:         docker compose build --no-cache jarvis-server
  Auth:          JARVIS_API_KEY=manual-test-api-key
  Vault:         Cloned from JARVIS_MANUAL_GH_REPO into /app/ai-memory (vault-init sidecar)
@@ -105,7 +104,7 @@ docker compose -f docker-compose.manual-test.yml --env-file .env.manual-test up 
 | TC-01-08 | POST /dream deep pipeline — phases rows created | Critical | Temporal | test-design-epic-13.md §P0 |
 | TC-01-09 | POST /dream light pipeline — daily log updated | Critical | Temporal | test-design-epic-13.md §P0 |
 | TC-01-10 | Vault manifest — file serving + structure | High | Vault | test-design-epic-13.md §P1 |
-| TC-01-11 | Memory search — results returned | High | Memory | test-design-epic-13.md §P1 |
+| TC-01-11 | Memory search — REMOVED (MemU removed 2026-06-04) | — | Memory | test-design-epic-13.md §P1 |
 
 ### Tier 2 — Real LLM + Real GitHub (P2/P3 gaps)
 
