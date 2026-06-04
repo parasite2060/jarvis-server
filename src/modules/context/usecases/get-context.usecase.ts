@@ -112,11 +112,9 @@ export class GetContextUseCase {
     if (templatesIndex) sections.push(`## TEMPLATES INDEX\n\n${templatesIndex}`);
     if (health) sections.push(`## VAULT HEALTH\n\n${health}`);
     sections.push(
-      '## MEMORY TOOLS\n\nYou have access to memory tools during this session:\n' +
-        '- `memory_search`: Search past memories semantically. ' +
-        "Use when you need context beyond what's in this injected memory.\n" +
-        '- `memory_add`: Store a new memory (decision, preference, pattern, ' +
-        'correction, fact). Use when you observe important context worth remembering.',
+      '## MEMORY TOOLS\n\nYou have access to a memory tool during this session:\n' +
+        '- `dream`: Trigger a manual memory consolidation (deep dream) on the Jarvis server. ' +
+        'Use to consolidate the day’s notes into the vault. Accepts an optional source_date (YYYY-MM-DD) to backfill a past day.',
     );
     return sections.join('\n\n');
   }
