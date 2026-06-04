@@ -2,35 +2,22 @@
  * Unit specs for vault-tools (Story 13.10 / Adjustment 1 / RESOLVED 2026-05-08).
  *
  * Each tool gets a happy-path + at-least-one-error-path test. Real FS via
- * `fs.mkdtempSync` for the vault root; MemU mocked via `createMock`.
+ * `fs.mkdtempSync` for the vault root.
  */
-import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import {
-  fileInfoTool,
-  grepTool,
-  listFilesTool,
-  memuCategoriesTool,
-  memuSearchTool,
-  readFileTool,
-  readFrontmatterTool,
-  type VaultToolDeps,
-} from './vault-tools';
-import type { IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
+import { fileInfoTool, grepTool, listFilesTool, readFileTool, readFrontmatterTool, type VaultToolDeps } from './vault-tools';
 
 describe('vault-tools', () => {
   let vaultRoot: string;
-  let mockMemu: DeepMocked<IMemuApi>;
   let deps: VaultToolDeps;
 
   beforeEach(() => {
     // Arrange: fresh temp vault.
     vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-tools-spec-'));
-    mockMemu = createMock<IMemuApi>();
-    deps = { vaultPath: vaultRoot, memuApi: mockMemu };
+    deps = { vaultPath: vaultRoot };
   });
 
   afterEach(() => {
@@ -213,63 +200,6 @@ describe('vault-tools', () => {
 
       // Assert
       expect(result).toBe('(no frontmatter)');
-    });
-  });
-
-  describe('memuSearchTool', () => {
-    it('delegates to IMemuApi.retrieve and returns JSON-serialised memories', async () => {
-      // Arrange
-      mockMemu.retrieve.mockResolvedValue({
-        memories: [
-          { content: 'a', relevance: 0.9 },
-          { content: 'b', relevance: 0.8 },
-        ],
-      });
-
-      // Act
-      const result = await memuSearchTool(deps, { query: 'test query' });
-
-      // Assert
-      expect(mockMemu.retrieve).toHaveBeenCalledWith('test query');
-      const parsed = JSON.parse(result) as Array<{ content: string }>;
-      expect(parsed).toHaveLength(2);
-      expect(parsed[0]?.content).toBe('a');
-    });
-
-    it('respects optional limit', async () => {
-      // Arrange
-      mockMemu.retrieve.mockResolvedValue({
-        memories: Array.from({ length: 20 }, (_, i) => ({ content: `m${i}`, relevance: 1.0 })),
-      });
-
-      // Act
-      const result = await memuSearchTool(deps, { query: 'q', limit: 3 });
-
-      // Assert
-      const parsed = JSON.parse(result) as Array<unknown>;
-      expect(parsed).toHaveLength(3);
-    });
-
-    it('returns Error string when MemU throws', async () => {
-      // Arrange
-      mockMemu.retrieve.mockRejectedValue(new Error('memu down'));
-
-      // Act
-      const result = await memuSearchTool(deps, { query: 'q' });
-
-      // Assert
-      expect(result).toMatch(/^Error: memu retrieve failed/);
-    });
-  });
-
-  describe('memuCategoriesTool', () => {
-    it('returns hardcoded category list (Python parity)', async () => {
-      // Act
-      const result = await memuCategoriesTool();
-
-      // Assert
-      const parsed = JSON.parse(result) as string[];
-      expect(parsed).toEqual(['decisions', 'preferences', 'patterns', 'corrections', 'facts', 'concepts', 'connections', 'lessons']);
     });
   });
 });

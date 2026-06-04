@@ -17,8 +17,6 @@ import * as os from 'node:os';
 import { buildLightRecordAgent, type RecordDeps } from './light-record.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
 import { readFileTool } from './vault-tools';
-import { createMock as cm } from '@golevelup/ts-jest';
-import type { IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 
 interface CapturedToolDef {
   name: string;
@@ -69,15 +67,12 @@ describe('buildLightRecordAgent', () => {
   }
 
   function buildBaseToolFactories(): NonNullable<Parameters<typeof buildLightRecordAgent>[1]['baseToolFactories']> {
-    const memu = cm<IMemuApi>();
     return {
-      readFile: (input) => readFileTool({ vaultPath: vaultRoot, memuApi: memu }, input),
+      readFile: (input) => readFileTool({ vaultPath: vaultRoot }, input),
       searchVault: async () => '[]',
       listFiles: async () => '(empty directory)',
       fileInfo: async () => 'path=x lines=0 chars=0 estimated_tokens=0',
       readFrontmatter: async () => '(no frontmatter)',
-      memuSearch: async () => '[]',
-      memuCategories: async () => '[]',
     };
   }
 

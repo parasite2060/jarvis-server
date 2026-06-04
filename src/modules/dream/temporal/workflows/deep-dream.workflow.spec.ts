@@ -22,7 +22,6 @@ import type {
   HealthFixResult,
   WriteFilesResult,
   CommitAndPRResult,
-  AlignMemuInput,
   InvalidateCacheInput,
   MarkDeepDreamOutcomeInput,
   DeepCommitAndPRInput,
@@ -115,7 +114,6 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
     runHealthFix: (inp: HealthFixInput) => Promise<HealthFixResult>;
     writeFiles: (inp: WriteFilesInput) => Promise<WriteFilesResult>;
     commitAndPr: (inp: DeepCommitAndPRInput) => Promise<CommitAndPRResult>;
-    alignMemu: (inp: AlignMemuInput) => Promise<void>;
     invalidateContextCache: (inp: InvalidateCacheInput) => Promise<void>;
     markDeepDreamOutcome: (inp: MarkDeepDreamOutcomeInput) => Promise<void>;
   }>;
@@ -129,7 +127,6 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
           trace('gather');
           return {
             dream_id: 100,
-            memu_memories: [{ content: 'm1' }],
             memory_md: '## Strong Patterns\n- foo',
             daily_log: 'Some daily log content',
             soul_md: 'Soul body',
@@ -203,11 +200,6 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
           trace('commit');
           return { git_branch: 'dream/deep-2026-05-07', git_pr_url: 'http://pr/1', git_pr_status: 'created' };
         }),
-      'deep.align_memu':
-        overrides.alignMemu ??
-        (async () => {
-          trace('alignMemu');
-        }),
       'deep.invalidate_cache':
         overrides.invalidateContextCache ??
         (async () => {
@@ -238,34 +230,22 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
   }
 
   // (1) Happy path
-  it('Q15 (1) — happy path: all 12 activities, status=completed, pr_url present', async () => {
+  it('Q15 (1) — happy path: all activities, status=completed, pr_url present', async () => {
     const calls: string[] = [];
     const result = await runWorkflow(buildActivities({}, calls));
     expect(result.status).toBe('completed');
     expect(result.dream_id).toBe(100);
     expect(result.pr_url).toBe('http://pr/1');
-    expect(calls).toEqual([
-      'gather',
-      'phase1',
-      'score',
-      'phase2',
-      'phase3',
-      'healthCheck',
-      'writeFiles',
-      'commit',
-      'alignMemu',
-      'invalidate',
-      'markOutcome',
-    ]);
+    expect(calls).toEqual(['gather', 'phase1', 'score', 'phase2', 'phase3', 'healthCheck', 'writeFiles', 'commit', 'invalidate', 'markOutcome']);
   }, 60_000);
 
-  // (2) Skip-guard 1 — empty inputs.
-  it('Q15 (2) — empty MemU + empty daily log → status=skipped, no Phase 1', async () => {
+  // (2) Skip-guard 1 — empty daily log.
+  it('Q15 (2) — empty daily log → status=skipped, no Phase 1', async () => {
     const calls: string[] = [];
     const overrides: Overrides = {
       gatherInputs: async () => {
         calls.push('gather');
-        return { dream_id: 200, memu_memories: [], memory_md: '', daily_log: '', soul_md: '', source_date_iso: '2026-05-07' };
+        return { dream_id: 200, memory_md: '', daily_log: '', soul_md: '', source_date_iso: '2026-05-07' };
       },
     };
     const result = await runWorkflow(buildActivities(overrides, calls));
@@ -414,7 +394,7 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
   it("Q15 (11) — markDeepDreamOutcome is called with outcome='skipped' on skip-guard", async () => {
     const markCalls: MarkDeepDreamOutcomeInput[] = [];
     const overrides: Overrides = {
-      gatherInputs: async () => ({ dream_id: 999, memu_memories: [], memory_md: '', daily_log: '', soul_md: '', source_date_iso: '2026-05-07' }),
+      gatherInputs: async () => ({ dream_id: 999, memory_md: '', daily_log: '', soul_md: '', source_date_iso: '2026-05-07' }),
       markDeepDreamOutcome: async (inp) => {
         markCalls.push(inp);
       },
@@ -422,12 +402,5 @@ describe('deepDreamWorkflow — Temporal scenarios', () => {
     await runWorkflow(buildActivities(overrides));
     expect(markCalls).toHaveLength(1);
     expect(markCalls[0]!.outcome).toBe('skipped');
-  }, 60_000);
-
-  // (12) alignMemu always called (no idempotency short-circuit at workflow level).
-  it('Q15 (12) — alignMemu is always called after Phase 3 succeeds', async () => {
-    const calls: string[] = [];
-    await runWorkflow(buildActivities({}, calls));
-    expect(calls).toContain('alignMemu');
   }, 60_000);
 });

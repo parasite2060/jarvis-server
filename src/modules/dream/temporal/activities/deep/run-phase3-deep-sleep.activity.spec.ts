@@ -8,7 +8,6 @@ import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
 import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain/repositories/dream-phase.repository.interface';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { ConsolidationOutputSchema } from '../../../agents/consolidation-output.schema';
 
@@ -16,14 +15,12 @@ jest.mock('deepagents', () => ({ createDeepAgent: jest.fn().mockReturnValue({ in
 
 describe('RunPhase3DeepSleepActivity', () => {
   let target: RunPhase3DeepSleepActivity;
-  let mockMemuApi: DeepMocked<IMemuApi>;
   let mockAgentFactory: DeepMocked<DeepAgentFactory>;
   let mockPromptCache: DeepMocked<PromptCacheService>;
   let mockPhaseRepo: DeepMocked<IDreamPhaseRepository>;
   let mockConfig: DeepMocked<AppConfigService>;
 
   beforeEach(async () => {
-    mockMemuApi = createMock<IMemuApi>();
     mockAgentFactory = createMock<DeepAgentFactory>();
     mockPromptCache = createMock<PromptCacheService>();
     mockPhaseRepo = createMock<IDreamPhaseRepository>();
@@ -35,7 +32,6 @@ describe('RunPhase3DeepSleepActivity', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RunPhase3DeepSleepActivity,
-        { provide: MEMU_API, useValue: mockMemuApi },
         { provide: DeepAgentFactory, useValue: mockAgentFactory },
         { provide: PromptCacheService, useValue: mockPromptCache },
         { provide: DREAM_PHASE_REPOSITORY, useValue: mockPhaseRepo },
@@ -66,7 +62,6 @@ describe('RunPhase3DeepSleepActivity', () => {
     const result = await target.runPhase3DeepSleep({
       dream_id: 1,
       source_date_iso: '2026-05-07',
-      memu_memories: [],
       memory_md: '',
       daily_log: '',
       soul_md: '',

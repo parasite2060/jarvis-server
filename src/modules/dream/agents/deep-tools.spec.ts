@@ -1,20 +1,9 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { queryMemuMemoriesFactory, readDailyLogPreloadedFactory, readDailyLogLiveFactory, readVaultIndexFactory } from './deep-tools';
+import { readDailyLogPreloadedFactory, readDailyLogLiveFactory, readVaultIndexFactory } from './deep-tools';
 
 describe('deep-tools', () => {
-  describe('queryMemuMemoriesFactory', () => {
-    it('returns the JSON-stringified pre-loaded list (no live MemU call)', async () => {
-      const memories = [{ content: 'first', kind: 'fact' }];
-      const tool = queryMemuMemoriesFactory(memories);
-
-      const out = await tool.invoke({});
-
-      expect(out).toBe(JSON.stringify(memories));
-    });
-  });
-
   describe('readDailyLogPreloadedFactory', () => {
     it('returns the dict entry for the requested date_str', async () => {
       const dailyLogs = { '2026-05-07': '## Session\nbody' };

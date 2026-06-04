@@ -15,18 +15,18 @@ describe('buildHealthFixAgent', () => {
     });
   });
 
-  it('Q9 RESOLVED: registers ONLY the read-only base 7 tools (no writeFile)', () => {
+  it('Q9 RESOLVED: registers ONLY the read-only base tools (no writeFile)', () => {
     buildHealthFixAgent(mockFactory, {
       systemPrompt: 'TEST',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
+      toolDeps: { vaultPath: '/tmp/v' },
       usageLimits: { totalTokens: 100, toolCalls: 10 },
     });
 
     expect(mockFactory.create).toHaveBeenCalledTimes(1);
     const args = mockFactory.create.mock.calls[0]![0];
     expect(args.output).toBe(HealthFixOutputSchema);
-    expect(args.tools).toHaveLength(7);
+    expect(args.tools).toHaveLength(5);
     const toolNames = args.tools.map((t: { name: string }) => t.name).sort();
-    expect(toolNames).toEqual(['fileInfo', 'listFiles', 'memuCategories', 'memuSearch', 'readFile', 'readFrontmatter', 'searchVault']);
+    expect(toolNames).toEqual(['fileInfo', 'listFiles', 'readFile', 'readFrontmatter', 'searchVault']);
   });
 });

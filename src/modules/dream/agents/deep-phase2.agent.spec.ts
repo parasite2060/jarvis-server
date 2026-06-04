@@ -15,10 +15,10 @@ describe('buildPhase2Agent', () => {
     });
   });
 
-  it('calls factory.create with REMSleepOutputSchema and 8 tools (base 7 + readDailyLog pre-loaded)', () => {
+  it('calls factory.create with REMSleepOutputSchema and 6 tools (base 5 + readDailyLog pre-loaded)', () => {
     buildPhase2Agent(mockFactory, {
       systemPrompt: 'TEST',
-      toolDeps: { vaultPath: '/tmp/v', memuApi: createMock() },
+      toolDeps: { vaultPath: '/tmp/v' },
       dailyLogs: { '2026-05-07': 'body' },
       usageLimits: { totalTokens: 100, toolCalls: 10 },
     });
@@ -26,6 +26,6 @@ describe('buildPhase2Agent', () => {
     expect(mockFactory.create).toHaveBeenCalledTimes(1);
     const args = mockFactory.create.mock.calls[0]![0];
     expect(args.output).toBe(REMSleepOutputSchema);
-    expect(args.tools).toHaveLength(8);
+    expect(args.tools).toHaveLength(6);
   });
 });
