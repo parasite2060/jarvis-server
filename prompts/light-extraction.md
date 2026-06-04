@@ -55,7 +55,7 @@ MEMORY.md is provided in your prompt showing what the vault already knows.
 Before storing an insight, check if it's already a Strong Pattern or
 established Decision. Skip re-extracting known knowledge.
 
-Use `memuSearch(query)` to check if a specific insight already
+Use `searchVault(query)` to check if a specific insight already
 exists in the vault. If a highly similar entry exists, don't store it again.
 
 ## How to Access the Vault
@@ -66,8 +66,6 @@ Use the **base tools** to read vault files (paths relative to vault root):
 - `listFiles(path)` — list vault directory contents
 - `fileInfo(path)` — file statistics
 - `readFrontmatter(path)` — read YAML frontmatter only
-- `memuSearch(query)` — semantic search across knowledge
-- `memuCategories()` — list available memory categories
 
 Use vault access to check existing knowledge before storing new memories.
 
