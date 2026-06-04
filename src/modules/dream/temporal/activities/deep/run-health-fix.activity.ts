@@ -4,7 +4,6 @@ import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain/repositories/dream-phase.repository.interface';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { buildHealthFixAgent } from '../../../agents/health-fix.agent';
 import { type VaultToolDeps } from '../../../agents/vault-tools';
 import { type HealthReport } from '../../../agents/health-report.schema';
@@ -18,7 +17,6 @@ export class RunHealthFixActivity {
   private readonly logger = new Logger(RunHealthFixActivity.name);
 
   constructor(
-    @Inject(MEMU_API) private readonly memuApi: IMemuApi,
     private readonly agentFactory: DeepAgentFactory,
     private readonly promptCache: PromptCacheService,
     @Inject(DREAM_PHASE_REPOSITORY) private readonly dreamPhaseRepo: IDreamPhaseRepository,
@@ -27,7 +25,7 @@ export class RunHealthFixActivity {
 
   @TemporalActivity('deep.health_fix')
   async runHealthFix(inp: HealthFixInput): Promise<HealthFixResult> {
-    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath, memuApi: this.memuApi };
+    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath };
     const agent = buildHealthFixAgent(this.agentFactory, {
       systemPrompt: this.promptCache.getPrompt('deep-dream-health-fix'),
       toolDeps,
