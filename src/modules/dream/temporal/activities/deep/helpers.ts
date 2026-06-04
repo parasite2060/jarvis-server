@@ -13,8 +13,6 @@ import type { DeepCommitAndPRInput, Phase1Input, Phase3Input } from '../../workf
 export const HEALTH_FIX_MAX_ITERATIONS = 3;
 export const PHASE2_DAILY_LOG_WINDOW_DAYS = 7;
 export const PHASE2_VAULT_INDEX_FOLDERS = ['decisions', 'patterns', 'concepts', 'connections', 'lessons', 'projects'] as const;
-export const IDEMPOTENCY_LOG_PATH = '.backups/memu_align_idempotency.log';
-export const MEMORY_SECTIONS_FOR_MEMU = ['Strong Patterns', 'Decisions', 'Facts'] as const;
 export const SEXTY_SECONDS_MS = 60_000;
 
 export async function safeReadVault(vaultRoot: string, relPath: string): Promise<string | null> {
@@ -36,33 +34,6 @@ export async function safeWriteVault(vaultRoot: string, relPath: string, content
   } catch {
     // best-effort
   }
-}
-
-/**
- * Mirrors Python `_extract_memory_entries` — only `## Strong Patterns`,
- * `## Decisions`, `## Facts` sections; one entry per `- ` bullet.
- */
-export function extractMemoryEntries(memoryMd: string): Array<{ type: string; content: string }> {
-  const entries: Array<{ type: string; content: string }> = [];
-  let currentSection: string | null = null;
-  for (const line of memoryMd.split('\n')) {
-    const stripped = line.trim();
-    if ((MEMORY_SECTIONS_FOR_MEMU as readonly string[]).includes(stripped.replace(/^## /, ''))) {
-      currentSection = stripped.replace(/^## /, '');
-      continue;
-    }
-    if (stripped.startsWith('## ')) {
-      currentSection = null;
-      continue;
-    }
-    if (currentSection !== null && stripped.startsWith('- ')) {
-      const content = stripped.slice(2).trim();
-      if (content.length > 0) {
-        entries.push({ type: currentSection, content });
-      }
-    }
-  }
-  return entries;
 }
 
 export function buildPhase1RunPrompt(inp: Phase1Input): string {

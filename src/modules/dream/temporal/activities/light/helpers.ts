@@ -3,16 +3,7 @@
  * Story 13.10.5 Q4 decomposition extracted these from the grouped
  * `light-dream.activities.ts` source.
  */
-import {
-  fileInfoTool,
-  grepTool,
-  listFilesTool,
-  memuCategoriesTool,
-  memuSearchTool,
-  readFileTool,
-  readFrontmatterTool,
-  type VaultToolDeps,
-} from '../../../agents/vault-tools';
+import { fileInfoTool, grepTool, listFilesTool, readFileTool, readFrontmatterTool, type VaultToolDeps } from '../../../agents/vault-tools';
 import type { ExtractionToolFactories } from '../../../agents/light-extraction.agent';
 import type { RecordToolFactories } from '../../../agents/light-record.agent';
 import type { SessionLogEntry } from '../../../agents/extraction-summary.schema';
@@ -36,8 +27,6 @@ export function buildExtractionToolFactories(deps: VaultToolDeps): ExtractionToo
     listFiles: (input) => listFilesTool(deps, input),
     fileInfo: (input) => fileInfoTool(deps, input),
     readFrontmatter: (input) => readFrontmatterTool(deps, input),
-    memuSearch: (input) => memuSearchTool(deps, input),
-    memuCategories: () => memuCategoriesTool(),
   };
 }
 
@@ -90,7 +79,7 @@ export function buildRecordRunPrompt(inp: RecordInput): string {
   lines.push(
     '',
     'Write the session block to dailys/. Use readFrontmatter(path) for reinforcement checks.',
-    'Use memuSearch(query) to find matching vault files for reinforcement.',
+    'Use grep(pattern) to find matching vault files for reinforcement.',
   );
   return lines.join('\n');
 }

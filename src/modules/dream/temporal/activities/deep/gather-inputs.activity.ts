@@ -1,9 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { Dream } from 'src/shared/domain/entities/dream.entity';
 import { DreamSchema } from 'src/shared/postgres/schema/dream.schema';
 import { DBConnections } from 'src/shared/postgres/utils/constaint';
@@ -17,7 +16,6 @@ export class GatherInputsActivity {
   private readonly logger = new Logger(GatherInputsActivity.name);
 
   constructor(
-    @Inject(MEMU_API) private readonly memuApi: IMemuApi,
     @InjectDataSource(DBConnections.INTERNAL) private readonly dataSource: DataSource,
     private readonly config: AppConfigService,
   ) {}
@@ -67,24 +65,10 @@ export class GatherInputsActivity {
       await safeWriteVault(vaultRoot, `.backups/dailys-${sourceDateIso}.bak`, dailyLog);
     }
 
-    let memuMemories: Array<Record<string, unknown>> = [];
-    try {
-      const result = await this.memuApi.retrieve(`deep-dream:${sourceDateIso}`);
-      memuMemories = result.memories.map((m) => ({ ...m })) as unknown as Array<Record<string, unknown>>;
-    } catch (err) {
-      this.logger.warn({
-        message: 'deep dream gather_inputs memu retrieve failed — continuing with empty list',
-        event: 'deepDream.gatherInputs.memuFailed',
-        dreamId,
-        error: (err as Error).message,
-      });
-    }
-
     this.logger.log({
       message: 'deep dream gather_inputs completed',
       event: 'deepDream.gatherInputs.completed',
       dreamId,
-      memuMemoriesCount: memuMemories.length,
       memoryMdLines: memoryMd.split('\n').length,
       dailyLogLines: dailyLog.split('\n').length,
       sourceDateIso,
@@ -92,7 +76,6 @@ export class GatherInputsActivity {
 
     return {
       dream_id: dreamId,
-      memu_memories: memuMemories,
       memory_md: memoryMd,
       daily_log: dailyLog,
       soul_md: soulMd,

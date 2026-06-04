@@ -4,7 +4,6 @@ import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain/repositories/dream-phase.repository.interface';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { buildPhase2Agent } from '../../../agents/deep-phase2.agent';
 import { type VaultToolDeps } from '../../../agents/vault-tools';
 import { REMSleepOutputSchema, type REMSleepOutput } from '../../../agents/rem-sleep-output.schema';
@@ -23,7 +22,6 @@ export class RunPhase2RemSleepActivity {
   private readonly logger = new Logger(RunPhase2RemSleepActivity.name);
 
   constructor(
-    @Inject(MEMU_API) private readonly memuApi: IMemuApi,
     private readonly agentFactory: DeepAgentFactory,
     private readonly promptCache: PromptCacheService,
     @Inject(DREAM_PHASE_REPOSITORY) private readonly dreamPhaseRepo: IDreamPhaseRepository,
@@ -41,7 +39,7 @@ export class RunPhase2RemSleepActivity {
       const phase1Text = formatPhase1ForPhase2(inp.candidates_json, inp.scored_json);
       const vaultIndexText = formatVaultIndexes(vaultIndexes);
 
-      const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath, memuApi: this.memuApi };
+      const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath };
       const agent = buildPhase2Agent(this.agentFactory, {
         systemPrompt: this.promptCache.getPrompt('deep-dream-phase2-rem-sleep'),
         toolDeps,

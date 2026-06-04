@@ -4,7 +4,6 @@ import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain/repositories/dream-phase.repository.interface';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
 import { buildLightExtractionAgent, type DreamDeps } from '../../../agents/light-extraction.agent';
@@ -18,7 +17,6 @@ export class RunExtractionActivity {
   private readonly logger = new Logger(RunExtractionActivity.name);
 
   constructor(
-    @Inject(MEMU_API) private readonly memuApi: IMemuApi,
     private readonly agentFactory: DeepAgentFactory,
     private readonly promptCache: PromptCacheService,
     @Inject(DREAM_PHASE_REPOSITORY) private readonly dreamPhaseRepo: IDreamPhaseRepository,
@@ -65,7 +63,7 @@ export class RunExtractionActivity {
       today_iso: todayIso,
     };
 
-    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath, memuApi: this.memuApi };
+    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath };
     const baseToolFactories = buildExtractionToolFactories(toolDeps);
 
     const agent = buildLightExtractionAgent(this.agentFactory, {

@@ -4,7 +4,6 @@ import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { AppConfigService } from 'src/shared/config/config.service';
 import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain/repositories/dream-phase.repository.interface';
-import { MEMU_API, IMemuApi } from 'src/shared/domain/apis/memu-api.interface';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
 import { buildPhase3Agent } from '../../../agents/deep-phase3.agent';
@@ -18,7 +17,6 @@ export class RunPhase3DeepSleepActivity {
   private readonly logger = new Logger(RunPhase3DeepSleepActivity.name);
 
   constructor(
-    @Inject(MEMU_API) private readonly memuApi: IMemuApi,
     private readonly agentFactory: DeepAgentFactory,
     private readonly promptCache: PromptCacheService,
     @Inject(DREAM_PHASE_REPOSITORY) private readonly dreamPhaseRepo: IDreamPhaseRepository,
@@ -29,11 +27,10 @@ export class RunPhase3DeepSleepActivity {
   async runPhase3DeepSleep(inp: Phase3Input): Promise<ConsolidationResult> {
     const startedAt = new Date();
     const vaultGuide = (await safeReadVault(this.config.vaultPath, '_guide.md')) ?? '';
-    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath, memuApi: this.memuApi };
+    const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath };
     const agent = buildPhase3Agent(this.agentFactory, {
       systemPrompt: this.promptCache.getPrompt('deep-dream-phase3-consolidate'),
       toolDeps,
-      memuMemories: inp.memu_memories,
       vaultRoot: this.config.vaultPath,
       usageLimits: { totalTokens: this.config.deepPhase3Limits.maxTokens, toolCalls: this.config.deepPhase3Limits.maxIterations },
     });

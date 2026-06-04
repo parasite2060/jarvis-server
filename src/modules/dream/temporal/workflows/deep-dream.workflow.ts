@@ -28,7 +28,6 @@
  *   - phase3Proxy  (15min, retries 2): runPhase3DeepSleep.
  *   - healthFixProxy (10min, retries 1 — Python uses 1 attempt only; loop is
  *     INSIDE the activity): runHealthFix.
- *   - alignMemuProxy (5min, retries 3): alignMemu.
  *
  * # Activity ordering (per AC #3 — mirrors Python lines 91-332)
  *   1. gatherInputs
@@ -43,7 +42,6 @@
  *   10. (conditional) runHealthFix → flip is_partial on 'incomplete'
  *   11. writeFiles
  *   12. (conditional) commitAndPr if files_modified.length > 0
- *   13. alignMemu
  *   14. invalidateContextCache
  *   15. markDeepDreamOutcome
  *   16. return DeepDreamResult
@@ -77,7 +75,6 @@ export interface DeepDreamResult {
 
 export interface GatherInputsResult {
   dream_id: number;
-  memu_memories: Array<Record<string, unknown>>;
   memory_md: string;
   daily_log: string;
   soul_md: string;
@@ -86,7 +83,6 @@ export interface GatherInputsResult {
 
 export interface Phase1Input {
   dream_id: number;
-  memu_memories: Array<Record<string, unknown>>;
   memory_md: string;
   daily_log: string;
   soul_md: string;
@@ -122,7 +118,6 @@ export interface REMSleepResult {
 export interface Phase3Input {
   dream_id: number;
   source_date_iso: string;
-  memu_memories: Array<Record<string, unknown>>;
   memory_md: string;
   daily_log: string;
   soul_md: string;
@@ -196,14 +191,6 @@ export interface CommitAndPRResult {
   git_pr_status: string;
 }
 
-export interface AlignMemuInput {
-  dream_id: number;
-  memory_md: string;
-  source_date_iso: string;
-  /** `dream-{dream_id}` — the file-based idempotency key. */
-  idempotency_key: string;
-}
-
 export interface InvalidateCacheInput {
   dream_id: number;
 }
@@ -270,14 +257,6 @@ const healthFixProxy = proxyActivities<HealthFixActs>({
   retry: { initialInterval: '5s', backoffCoefficient: 2, maximumInterval: '60s', maximumAttempts: 1 },
 });
 
-interface AlignMemuActs {
-  'deep.align_memu'(inp: AlignMemuInput): Promise<void>;
-}
-const alignMemuProxy = proxyActivities<AlignMemuActs>({
-  startToCloseTimeout: '5 minutes',
-  retry: { initialInterval: '5s', backoffCoefficient: 2, maximumInterval: '60s', maximumAttempts: 3 },
-});
-
 // Local TS-idiomatic camelCase aliases — keep workflow body readable.
 const acts = {
   gatherInputs: quickProxy['deep.gather_inputs'],
@@ -291,7 +270,6 @@ const acts = {
   runPhase2RemSleep: phase2Proxy['deep.phase2_rem_sleep'],
   runPhase3DeepSleep: phase3Proxy['deep.phase3_deep_sleep'],
   runHealthFix: healthFixProxy['deep.health_fix'],
-  alignMemu: alignMemuProxy['deep.align_memu'],
 };
 
 // ---------------------------------------------------------------------------
@@ -369,7 +347,7 @@ export async function deepDreamWorkflow(payload: DeepDreamPayload): Promise<Deep
   const dreamId = gather.dream_id;
 
   // Step 2: skip-guard 1 — empty inputs.
-  if (gather.memu_memories.length === 0 && gather.daily_log.trim() === '') {
+  if (gather.daily_log.trim() === '') {
     log.info('deepDream.workflow.skipped', { dream_id: dreamId, reason: 'emptyInputs' });
     await acts.markDeepDreamOutcome({ dream_id: dreamId, outcome: 'skipped' });
     return { dream_id: dreamId, status: 'skipped', pr_url: null };
@@ -378,7 +356,6 @@ export async function deepDreamWorkflow(payload: DeepDreamPayload): Promise<Deep
   // Step 3: Phase 1 — Light Sleep.
   const phase1: LightSleepResult = await acts.runPhase1LightSleep({
     dream_id: dreamId,
-    memu_memories: gather.memu_memories,
     memory_md: gather.memory_md,
     daily_log: gather.daily_log,
     soul_md: gather.soul_md,
@@ -415,7 +392,6 @@ export async function deepDreamWorkflow(payload: DeepDreamPayload): Promise<Deep
   const consolidation: ConsolidationResult = await acts.runPhase3DeepSleep({
     dream_id: dreamId,
     source_date_iso: gather.source_date_iso,
-    memu_memories: gather.memu_memories,
     memory_md: gather.memory_md,
     daily_log: gather.daily_log,
     soul_md: gather.soul_md,
@@ -465,14 +441,6 @@ export async function deepDreamWorkflow(payload: DeepDreamPayload): Promise<Deep
     });
     prUrl = commitResult.git_pr_url.length > 0 ? commitResult.git_pr_url : null;
   }
-
-  // Step 13: align MemU — always runs.
-  await acts.alignMemu({
-    dream_id: dreamId,
-    memory_md: typeof consolidation.consolidation_json['memory_md'] === 'string' ? consolidation.consolidation_json['memory_md'] : '',
-    source_date_iso: gather.source_date_iso,
-    idempotency_key: `dream-${dreamId}`,
-  });
 
   // Step 14: invalidate context cache — always runs.
   await acts.invalidateContextCache({ dream_id: dreamId });
