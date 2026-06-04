@@ -35,7 +35,6 @@ const baselineEnv: Record<string, string> = {
   AZURE_OPENAI_API_DEPLOYMENT_NAME: 'gpt-test',
   AZURE_OPENAI_API_VERSION: '2025-05-01-preview',
   AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: 'text-embedding-3-large',
-  MEMU_API_URL: 'http://localhost:8080',
 };
 
 describe('config validation schema (boot-failure on missing env)', () => {
@@ -96,18 +95,6 @@ describe('config validation schema (boot-failure on missing env)', () => {
     // Assert
     expect(error).toBeDefined();
     expect(error!.message).toMatch(/VAULT_GIT_REMOTE/);
-  });
-
-  it('should reject when MEMU_API_URL is not a URI', () => {
-    // Arrange
-    const env = { ...baselineEnv, MEMU_API_URL: 'not-a-uri' };
-
-    // Act
-    const { error } = configValidationSchema.validate(env, { abortEarly: false });
-
-    // Assert
-    expect(error).toBeDefined();
-    expect(error!.message).toMatch(/MEMU_API_URL/);
   });
 
   it('should default phase budgets when not set', () => {

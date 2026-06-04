@@ -11,7 +11,6 @@ import { VaultFileNotFoundError } from 'src/shared/common/exceptions/vault-file-
 import { VaultPathTraversalError } from 'src/shared/common/exceptions/vault-path-traversal.error';
 import { VaultEndpointFileNotFoundError } from 'src/shared/common/exceptions/vault-endpoint-file-not-found.error';
 import { VaultEndpointPathTraversalError } from 'src/shared/common/exceptions/vault-endpoint-path-traversal.error';
-import { MemuError, MemuUnavailableError } from 'src/shared/api/errors/memu.errors';
 
 /**
  * Validate exception filter.
@@ -112,40 +111,6 @@ export class VaultPathTraversalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const body = HttpApiResponse.failed(exception.code, exception.message);
     this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.FORBIDDEN);
-    return null;
-  }
-}
-
-/**
- * MemU upstream error (Story 13.4 / AC #3 / AC #4). Preserves upstream HTTP status —
- * mirrors Python `_handle_memu_error` (memory.py:142-149).
- */
-@Catch(MemuError)
-export class MemuErrorExceptionFilter implements ExceptionFilter {
-  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
-
-  catch(exception: MemuError, host: ArgumentsHost): any {
-    if (host.getType() !== 'http') return null;
-    const ctx = host.switchToHttp();
-    const body = HttpApiResponse.failed(ErrorCode.MEMU_ERROR, exception.detail);
-    this.httpAdapter.reply(ctx.getResponse(), body, exception.statusCode);
-    return null;
-  }
-}
-
-/**
- * MemU unavailable (transport / 5xx exhausted). Always HTTP 502 — matches Python
- * `_handle_memu_unavailable` (memory.py:152-159).
- */
-@Catch(MemuUnavailableError)
-export class MemuUnavailableExceptionFilter implements ExceptionFilter {
-  constructor(private readonly httpAdapter: AbstractHttpAdapter) {}
-
-  catch(exception: MemuUnavailableError, host: ArgumentsHost): any {
-    if (host.getType() !== 'http') return null;
-    const ctx = host.switchToHttp();
-    const body = HttpApiResponse.failed(ErrorCode.MEMU_UNAVAILABLE, exception.detail);
-    this.httpAdapter.reply(ctx.getResponse(), body, HttpStatus.BAD_GATEWAY);
     return null;
   }
 }
