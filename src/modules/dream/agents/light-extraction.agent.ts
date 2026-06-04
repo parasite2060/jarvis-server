@@ -233,7 +233,7 @@ function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTo
     new DynamicStructuredTool({
       name: 'readFile',
       description: 'Read a vault file. Optional offset/limit for line ranges.',
-      schema: z.object({ path: z.string(), offset: z.number().int().nonnegative().optional(), limit: z.number().int().positive().optional() }),
+      schema: z.object({ path: z.string(), offset: z.number().int().nonnegative().nullable(), limit: z.number().int().positive().nullable() }),
       func: async (input) => factories.readFile(input),
     }),
   );
@@ -242,7 +242,7 @@ function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTo
     new DynamicStructuredTool({
       name: 'searchVault',
       description: 'Recursively search vault files for a regex pattern. Capped at 100 matches.',
-      schema: z.object({ pattern: z.string(), path: z.string().optional() }),
+      schema: z.object({ pattern: z.string(), path: z.string().nullable() }),
       func: async (input) => factories.searchVault(input),
     }),
   );
@@ -251,7 +251,7 @@ function buildBaseTools(factories: ExtractionToolFactories): DynamicStructuredTo
     new DynamicStructuredTool({
       name: 'listFiles',
       description: 'List the contents of a vault directory.',
-      schema: z.object({ path: z.string().optional() }),
+      schema: z.object({ path: z.string().nullable() }),
       func: async (input) => factories.listFiles(input),
     }),
   );
