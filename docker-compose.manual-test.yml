@@ -5,7 +5,7 @@
 #   - Real LLM via OpenAI-compatible endpoint (JARVIS_MANUAL_OPENAI_*)
 #   - Real ai-memory GitHub repo (JARVIS_MANUAL_GH_REPO, cloned by vault-init)
 #   - Real Temporal (start-dev mode, namespace=jarvis)
-#   - Real MemU + Postgres 17 pgvector + Redis
+#   - Postgres 17 pgvector + Redis
 #
 # Required env vars (set in .env.manual-test or export from shell):
 #   JARVIS_MANUAL_GH_REPO      — ai-memory repo URL (HTTPS or SSH)
@@ -89,37 +89,6 @@ services:
       retries: 12
       start_period: 20s
 
-  # ── MemU (semantic memory — GHCR production image) ───────────────────────
-  memu-server:
-    image: ghcr.io/parasite2060/memu-server:latest
-    platform: linux/amd64
-    restart: unless-stopped
-    ports:
-      - "18001:8000"   # http://localhost:18001
-    environment:
-      # MemU uses the same LLM endpoint for embeddings
-      - OPENAI_API_KEY=${JARVIS_MANUAL_OPENAI_TOKEN}
-      - OPENAI_BASE_URL=${JARVIS_MANUAL_OPENAI_URL}
-      - EMBEDDING_BASE_URL=${JARVIS_MANUAL_OPENAI_URL}
-      - EMBEDDING_MODEL=${JARVIS_MANUAL_OPENAI_MODEL}
-      - DEFAULT_LLM_MODEL=${JARVIS_MANUAL_OPENAI_MODEL}
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-manual-test-secret}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=jarvis_manual
-    depends_on:
-      postgres:
-        condition: service_healthy
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ['CMD', 'python3', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:8000/")']
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 30s
-
   # ── jarvis-server-ts (built from source) ─────────────────────────────────
   jarvis-server:
     build:
@@ -177,11 +146,6 @@ services:
       # Prompts (must match the volume mount below)
       PROMPTS_PATH: /app/prompts
 
-      # MemU
-      MEMU_API_URL: http://memu-server:8000
-      MEMU_USER_ID: ${MEMU_USER_ID:-jarvis}
-      MEMU_AGENT_ID: ${MEMU_AGENT_ID:-claude}
-
       # Phase budgets (same as production homelab defaults)
       JARVIS_LIGHT_EXTRACTION_MAX_TOKENS: "1500000"
       JARVIS_LIGHT_EXTRACTION_MAX_ITERATIONS: "300"
@@ -207,8 +171,6 @@ services:
       redis:
         condition: service_healthy
       temporal:
-        condition: service_healthy
-      memu-server:
         condition: service_healthy
     volumes:
       - vault_data:/app/ai-memory

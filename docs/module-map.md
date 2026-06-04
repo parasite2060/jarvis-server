@@ -144,7 +144,7 @@ src/modules/
 │   │       │   ├── run-health-check.activity.ts
 │   │       │   ├── run-health-fix.activity.ts
 │   │       │   ├── write-files.activity.ts
-│   │       │   ├── align-memu.activity.ts
+│   │       │   ├── align-memu.activity.ts                   ◄── REMOVED with MemU (2026-06-04)
 │   │       │   ├── commit-and-pr.activity.ts
 │   │       │   ├── invalidate-context-cache.activity.ts
 │   │       │   ├── mark-deep-dream-outcome.activity.ts       ◄── TS-port enhancement (Story 13.11 Q13); §1 amended 2026-05-08 by TanNT (Q8)
@@ -189,7 +189,7 @@ src/modules/
 | Module | Why it exists | Bounded context |
 |---|---|---|
 | `conversation` | Owns transcript ingestion + position tracking. Single producer of `ConversationIngestedEvent`. | Inbound writes from the plugin. |
-| `memory` | Owns the MemU proxy + the simple read endpoints (SOUL/IDENTITY/MEMORY raw). Calls `vault` via `GetVaultFileCommand` (CommandBus) for SOUL/IDENTITY/MEMORY raw reads. | Semantic search facade. |
+| `memory` | Owns the simple read endpoints (SOUL/IDENTITY/MEMORY raw). Calls `vault` via `GetVaultFileCommand` (CommandBus) for SOUL/IDENTITY/MEMORY raw reads. (MemU proxy / semantic search removed 2026-06-04.) | Raw vault reads. |
 | `context` | Owns the assembled session-start payload + its cache + the cache-invalidation command. | Read-side composition. |
 | `vault` | Owns vault file I/O (manifest + read + write). Wraps `VAULT_PATH` filesystem access. | Filesystem boundary. |
 | `dream` | Owns dream pipelines (light/deep/weekly) — Temporal workflows + activities + deepagents agents + scoring. | Async processing core. |
@@ -266,11 +266,10 @@ External service contracts. Implementations in `src/shared/api/impl/`; wired in 
 
 | Token | Interface | Implementation |
 |---|---|---|
-| `MEMU_API` | `IMemuApi` (search, memorize) | `MemuApiService` (`@nestjs/axios` HttpService) |
 | `AZURE_OPENAI_API` | `IAzureOpenAIApi` (rare direct usage; usually goes through DeepAgentFactory) | `AzureOpenAIApiService` |
 | `GITHUB_API` | `IGitHubApi` (`createPullRequest`, `findPullRequestByBranch`) | `GitHubApiService` (gh CLI subprocess wrapper) — could be implemented via Octokit later |
 
-`MEMU_API`, `AZURE_OPENAI_API`, `GITHUB_API` are Symbol tokens. Use cases inject the interface, never the impl.
+`AZURE_OPENAI_API`, `GITHUB_API` are Symbol tokens. Use cases inject the interface, never the impl. (`MEMU_API` / `MemuApiService` removed with MemU 2026-06-04.)
 
 ---
 
@@ -316,7 +315,7 @@ Each Python file in `components/jarvis-server/app/` maps to one or more TS targe
 | `app/services/git_ops.py` | `src/shared/git/git-ops.service.ts` | Shared service |
 | `app/services/memory_files.py` | split: simple reads → `src/modules/memory/usecases/get-soul.usecase.ts` + `get-identity.usecase.ts`; vault writes → `src/modules/vault/usecases/write-vault-file.usecase.ts` | Use cases |
 | `app/services/memory_updater.py` | absorbed into `src/modules/dream/temporal/activities/deep/write-files.activity.ts` | Activity |
-| `app/services/memu_client.py` | `src/shared/api/impl/memu-api.service.ts` | Shared API impl |
+| `app/services/memu_client.py` | ~~`src/shared/api/impl/memu-api.service.ts`~~ (removed with MemU 2026-06-04) | Shared API impl |
 | `app/services/secret_scrubber.py` | `src/shared/secret-redaction/secret-scrubber.service.ts` | Shared service |
 | `app/services/transcript_parser.py` | absorbed into `src/modules/conversation/usecases/ingest-transcript.usecase.ts` | Use case |
 | `app/services/transcript_shape.py` | absorbed into `ingest-transcript.usecase.ts` | Use case |
@@ -374,7 +373,6 @@ This is the heart of the structure-review checkpoint. Per [`../../../../_bmad-ou
                                               └────────┘
                                                   │  ↓ activities (in-process, NestJS DI):
                                                   │   ├─► WriteVaultFileCommand → vault module handler
-                                                  │   ├─► uses MemuApi (shared, direct injection — OK)
                                                   │   ├─► uses GitOpsService (shared, direct injection — OK)
                                                   │   └─► uses DeepAgentFactory (shared, direct injection — OK)
                                                   ↓
@@ -504,7 +502,6 @@ These look like cross-module but aren't — they're either intra-module or share
 
 | Looks like | Is actually | Allowed? |
 |---|---|---|
-| Activity injects `MemuApiService` | `src/shared/api/impl/` injection | ✅ Direct injection |
 | Activity injects `GitOpsService` | `src/shared/git/` injection | ✅ Direct injection |
 | Activity injects `DeepAgentFactory` | `src/shared/agents/` injection | ✅ Direct injection |
 | Activity injects `SecretScrubberService` | `src/shared/secret-redaction/` injection | ✅ Direct injection |
@@ -543,9 +540,9 @@ Per app-design §7.2:
 | Repository interface | `{noun}.repository.interface.ts` | `conversation.repository.interface.ts` |
 | Repository impl | `{noun}.repository.impl.ts` | `conversation.repository.impl.ts` |
 | Repository token | `UPPER_SNAKE` | `CONVERSATION_REPOSITORY` |
-| API interface | `{name}.api.interface.ts` | `memu.api.interface.ts` |
-| API impl | `{name}-api.service.ts` | `memu-api.service.ts` |
-| API token | `UPPER_SNAKE` | `MEMU_API` |
+| API interface | `{name}.api.interface.ts` | `github.api.interface.ts` |
+| API impl | `{name}-api.service.ts` | `github-api.service.ts` |
+| API token | `UPPER_SNAKE` | `GITHUB_API` |
 | Activity file | `{action}-{noun}.activity.ts` | `load-transcript.activity.ts`, `run-phase1-light-sleep.activity.ts` |
 | Activity class | `{Action}{Noun}Activity` (or grouped service `LightDreamActivities`) | `LoadTranscriptActivity` OR `LightDreamActivities.loadTranscript()` (grouped is preferred — fewer files, one DI parent per pipeline) |
 | Workflow file | `{name}.workflow.ts` | `light-dream.workflow.ts` |
@@ -554,7 +551,7 @@ Per app-design §7.2:
 | Test (unit) | `{name}.spec.ts` | `trigger-deep-dream.usecase.spec.ts` |
 | Test (e2e) | `{feature}.e2e-spec.ts` | `light-dream.e2e-spec.ts` |
 
-> **Decision needed from TanNT (Review Note):** Grouped activity service (`LightDreamActivities` with N methods) vs. one-class-per-activity (`LoadTranscriptActivity`, `RunExtractionActivity`, …). Recommendation: **grouped service per pipeline** (`LightDreamActivities`, `DeepDreamActivities`, `WeeklyReviewActivities`). Reasoning: shared dependencies (repositories, MemU, agent factory) are injected once; the activity collector groups them under one provider; matches the Python implementation's organisation.
+> **Decision needed from TanNT (Review Note):** Grouped activity service (`LightDreamActivities` with N methods) vs. one-class-per-activity (`LoadTranscriptActivity`, `RunExtractionActivity`, …). Recommendation: **grouped service per pipeline** (`LightDreamActivities`, `DeepDreamActivities`, `WeeklyReviewActivities`). Reasoning: shared dependencies (repositories, agent factory) are injected once; the activity collector groups them under one provider; matches the Python implementation's organisation.
 
 ---
 
