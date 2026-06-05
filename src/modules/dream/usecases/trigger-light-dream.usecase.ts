@@ -27,11 +27,14 @@ export class TriggerLightDreamUseCase {
   ) {}
 
   async execute(input: TriggerLightDreamInput): Promise<{ dreamId: number }> {
-    // Story 13.22 AC #1: create DB record before signaling
+    // Story 13.22 AC #1: create DB record before signaling.
+    // `trigger` is NOT NULL in the dreams table; the conversation-ingest path
+    // does not supply one, so default to 'session'. Without this the INSERT
+    // violates the not-null constraint and the light dream never runs.
     const dream = await this.dreamRepo.createDream({
       type: 'light',
       status: 'queued',
-      trigger: input.trigger,
+      trigger: input.trigger ?? 'session',
       transcriptId: input.sessionId === 'manual' ? null : input.transcriptId,
     });
 
