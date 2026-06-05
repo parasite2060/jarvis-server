@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpAdapterHost, Reflector } from '@nestjs/core';
 import { ClsService } from 'nestjs-cls';
 import { DataSource } from 'typeorm';
@@ -12,6 +13,7 @@ import { Worker, NativeConnection } from '@temporalio/worker';
 import { DBConnections } from '../../src/shared/postgres/utils/constaint';
 import { AppModule } from '../../src/app.module';
 import { CustomLoggerService } from '../../src/shared/logger/services/custom-logger.service';
+import { configureBodyParsers } from '../../src/utils/config/body-parser.config';
 import { DefaultValidationOptions } from '../../src/utils/config/validation.config';
 import {
   UnknownExceptionsFilter,
@@ -33,7 +35,7 @@ import { TemporalWorkerService } from '../../src/shared/temporal/temporal-worker
  * Kafka and MongoDB removed — Jarvis is Postgres-only.
  */
 export class E2ETestSetup {
-  public app!: INestApplication;
+  public app!: NestExpressApplication;
   public httpServer: any;
   public dataSource!: DataSource;
 
@@ -46,7 +48,7 @@ export class E2ETestSetup {
       imports: [AppModule],
     }).compile();
 
-    this.app = moduleFixture.createNestApplication({ bufferLogs: true });
+    this.app = moduleFixture.createNestApplication<NestExpressApplication>({ bufferLogs: true });
 
     const { httpAdapter } = this.app.get(HttpAdapterHost);
     const cls = this.app.get(ClsService);
@@ -67,6 +69,7 @@ export class E2ETestSetup {
 
     this.app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
 
+    configureBodyParsers(this.app);
     await this.app.init();
 
     this.httpServer = this.app.getHttpServer();

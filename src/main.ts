@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import * as express from 'express';
 import { INestApplication, Logger, LoggerService, ValidationPipe } from '@nestjs/common';
 import { HttpAdapterHost, NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -18,6 +17,7 @@ import { CustomLoggerService } from './shared/logger/services/custom-logger.serv
 import { ClsService } from 'nestjs-cls';
 import { HttpRequestLoggingInterceptor } from './shared/logger/interceptors/http-request-logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { configureBodyParsers } from './utils/config/body-parser.config';
 import { DefaultValidationOptions } from './utils/config/validation.config';
 import { AppConfigService } from './shared/config/config.service';
 import { TemporalClientService } from './shared/temporal/temporal-client.service';
@@ -56,7 +56,7 @@ async function bootstrap() {
   }
 }
 
-function configure(app: INestApplication) {
+function configure(app: NestExpressApplication) {
   const { httpAdapter } = app.get(HttpAdapterHost);
   const cls = app.get(ClsService);
   const reflector = app.get(Reflector);
@@ -78,9 +78,8 @@ function configure(app: INestApplication) {
 
   app.useGlobalPipes(new ValidationPipe(DefaultValidationOptions));
 
-  // Story 13.20 — enforce max body size to prevent 10MB payload crash (SEC-03)
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Story 13.20 — enforce shared body-parser limit (see body-parser.config.ts)
+  configureBodyParsers(app);
 
   app.enableShutdownHooks();
 }
