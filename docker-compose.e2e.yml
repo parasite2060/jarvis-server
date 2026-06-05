@@ -64,9 +64,11 @@ services:
       start_period: 15s
 
   api-mock:
-    build:
-      context: ../api-mock-server
-      dockerfile: Dockerfile
+    # Prebuilt image published by parasite2060/api-mock-server CI (public on GHCR).
+    # For local dev against uncommitted api-mock changes, override with a build:
+    # context via docker-compose.override.yml.
+    image: ghcr.io/parasite2060/api-mock-server:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "11435:11435"
