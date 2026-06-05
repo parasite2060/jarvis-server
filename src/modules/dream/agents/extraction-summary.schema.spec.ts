@@ -25,7 +25,7 @@ describe('extraction-summary.schema', () => {
     });
 
     it('rejects malformed source_date', () => {
-      expect(() => MemoryItemSchema.parse({ content: 'x', vault_target: 'memory', source_date: 'not-iso' })).toThrow();
+      expect(() => MemoryItemSchema.parse({ content: 'x', reasoning: null, vault_target: 'memory', source_date: 'not-iso' })).toThrow();
     });
 
     it('allows null reasoning', () => {
@@ -45,11 +45,24 @@ describe('extraction-summary.schema', () => {
         context: 'test',
         key_exchanges: ['ex'],
         decisions_made: ['d'],
-        memories: [{ content: 'x', vault_target: 'memory', source_date: '2026-01-01' }],
+        memories: [{ content: 'x', reasoning: null, vault_target: 'memory', source_date: '2026-01-01' }],
       });
       expect(log.key_exchanges).toEqual(['ex']);
       expect(log.decisions_made).toEqual(['d']);
       expect(log.memories[0]?.vault_target).toBe('memory');
+    });
+
+    it('accepts fixed-shape failed_lessons / concepts / connections (Azure strict: no open maps)', () => {
+      // These were `z.record(string, string)` which renders `propertyNames`,
+      // rejected by Azure gpt-5.x strict mode. They are now fixed-shape objects.
+      const log = SessionLogEntrySchema.parse({
+        failed_lessons: [{ lesson: 'tried X', outcome: 'failed', failure_reason: 'Y broke' }],
+        concepts: [{ name: 'Clean Arch', description: 'separation' }],
+        connections: [{ concept_a: 'A', concept_b: 'B', relationship: 'A supports B', relationship_type: 'supports' }],
+      });
+      expect(log.failed_lessons[0]?.failure_reason).toBe('Y broke');
+      expect(log.concepts[0]?.name).toBe('Clean Arch');
+      expect(log.connections[0]?.relationship_type).toBe('supports');
     });
   });
 

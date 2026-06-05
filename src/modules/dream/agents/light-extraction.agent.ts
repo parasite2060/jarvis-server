@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { DeepAgentFactory, type DeepAgentFactoryAgent, type DeepAgentFactoryUsageLimits } from 'src/shared/agents/deep-agent.factory';
-import { ExtractionSummarySchema, type MemoryItem, type VaultTarget } from './extraction-summary.schema';
+import { ExtractionSummarySchema, type MemoryItem, type SessionLogEntry, type VaultTarget } from './extraction-summary.schema';
 
 /**
  * Agent dependency state — mirrors Python `DreamDeps`. Mutated by store
@@ -27,11 +27,11 @@ export interface DreamDeps {
   session_context: string;
   session_decisions: string[];
   session_lessons: string[];
-  session_failed_lessons: Array<Record<string, string>>;
+  session_failed_lessons: SessionLogEntry['failed_lessons'];
   session_action_items: string[];
   session_key_exchanges: string[];
-  session_concepts: Array<Record<string, string>>;
-  session_connections: Array<Record<string, string>>;
+  session_concepts: SessionLogEntry['concepts'];
+  session_connections: SessionLogEntry['connections'];
   memories: MemoryItem[];
   /** Set inside the activity body before run; used by `storeSessionMemory` for `MemoryItem.source_date`. */
   today_iso: string;
