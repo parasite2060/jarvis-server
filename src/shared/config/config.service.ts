@@ -16,6 +16,10 @@ export class AppConfigService {
     return this.configService.get<number>('PORT', 3000);
   }
 
+  get maxBodySize(): string {
+    return this.configService.get<string>('MAX_BODY_SIZE', '50mb');
+  }
+
   get nodeEnv(): NodeEnvironment {
     return this.configService.get<NodeEnvironment>('NODE_ENV', NodeEnvironment.DEVELOPMENT);
   }

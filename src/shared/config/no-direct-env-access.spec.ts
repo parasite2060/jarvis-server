@@ -29,6 +29,8 @@ const ALLOWLIST: string[] = [
   'shared/config/config.module.ts',
   // Bootstrap / process-level entry point.
   'main.ts',
+  // Body-parser configurator runs before DI; reads process.env directly by design.
+  'utils/config/body-parser.config.ts',
   // Boilerplate config factories — pre-Jarvis, scheduled for cleanup in 13.16.5.
   'utils/config/logger.config.ts',
   'shared/postgres/configs.ts',
