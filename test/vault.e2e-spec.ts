@@ -10,7 +10,7 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { ErrorCode } from '../src/utils/error.code';
 import { E2ETestSetup } from './setup/e2e-setup';
 
