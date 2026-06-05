@@ -112,7 +112,7 @@ jobs:
 
       - name: Test Reporter
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Unit Test Results
           path: report/unit/test-report.xml
