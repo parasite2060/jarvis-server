@@ -52,6 +52,22 @@ describe('ApiKeyGuard', () => {
       expect(target.canActivate(mockContext)).toBe(true);
     });
 
+    it('should allow access when valid API key via Authorization Bearer header', () => {
+      mockReflector.getAllAndOverride.mockReturnValue(false);
+      Object.defineProperty(mockConfig, 'apiKey', { get: () => CORRECT_KEY, configurable: true });
+      mockRequest.headers = { authorization: `Bearer ${CORRECT_KEY}` };
+
+      expect(target.canActivate(mockContext)).toBe(true);
+    });
+
+    it('should throw UnauthorizedException when Authorization Bearer key is wrong', () => {
+      mockReflector.getAllAndOverride.mockReturnValue(false);
+      Object.defineProperty(mockConfig, 'apiKey', { get: () => CORRECT_KEY, configurable: true });
+      mockRequest.headers = { authorization: 'Bearer wrong-key' };
+
+      expect(() => target.canActivate(mockContext)).toThrow(UnauthorizedException);
+    });
+
     it('should throw UnauthorizedException when no API key provided', () => {
       mockReflector.getAllAndOverride.mockReturnValue(false);
       Object.defineProperty(mockConfig, 'apiKey', { get: () => CORRECT_KEY, configurable: true });
