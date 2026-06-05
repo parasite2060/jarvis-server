@@ -254,13 +254,6 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
-
-      # The e2e compose builds the api-mock service from the sibling repo at
-      # ../api-mock-server (public). actions/checkout can't write outside the
-      # workspace, so clone it directly into the sibling path CI expects.
-      - name: Checkout api-mock-server (sibling build context)
-        run: git clone --depth 1 https://github.com/parasite2060/api-mock-server.git "${{ github.workspace }}/../api-mock-server"
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.x'
