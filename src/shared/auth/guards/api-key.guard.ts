@@ -1,7 +1,9 @@
 /**
  * ApiKeyGuard — Story 13.19.
  *
- * Validates the `API_KEY` request header against AppConfigService.apiKey.
+ * Validates the API key against AppConfigService.apiKey. Accepts the key via the
+ * `api_key` or `x-api-key` header, or as an `Authorization: Bearer <key>` header
+ * (the jarvis-claude-plugin hooks + MCP client send the latter).
  * Registered globally via APP_GUARD; /health is marked @Public() and bypasses
  * this guard via NestJS IS_PUBLIC_KEY metadata.
  */
@@ -25,8 +27,7 @@ export class ApiKeyGuard implements CanActivate {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const request = context.switchToHttp().getRequest<any>();
-    const rawHeader = request.headers['api_key'] ?? request.headers['x-api-key'] ?? '';
-    const providedKey = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    const providedKey = this.extractKey(request.headers);
 
     if (!providedKey) {
       this.logger.log({
@@ -45,5 +46,22 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Resolve the API key from (in priority order) the `api_key` header, the
+   * `x-api-key` header, or an `Authorization: Bearer <key>` header.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extractKey(headers: Record<string, any>): string {
+    const direct = headers['api_key'] ?? headers['x-api-key'];
+    if (direct) return Array.isArray(direct) ? direct[0] : direct;
+
+    const authRaw = headers['authorization'];
+    const auth = Array.isArray(authRaw) ? authRaw[0] : authRaw;
+    if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+      return auth.slice('Bearer '.length).trim();
+    }
+    return '';
   }
 }
