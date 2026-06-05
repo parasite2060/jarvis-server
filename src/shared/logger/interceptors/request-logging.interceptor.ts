@@ -4,15 +4,14 @@ import { ClsService } from 'nestjs-cls';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { isSilentRequestLog, isSilentResponseLog } from '../decorators/silent.decorator';
-import { RequestType } from '../internal/transport-detector';
 
 /**
  * Base interceptor that handles the common skeleton:
- * - Match the current transport via cls
+ * - Match the current request type via cls
  * - Apply silent-log decorators
  * - Tap into the response stream and dispatch to logRequest / logResponse / logError
  *
- * Subclasses implement the transport-specific shaping methods.
+ * Subclasses implement the request-specific shaping methods.
  */
 @Injectable()
 export abstract class RequestLoggingInterceptor implements NestInterceptor {
@@ -44,7 +43,7 @@ export abstract class RequestLoggingInterceptor implements NestInterceptor {
     );
   }
 
-  protected abstract get transport(): RequestType;
+  protected abstract get transport(): 'HTTP';
   protected abstract logRequest(context: ExecutionContext): void;
   protected abstract logResponse(body: unknown, context: ExecutionContext): void;
   protected abstract logError(error: Error, context: ExecutionContext): void;

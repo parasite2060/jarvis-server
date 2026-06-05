@@ -8,7 +8,7 @@
  * SDK (Story 13.8 owns that). The `SecretScrubberService` stays as the
  * pass-through stub.
  */
-import * as request from 'supertest';
+import request from 'supertest';
 import { E2ETestSetup } from './setup/e2e-setup';
 import { ErrorCode } from '../src/utils/error.code';
 import { TemporalClientService } from '../src/shared/temporal/temporal-client.service';
@@ -28,7 +28,7 @@ describe('Conversation E2E Tests', () => {
     // implementation to a no-op resolved promise — this keeps the soft-fail
     // path in IngestTranscriptUseCase from triggering and lets us assert
     // the call shape (kind + snake_case payload).
-    temporalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
+    temporalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue({ dreamId: 1 });
   }, 90000);
 
   afterAll(async () => {

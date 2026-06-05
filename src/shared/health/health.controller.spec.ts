@@ -8,6 +8,7 @@ import { HealthController } from './health.controller';
 import { RedisHealthIndicator, RedisToken } from '@nestjs-redis/kit';
 import { DBConnections } from '../postgres/utils/constaint';
 import { TemporalHealthIndicator } from './indicators/temporal.indicator';
+import { VaultSyncHealthIndicator } from './indicators/vault-sync.indicator';
 
 describe('HealthController', () => {
   let target: HealthController;
@@ -49,6 +50,10 @@ describe('HealthController', () => {
         {
           provide: TemporalHealthIndicator,
           useValue: mockTemporalIndicator,
+        },
+        {
+          provide: VaultSyncHealthIndicator,
+          useValue: createMock<VaultSyncHealthIndicator>(),
         },
       ],
       controllers: [HealthController],

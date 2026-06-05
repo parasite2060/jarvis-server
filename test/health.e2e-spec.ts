@@ -29,7 +29,7 @@ import {
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 import { getDataSourceToken, TypeOrmModule } from '@nestjs/typeorm';
-import * as request from 'supertest';
+import request from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { AppConfigModule } from '../src/shared/config/config.module';

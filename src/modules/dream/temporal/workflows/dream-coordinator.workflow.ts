@@ -98,20 +98,20 @@ export async function dreamCoordinatorWorkflow(): Promise<void> {
 
 async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void> {
   const cfg = KIND_CONFIG[req.kind];
-  const idValue = req.payload[cfg.idKey];
-  if (typeof idValue !== 'string' || idValue.length === 0) {
-    // Mirrors Python's ApplicationError on missing key. Caught by the
-    // swallow below so a malformed payload doesn't block the loop.
-    throw new Error(`coordinator: missing or non-string ${cfg.idKey} in ${req.kind} payload`);
-  }
-  const childId = `${req.kind}-${idValue}`;
   // Child workflow-level retry policy: do NOT retry the whole child workflow
   // on failure. Child workflows manage their own per-activity RetryPolicies
   // (Stories 13.10–13.12). If the child workflow itself fails (e.g. all
-  // activity retries exhausted), the coordinator swallows the error and
-  // moves on to the next queued signal. Retrying the child workflow here
-  // would stall the coordinator loop indefinitely.
+  // activity retries exhausted) OR the payload is malformed, the coordinator
+  // swallows the error and moves on to the next queued signal. The validation
+  // throw lives INSIDE this try so a malformed payload doesn't block the loop —
+  // the single-active-dream invariant must never be terminated by a bad signal.
   try {
+    const idValue = req.payload[cfg.idKey];
+    if (typeof idValue !== 'string' || idValue.length === 0) {
+      // Mirrors Python's ApplicationError on missing key.
+      throw new Error(`coordinator: missing or non-string ${cfg.idKey} in ${req.kind} payload`);
+    }
+    const childId = `${req.kind}-${idValue}`;
     await executeChild(cfg.workflowType, {
       workflowId: childId,
       taskQueue,
@@ -123,6 +123,6 @@ async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void
     // This is the single-active-dream invariant's escape hatch: a failed child
     // must not terminate the coordinator loop, or subsequent dreams get
     // WorkflowNotFoundError on signal.
-    log.warn(`coordinator.dispatchChild: child ${childId} failed, swallowing:`, { error: String(err) });
+    log.warn(`coordinator.dispatchChild: ${req.kind} dream failed, swallowing:`, { error: String(err) });
   }
 }

@@ -9,7 +9,7 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { E2ETestSetup } from './setup/e2e-setup';
 import { ErrorCode } from '../src/utils/error.code';
 
