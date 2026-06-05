@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [variant/clean-architecture-with-node, variant/clean-architecture-with-bun]
+    branches: [main]
   pull_request:
-    branches: [variant/clean-architecture-with-node, variant/clean-architecture-with-bun]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
