@@ -16,7 +16,7 @@ import { Controller, Get, INestApplication, Logger, Module, ValidationPipe } fro
 import { HttpAdapterHost, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { ClsService } from 'nestjs-cls';
-import * as request from 'supertest';
+import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { CustomLoggerService } from '../src/shared/logger/services/custom-logger.service';

@@ -14,7 +14,7 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { E2ETestSetup } from '../setup/e2e-setup';
 import { TemporalClientService } from '../../src/shared/temporal/temporal-client.service';
 import { ApiMockHelper } from '../helpers';
@@ -48,7 +48,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
     setup = new E2ETestSetup();
     await setup.init();
     const temporal = setup.app.get(TemporalClientService);
-    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
+    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue({ dreamId: 1 });
   }, 90_000);
 
   afterAll(async () => {

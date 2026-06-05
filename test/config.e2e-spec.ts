@@ -12,7 +12,7 @@
  *   (e) PATCH /config — maxMemoryLines out of range → 400
  *   (f) GET /config — weeklyReviewCron included (Python bug fix from Story 13.13)
  */
-import * as request from 'supertest';
+import request from 'supertest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { E2ETestSetup } from './setup/e2e-setup';

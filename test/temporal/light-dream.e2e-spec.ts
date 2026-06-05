@@ -11,7 +11,7 @@
  *
  * Run: `bun run e2e:infra:up && bun run test:e2e -- --testPathPattern="light-dream.e2e"`
  */
-import * as request from 'supertest';
+import request from 'supertest';
 import { E2ETestSetup } from '../setup/e2e-setup';
 import { TemporalClientService } from '../../src/shared/temporal/temporal-client.service';
 import { ApiMockHelper } from '../helpers';
@@ -28,7 +28,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
     setup = new E2ETestSetup();
     await setup.init();
     const temporal = setup.app.get(TemporalClientService);
-    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
+    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue({ dreamId: 1 });
   }, 90_000);
 
   afterAll(async () => {

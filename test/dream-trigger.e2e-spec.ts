@@ -8,7 +8,7 @@
  * Q8 SM pick: reuse 13.13 e2e fixtures (E2ETestSetup already boots the full
  * AppModule including DreamModule). signalCoordinator spy captures call shape.
  */
-import * as request from 'supertest';
+import request from 'supertest';
 import { E2ETestSetup } from './setup/e2e-setup';
 import { ErrorCode } from '../src/utils/error.code';
 import { TemporalClientService } from '../src/shared/temporal/temporal-client.service';
@@ -25,7 +25,7 @@ describe('Dream Trigger E2E', () => {
     const temporal = setup.app.get(TemporalClientService);
     // Stub: real Temporalite not available in e2e infra. Stub the SDK call
     // so we can assert the call shape without a live cluster.
-    temporalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
+    temporalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue({ dreamId: 1 });
   }, 90000);
 
   afterAll(async () => {
