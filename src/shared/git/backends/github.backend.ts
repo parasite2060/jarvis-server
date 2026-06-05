@@ -38,7 +38,7 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
   async pullLatestMain(): Promise<void> {
     await this.git.checkout('main');
     try {
-      await this.git.pull('origin', 'main', { '--ff-only': null });
+      await this.git.pull(await this.authenticatedRemoteUrl(), 'main', { '--ff-only': null });
     } catch (err) {
       if (this.isNonFastForward(err)) {
         throw new InternalException(ErrorCode.GIT_OPS_PULL_NON_FF, `pull --ff-only failed for main: local diverged from origin/main`);
@@ -89,8 +89,9 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
   }
 
   async push(branch: string): Promise<void> {
+    const remote = await this.authenticatedRemoteUrl();
     try {
-      await this.git.push('origin', branch, { '-u': null });
+      await this.git.push(remote, branch, { '-u': null });
       this.logger.log({ message: 'github backend: push completed', event: 'backend.github.push', branch });
     } catch (err) {
       if (!this.isNonFastForward(err)) {
@@ -98,9 +99,22 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         throw err;
       }
       await this.recoverFromStaleLocal(branch);
-      await this.git.push('origin', branch, { '-u': null });
+      await this.git.push(remote, branch, { '-u': null });
       this.logger.log({ message: 'github backend: push recovered after rebase', event: 'backend.github.push.recovered', branch });
     }
+  }
+
+  /**
+   * Build a push/fetch URL authenticated with the in-process `GH_TOKEN`, derived
+   * from the `origin` remote's host/path. This makes `GH_TOKEN` the single source
+   * of truth for remote auth so the vault's `origin` remote never needs its
+   * embedded credential rotated when the token is refreshed.
+   */
+  private async authenticatedRemoteUrl(): Promise<string> {
+    const rawUrl = (await this.git.remote(['get-url', 'origin']))?.toString().trim() ?? '';
+    // Strip any existing `user:token@` or `x-access-token:token@` credential.
+    const hostAndPath = rawUrl.replace(/^https:\/\/[^@/]*@/, 'https://').replace(/^https:\/\//, '');
+    return `https://x-access-token:${this.ghToken}@${hostAndPath}`;
   }
 
   async createPullRequest(opts: CreatePullRequestOptions): Promise<CreatePullRequestResult> {
@@ -144,14 +158,15 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
   }
 
   async fetchOriginMain(): Promise<void> {
-    await this.git.fetch('origin', 'main');
+    await this.git.fetch(await this.authenticatedRemoteUrl(), 'main');
   }
 
   private async recoverFromStaleLocal(branch: string): Promise<void> {
     this.logger.warn({ message: 'github backend: push non-FF — attempting rebase', event: 'backend.github.push.nonFastForward', branch });
-    await this.git.fetch('origin', 'main');
+    await this.git.fetch(await this.authenticatedRemoteUrl(), 'main');
     try {
-      await this.git.rebase(['origin/main']);
+      // Fetch-by-URL updates FETCH_HEAD (not the named-remote ref origin/main).
+      await this.git.rebase(['FETCH_HEAD']);
     } catch (rebaseErr) {
       await this.git.rebase(['--abort']).catch(() => undefined);
       throw new GitOpsRebaseConflictError(branch, this.parseConflictedFiles(rebaseErr));

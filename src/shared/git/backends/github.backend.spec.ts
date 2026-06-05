@@ -18,6 +18,10 @@ jest.mock('node:child_process', () => ({ __esModule: true, execFile: jest.fn() }
 
 const VAULT_PATH = '/var/lib/jarvis/ai-memory';
 const GH_TOKEN = 'fake-gh-token';
+const ORIGIN_URL = 'https://github.com/thuantan2060/ai-memory.git';
+// push/fetch/pull use a URL authenticated with GH_TOKEN (derived from origin),
+// so the vault's origin remote credential never has to be rotated.
+const AUTH_URL = `https://x-access-token:${GH_TOKEN}@github.com/thuantan2060/ai-memory.git`;
 
 describe('GitHubGitOpsBackend', () => {
   let target: GitHubGitOpsBackend;
@@ -27,6 +31,8 @@ describe('GitHubGitOpsBackend', () => {
   beforeEach(() => {
     mockGit = createMock<SimpleGit>();
     (simpleGit as jest.MockedFunction<typeof simpleGit>).mockReturnValue(mockGit);
+    // `git remote get-url origin` — source for the authenticated push/fetch URL.
+    mockGit.remote.mockResolvedValue(ORIGIN_URL as never);
     mockedExecFile = childProcess.execFile as unknown as jest.Mock;
     target = new GitHubGitOpsBackend(VAULT_PATH, GH_TOKEN);
   });
@@ -42,7 +48,7 @@ describe('GitHubGitOpsBackend', () => {
 
       // Assert
       expect(mockGit.checkout).toHaveBeenCalledWith('main');
-      expect(mockGit.pull).toHaveBeenCalledWith('origin', 'main', { '--ff-only': null });
+      expect(mockGit.pull).toHaveBeenCalledWith(AUTH_URL, 'main', { '--ff-only': null });
     });
 
     it('should throw GIT_OPS_PULL_NON_FF when pull detects non-fast-forward divergence', async () => {
@@ -186,7 +192,7 @@ describe('GitHubGitOpsBackend', () => {
       await target.push('dream/deep-x');
 
       // Assert
-      expect(mockGit.push).toHaveBeenCalledWith('origin', 'dream/deep-x', { '-u': null });
+      expect(mockGit.push).toHaveBeenCalledWith(AUTH_URL, 'dream/deep-x', { '-u': null });
     });
 
     it('should rebase onto origin/main and retry push once when non-fast-forward error occurs', async () => {
@@ -198,8 +204,8 @@ describe('GitHubGitOpsBackend', () => {
       await target.push('dream/deep-x');
 
       // Assert
-      expect(mockGit.fetch).toHaveBeenCalledWith('origin', 'main');
-      expect(mockGit.rebase).toHaveBeenCalledWith(['origin/main']);
+      expect(mockGit.fetch).toHaveBeenCalledWith(AUTH_URL, 'main');
+      expect(mockGit.rebase).toHaveBeenCalledWith(['FETCH_HEAD']);
       expect(mockGit.push).toHaveBeenCalledTimes(2);
     });
 
@@ -375,7 +381,7 @@ describe('GitHubGitOpsBackend', () => {
       await target.fetchOriginMain();
 
       // Assert
-      expect(mockGit.fetch).toHaveBeenCalledWith('origin', 'main');
+      expect(mockGit.fetch).toHaveBeenCalledWith(AUTH_URL, 'main');
     });
   });
 });
