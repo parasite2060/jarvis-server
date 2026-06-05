@@ -25,23 +25,6 @@ export class AppConfigService {
     return this.configService.get<string>('LOG_LEVEL', 'info');
   }
 
-  // GRPC config
-  get grpcUrl(): string {
-    return this.configService.get<string>('GRPC_URL', 'localhost');
-  }
-
-  get grpcPort(): number {
-    return this.configService.get<number>('GRPC_PORT', 5000);
-  }
-
-  get maxSendSizeInMb(): number {
-    return this.configService.get<number>('MAX_SEND_SIZE_IN_MB', 4);
-  }
-
-  get maxReceiveSizeInMb(): number {
-    return this.configService.get<number>('MAX_RECEIVE_SIZE_IN_MB', 4);
-  }
-
   // Environment config
   get runtimeEnv(): RuntimeEnvironment {
     return this.configService.getOrThrow<RuntimeEnvironment>('RUNTIME_ENV');
@@ -62,27 +45,6 @@ export class AppConfigService {
 
   get redisDb(): number {
     return this.configService.get<number>('REDIS_DB', 0);
-  }
-
-  // MongoDB config
-  get mongodbUri(): string {
-    return this.configService.getOrThrow<string>('MONGODB_URI');
-  }
-
-  get mongodbRetryAttempts(): number {
-    return this.configService.getOrThrow<number>('MONGODB_RETRY_ATTEMPTS');
-  }
-
-  get mongodbRetryDelay(): number {
-    return this.configService.getOrThrow<number>('MONGODB_RETRY_DELAY');
-  }
-
-  get mongodbConnectTimeout(): number {
-    return this.configService.getOrThrow<number>('MONGODB_CONNECT_TIMEOUT');
-  }
-
-  get mongodbTimeout(): number {
-    return this.configService.getOrThrow<number>('MONGODB_TIMEOUT');
   }
 
   // Postgres config
@@ -116,47 +78,6 @@ export class AppConfigService {
 
   get databasePoolSize(): number {
     return this.configService.get<number>('DATABASE_POOL_SIZE', 10);
-  }
-
-  // Kafka config
-  get kafkaDefaultBrokerUrl(): string {
-    return this.configService.getOrThrow<string>('KAFKA_DEFAULT_BROKER_URL');
-  }
-
-  get kafkaDefaultClientId(): string {
-    return this.configService.getOrThrow<string>('KAFKA_DEFAULT_CLIENT_ID');
-  }
-
-  get kafkaDefaultGroupId(): string {
-    return this.configService.getOrThrow<string>('KAFKA_DEFAULT_GROUP_ID');
-  }
-
-  get kafkaDefaultAutoCreateTopic(): boolean {
-    return this.configService.get<boolean>('KAFKA_DEFAULT_AUTO_CREATE_TOPIC', false);
-  }
-
-  get kafkaDefaultSsl(): boolean {
-    return this.configService.get<boolean>('KAFKA_DEFAULT_SSL', false);
-  }
-
-  get kafkaDefaultMechanism(): string {
-    return this.configService.get<string>('KAFKA_DEFAULT_MECHANISM', '');
-  }
-
-  get kafkaDefaultUsername(): string {
-    return this.configService.get<string>('KAFKA_DEFAULT_USERNAME', '');
-  }
-
-  get kafkaDefaultPassword(): string {
-    return this.configService.get<string>('KAFKA_DEFAULT_PASSWORD', '');
-  }
-
-  get kafkaDefaultRequestTimeout(): number {
-    return this.configService.get<number>('KAFKA_DEFAULT_REQUEST_TIMEOUT', 30000);
-  }
-
-  get kafkaDefaultConcurrently(): number {
-    return this.configService.get<number>('KAFKA_DEFAULT_CONCURRENTLY', 1);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

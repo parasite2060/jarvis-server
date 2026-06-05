@@ -123,5 +123,9 @@
     "{src,apps,libs,test}/**/*.ts": [
       "bun run lint"
     ]
+  },
+  "overrides": {
+    "axios": "^1.13.2",
+    "protobufjs": "^7.5.6"
   }
 }
