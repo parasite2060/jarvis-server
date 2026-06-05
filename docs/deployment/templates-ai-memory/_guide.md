@@ -654,14 +654,13 @@ After both phases complete, a git branch `dream/light-YYYY-MM-DD-HHMMSS` is crea
 
 Performs comprehensive memory consolidation:
 
-1. Queries MemU for all memories added during the day
-2. Reads current MEMORY.md, daily log, SOUL.md, and all vault files
-3. GPT-5.2 consolidates: deduplicates, resolves contradictions, strengthens patterns, prunes stale entries
-4. Rewrites MEMORY.md (clean, organized, capped at 200 lines)
-5. Rewrites the daily log as a comprehensive day summary
-6. Updates files in decisions/, projects/, patterns/, templates/, concepts/, connections/, lessons/
-7. Regenerates all `_index.md` files
-8. Creates a git branch `dream/deep-YYYY-MM-DD` and opens a PR
+1. Reads current MEMORY.md, daily log, SOUL.md, and all vault files
+2. GPT-5.2 consolidates: deduplicates, resolves contradictions, strengthens patterns, prunes stale entries
+3. Rewrites MEMORY.md (clean, organized, capped at 200 lines)
+4. Rewrites the daily log as a comprehensive day summary
+5. Updates files in decisions/, projects/, patterns/, templates/, concepts/, connections/, lessons/
+6. Regenerates all `_index.md` files
+7. Creates a git branch `dream/deep-YYYY-MM-DD` and opens a PR
 
 ### Weekly Review (configurable cron, default Sunday 8PM UTC)
 
