@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
-import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { Between, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { Dream } from 'src/shared/domain/entities/dream.entity';
 import { IDreamRepository } from 'src/shared/domain/repositories/dream.repository.interface';
 import { DreamSchema } from '../schema/dream.schema';

@@ -25,51 +25,6 @@ services:
       retries: 5
       start_period: 10s
 
-  mongo:
-    image: mongo:7
-    restart: unless-stopped
-    ports:
-      - 27018:27017 # E2E: 27018, Local: 27017
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: test123
-    volumes:
-      - mongo_e2e_data:/data/db
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
-  redpanda:
-    image: redpandadata/redpanda:v24.3.15
-    hostname: redpanda-e2e
-    restart: unless-stopped
-    ports:
-      - 9093:9092 # E2E internal: 9093, Local: 9092
-      - 9095:9094 # E2E external: 9095, Local: 9094
-      - 9645:9644 # E2E admin: 9645, Local: 9644
-    command:
-      - redpanda
-      - start
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9094
-      - --advertise-kafka-addr internal://redpanda-e2e:9092,external://localhost:9095
-      - --smp 1
-      - --memory 1G
-      - --mode dev-container
-      - --default-log-level=warn
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ['CMD', 'rpk', 'cluster', 'health']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -109,9 +64,11 @@ services:
       start_period: 15s
 
   api-mock:
-    build:
-      context: ../api-mock-server
-      dockerfile: Dockerfile
+    # Prebuilt image published by parasite2060/api-mock-server CI (public on GHCR).
+    # For local dev against uncommitted api-mock changes, override with a build:
+    # context via docker-compose.override.yml.
+    image: ghcr.io/parasite2060/api-mock-server:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "11435:11435"
@@ -126,4 +83,3 @@ services:
 
 volumes:
   postgres_e2e_data:
-  mongo_e2e_data:

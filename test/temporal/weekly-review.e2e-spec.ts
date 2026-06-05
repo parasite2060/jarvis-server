@@ -38,7 +38,7 @@ describe('WeeklyReviewWorkflow E2E (Story 13.16 AC3)', () => {
     setup = new E2ETestSetup();
     await setup.init();
     const temporal = setup.app.get(TemporalClientService);
-    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue(undefined);
+    signalSpy = jest.spyOn(temporal, 'signalCoordinator').mockResolvedValue({ dreamId: 1 });
   }, 90_000);
 
   afterAll(async () => {

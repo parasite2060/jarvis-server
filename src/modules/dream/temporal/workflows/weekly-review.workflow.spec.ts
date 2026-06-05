@@ -109,7 +109,10 @@ describe('weeklyReviewWorkflow — Temporal scenarios', () => {
     };
   }
 
-  async function runWorkflow(activities: Record<string, unknown>, payload: WeeklyReviewPayload = { week_start: '2026-05-04', trigger: 'auto' }) {
+  async function runWorkflow(
+    activities: Record<string, unknown>,
+    payload: WeeklyReviewPayload = { week_start: '2026-05-04', trigger: 'auto', dream_id: 1 },
+  ) {
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
       taskQueue: 'test-weekly-review',
@@ -192,7 +195,7 @@ describe('weeklyReviewWorkflow — Temporal scenarios', () => {
         return { git_branch: `dream/review-${inp.week_iso}`, git_pr_url: '', git_pr_status: 'created' };
       },
     };
-    await runWorkflow(buildActivities(overrides), { week_start: '2025-12-29', trigger: 'auto' });
+    await runWorkflow(buildActivities(overrides), { week_start: '2025-12-29', trigger: 'auto', dream_id: 1 });
     expect((capturedWriteInput as unknown as WriteReviewInput).week_start).toBe('2025-12-29');
     expect((capturedCommitInput as unknown as WeeklyCommitAndPRInput).week_iso).toBe('2026-W01');
   }, 60_000);
@@ -206,7 +209,7 @@ describe('weeklyReviewWorkflow — Temporal scenarios', () => {
         return { git_branch: `dream/review-${inp.week_iso}`, git_pr_url: 'https://pr/x', git_pr_status: 'created' };
       },
     };
-    const result = await runWorkflow(buildActivities(overrides), { week_start: '2026-05-04' });
+    const result = await runWorkflow(buildActivities(overrides), { week_start: '2026-05-04', dream_id: 1 });
     expect((capturedCommit as unknown as WeeklyCommitAndPRInput).week_iso).toBe('2026-W19');
     expect(result.pr_url).toBe('https://pr/x');
   }, 60_000);

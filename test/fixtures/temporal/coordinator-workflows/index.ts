@@ -21,7 +21,7 @@
  *     test spec creates the recorder with this fixed ID and all child stubs
  *     need to know it to signal the recorder.
  */
-import { ApplicationFailure, condition, defineQuery, defineSignal, executeChild, setHandler, workflowInfo } from '@temporalio/workflow';
+import { ApplicationFailure, condition, defineQuery, defineSignal, setHandler, workflowInfo } from '@temporalio/workflow';
 
 // ─── Exported types ──────────────────────────────────────────────────────────
 
@@ -55,89 +55,6 @@ export async function recorderWorkflow(): Promise<void> {
 
   // Run until terminated by the test harness
   await condition(() => false);
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function runChildStub(kind: 'light' | 'deep' | 'weekly', payload: Record<string, unknown>): Promise<void> {
-  const startMs = Date.now();
-  const workflowId = workflowInfo().workflowId;
-  let threw = false;
-
-  try {
-    if (payload['_shouldThrow']) {
-      threw = true;
-      throw new Error(`stub-throw requested via _shouldThrow for ${workflowId}`);
-    }
-  } finally {
-    const endMs = Date.now();
-    // Signal the recorder (best-effort — if the recorder is gone we swallow the error
-    // so the child stub itself doesn't fail the coordinator invariant tests).
-    await executeChild('recorderWorkflow', {
-      workflowId: RECORDER_WORKFLOW_ID,
-      taskQueue: workflowInfo().taskQueue,
-      args: [],
-      // ALLOW_DUPLICATE_FAILED_ONLY ensures we don't accidentally re-start the
-      // recorder if it already exists — we want to signal the EXISTING one.
-    })
-      .then(() => undefined)
-      .catch(() => undefined);
-
-    // Signal by sending directly to the recorder handle via a separate child.
-    // We can't import the temporal client inside workflow code, so we use a
-    // dedicated "signaller" child workflow as an activity proxy.
-    // Actually — in Temporal workflow code we CAN use `executeChild` with
-    // a different task queue? No. Simplest correct approach: record the fact
-    // by signalling the recorder workflow ID using `executeChild` of a
-    // "noop signaller" workflow. But that adds complexity.
-    //
-    // Correct Temporal-idiomatic approach: the child stub stores its record
-    // in its OWN return value, and the coordinator spec reads it from there.
-    // But `executeChild` return values are the child's workflow result...
-    //
-    // SIMPLEST correct approach given constraints:
-    // Use a dedicated `reportToRecorder` child workflow that wraps the signal.
-    // OR: use `proxyActivities` to call a no-op activity and store results in
-    // a workflow-level variable, then have the test poll the child's result.
-    //
-    // We choose the RECORDER SIGNAL approach via a tiny relay child workflow.
-    await executeChild(reportRecordWorkflow, {
-      workflowId: `report-${workflowId}-${startMs}`,
-      taskQueue: workflowInfo().taskQueue,
-      args: [
-        {
-          kind,
-          workflowId,
-          payload,
-          threw,
-          startMs,
-          endMs,
-        } satisfies ChildExecutionRecord,
-      ],
-    }).catch(() => undefined);
-  }
-}
-
-// ─── Relay: records a child execution by signalling the recorder ─────────────
-
-async function reportRecordWorkflow(record: ChildExecutionRecord): Promise<void> {
-  // Signal the recorder singleton. `executeChild` on an already-running workflow
-  // with ALLOW_DUPLICATE_FAILED_ONLY re-uses the existing run — but we want to
-  // SIGNAL it, not start it. Temporal workflow code doesn't have direct handle
-  // access, so we can't signal from within.
-  //
-  // ALTERNATIVE design: the recorder IS the parent of all child stubs — it
-  // issues `executeChild` sequentially and collects return values.
-  //
-  // Revised approach (simpler): child stubs DON'T signal the recorder.
-  // Instead they RETURN their ChildExecutionRecord as their workflow RESULT.
-  // The coordinator (dreamCoordinatorWorkflow) already awaits each child;
-  // the test spec queries the coordinator's result OR the test harness reads
-  // child workflow results by workflow ID.
-  //
-  // This means: coordinator spec queries child results by ID, not a recorder.
-  // Let's implement THAT approach — it avoids cross-workflow signalling entirely.
-  void record; // unused in this revised approach
 }
 
 // ─── Revised design: child stubs return ChildExecutionRecord ─────────────────

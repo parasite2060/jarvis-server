@@ -112,7 +112,7 @@ jobs:
 
       - name: Test Reporter
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Unit Test Results
           path: report/unit/test-report.xml
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: ./report/coverage/jest.json
           flags: unit
@@ -207,7 +207,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
@@ -219,14 +219,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.30.0
+      # Gate the build on application-dependency (library) CVEs — these are the
+      # ones we control via package.json. CRITICAL/HIGH here fails the build.
+      - name: Trivy scan — application dependencies (blocking)
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: app:scan
           format: table
           exit-code: '1'
           ignore-unfixed: true
-          vuln-type: os,library
+          vuln-type: library
+          severity: CRITICAL,HIGH
+
+      # OS-package CVEs come from the oven/bun:1-debian base image and are the
+      # base-image maintainer's responsibility (Dependabot tracks the base image
+      # tag separately). Scan for visibility but don't block the build on them.
+      - name: Trivy scan — OS packages (informational)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: app:scan
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: os
           severity: CRITICAL,HIGH
 
   # ─────────────────────────────────────────────────────────────
@@ -259,12 +274,6 @@ jobs:
           echo "Checking PostgreSQL..."
           docker compose -f docker-compose.e2e.yml exec -T postgres pg_isready -U postgres -d e2e_test_db
 
-          echo "Checking MongoDB..."
-          docker compose -f docker-compose.e2e.yml exec -T mongo mongosh --eval "db.adminCommand('ping')"
-
-          echo "Checking Redpanda..."
-          docker compose -f docker-compose.e2e.yml exec -T redpanda rpk cluster health
-
           echo "Checking Redis..."
           docker compose -f docker-compose.e2e.yml exec -T redis redis-cli ping
 
@@ -277,7 +286,7 @@ jobs:
 
       - name: Upload E2E coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: ./coverage/e2e/lcov.info
           flags: e2e
@@ -426,7 +435,7 @@ jobs:
             echo "| **Quality** | ${QUALITY_EMOJI} | ${QUALITY_DETAIL} |"
             echo "| **Unit Tests** | ${UNIT_EMOJI} | ${UNIT_DETAIL} |"
             echo "| **Build** | ${BUILD_EMOJI} | NestJS dist |"
-            echo "| **E2E Tests** | ${E2E_EMOJI} | Postgres + Mongo + Redpanda + Redis |"
+            echo "| **E2E Tests** | ${E2E_EMOJI} | Postgres + Redis + Temporal |"
             echo "| **Docker Scan** | ${DOCKER_EMOJI} | Trivy CRITICAL/HIGH gate |"
             echo "| **Security** | ${SECURITY_EMOJI} | ${AUDIT_DETAIL} |"
             if [ -n "$COVERAGE_SECTION" ]; then
@@ -483,7 +492,7 @@ jobs:
           name: E2E Tests
           conclusion: ${{ needs.e2e-test.result }}
           output: |
-            {"summary": "End-to-end tests with Postgres, Mongo, Redpanda, Redis"}
+            {"summary": "End-to-end tests with Postgres, Redis, Temporal"}
 
       - name: Create Security Audit check
         if: always()

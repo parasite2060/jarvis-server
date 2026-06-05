@@ -9,7 +9,7 @@
 import { CommandBus } from '@nestjs/cqrs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as request from 'supertest';
+import request from 'supertest';
 import { ErrorCode } from '../src/utils/error.code';
 import { InvalidateContextCacheCommand } from '../src/modules/context/commands/invalidate-context-cache.command';
 import { E2ETestSetup } from './setup/e2e-setup';
