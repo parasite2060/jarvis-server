@@ -9,5 +9,3 @@ export function transformResponseBody(reflector: Reflector, context: ExecutionCo
 }
 
 export const transformHttpResponseBody = transformResponseBody;
-export const transformKafkaResponseBody = transformResponseBody;
-export const transformGrpcResponseBody = transformResponseBody;
