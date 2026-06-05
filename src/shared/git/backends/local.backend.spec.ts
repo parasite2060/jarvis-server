@@ -185,7 +185,7 @@ describe('LocalGitOpsBackend', () => {
       expect(mockGit.push).toHaveBeenCalledWith('origin', 'dream/deep-x', { '-u': null });
     });
 
-    it('should rebase onto origin/main and retry push once when non-fast-forward error occurs', async () => {
+    it('should rebase onto the remote feature branch and retry push once when non-fast-forward error occurs', async () => {
       // Arrange
       const nonFfErr = new Error('! [rejected] non-fast-forward');
       mockGit.push.mockRejectedValueOnce(nonFfErr).mockResolvedValueOnce({} as never);
@@ -194,8 +194,8 @@ describe('LocalGitOpsBackend', () => {
       await target.push('dream/deep-x');
 
       // Assert
-      expect(mockGit.fetch).toHaveBeenCalledWith('origin', 'main');
-      expect(mockGit.rebase).toHaveBeenCalledWith(['origin/main']);
+      expect(mockGit.fetch).toHaveBeenCalledWith('origin', 'dream/deep-x');
+      expect(mockGit.rebase).toHaveBeenCalledWith(['origin/dream/deep-x']);
       expect(mockGit.push).toHaveBeenCalledTimes(2);
     });
 
