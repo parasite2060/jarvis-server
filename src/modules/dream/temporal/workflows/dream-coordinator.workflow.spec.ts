@@ -57,6 +57,7 @@ jest.mock('@temporalio/workflow', () => ({
     executeChildCalls.push({ workflowType, opts });
     await executeChildBehaviour(workflowType);
   }),
+  log: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
   workflowInfo: jest.fn(() => ({ taskQueue: 'jarvis-dream-test' })),
 }));
 
