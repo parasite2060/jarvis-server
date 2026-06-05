@@ -66,7 +66,7 @@
     "micromatch": "~4.0.8",
     "nestjs-cls": "^5.0.0",
     "pg": "^8.11.3",
-    "pino": "^9.0.0",
+    "pino": "^10.3.1",
     "pino-pretty": "^13.0.0",
     "redis": "^5.10.0",
     "reflect-metadata": "^0.2.1",
