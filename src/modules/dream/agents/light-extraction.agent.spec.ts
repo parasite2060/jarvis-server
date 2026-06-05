@@ -6,12 +6,14 @@
  * funcs are invoked directly with structured input.
  */
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
+import { z } from 'zod';
 import { buildLightExtractionAgent, type DreamDeps } from './light-extraction.agent';
 import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
 
 interface CapturedTool {
   name: string;
   func: (input: Record<string, unknown>) => Promise<string>;
+  schema: z.ZodTypeAny;
 }
 
 describe('buildLightExtractionAgent — store tools', () => {
@@ -23,9 +25,12 @@ describe('buildLightExtractionAgent — store tools', () => {
     capturedTools = [];
     mockFactory = createMock<DeepAgentFactory>();
     mockFactory.create.mockImplementation((opts) => {
-      capturedTools = (opts.tools as unknown as Array<{ name: string; func: (input: Record<string, unknown>) => Promise<string> }>).map((t) => ({
+      capturedTools = (
+        opts.tools as unknown as Array<{ name: string; func: (input: Record<string, unknown>) => Promise<string>; schema: z.ZodTypeAny }>
+      ).map((t) => ({
         name: t.name,
         func: t.func,
+        schema: t.schema,
       }));
       return {
         usageLimits: opts.usageLimits,
@@ -86,6 +91,21 @@ describe('buildLightExtractionAgent — store tools', () => {
     ]);
   });
 
+  it('exposes no ZodOptional fields (Azure gpt-5.x strict mode requires every key in `required`)', () => {
+    // A `.optional()` field is dropped from the JSON-schema `required` array,
+    // which Azure strict function-calling rejects with a 400. Use `.nullable()`
+    // instead. This guards the storeLesson/storeSessionMemory regression.
+    const offenders: string[] = [];
+    for (const tool of capturedTools) {
+      const shape = (tool.schema as z.ZodObject<z.ZodRawShape>).shape;
+      if (shape === undefined) continue;
+      for (const [key, field] of Object.entries(shape)) {
+        if (field instanceof z.ZodOptional) offenders.push(`${tool.name}.${key}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('storeContext mutates deps.session_context', async () => {
     await getTool('storeContext')({ content: 'test session about migration' });
     expect(deps.session_context).toBe('test session about migration');
@@ -106,8 +126,9 @@ describe('buildLightExtractionAgent — store tools', () => {
     expect(deps.session_failed_lessons[0]?.['failure_reason']).toBe('Y broke Z');
   });
 
-  it('storeLesson without outcome only appends to session_lessons', async () => {
-    await getTool('storeLesson')({ lesson: 'Worked OK' });
+  it('storeLesson with null outcome only appends to session_lessons', async () => {
+    // Azure strict mode requires every key present; callers pass null, not omit.
+    await getTool('storeLesson')({ lesson: 'Worked OK', outcome: null, failureReason: null });
     expect(deps.session_lessons).toEqual(['Worked OK']);
     expect(deps.session_failed_lessons).toHaveLength(0);
   });

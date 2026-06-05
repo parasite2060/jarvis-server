@@ -108,12 +108,12 @@ function buildStoreTools(deps: DreamDeps): DynamicStructuredTool[] {
       description: 'Store a lesson learned. Use outcome="failed" + failureReason for things that did not work.',
       schema: z.object({
         lesson: z.string(),
-        outcome: z.enum(['success', 'failed', 'mixed']).optional(),
-        failureReason: z.string().optional(),
+        outcome: z.enum(['success', 'failed', 'mixed']).nullable(),
+        failureReason: z.string().nullable(),
       }),
       func: async (input) => {
         deps.session_lessons.push(input.lesson);
-        if (input.outcome === 'failed' && input.failureReason !== undefined) {
+        if (input.outcome === 'failed' && input.failureReason !== null) {
           deps.session_failed_lessons.push({
             lesson: input.lesson,
             outcome: input.outcome,
@@ -205,7 +205,7 @@ function buildStoreTools(deps: DreamDeps): DynamicStructuredTool[] {
         content: z.string(),
         vaultTarget: z.enum(VAULT_TARGETS as [VaultTarget, ...VaultTarget[]]),
         sourceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        reasoning: z.string().optional(),
+        reasoning: z.string().nullable(),
       }),
       func: async (input) => {
         deps.memories.push({
