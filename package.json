@@ -1,7 +1,7 @@
 {
   "name": "@parasite2060/jarvis-server",
   "version": "1.1.0",
-  "description": "Jarvis Server — TypeScript port of the dream-memory system",
+  "description": "Jarvis Server \u2014 TypeScript port of the dream-memory system",
   "author": "TanNT",
   "private": true,
   "license": "MIT",
@@ -127,6 +127,13 @@
   },
   "overrides": {
     "axios": "^1.15.1",
-    "protobufjs": "^7.5.6"
+    "protobufjs": "^7.5.6",
+    "fast-uri": "^3.1.1",
+    "lodash": "^4.18.0",
+    "minimatch": "^9.0.5",
+    "picomatch": "^4.0.4",
+    "path-to-regexp": "^8.2.0",
+    "multer": "^2.0.2",
+    "socket.io-parser": "^4.2.6"
   }
 }
