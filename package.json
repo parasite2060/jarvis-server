@@ -1,7 +1,7 @@
 {
-  "name": "nestjs-bun-crud-template",
+  "name": "@parasite2060/jarvis-server",
   "version": "1.0.0",
-  "description": "Jarvis Server — TypeScript port of the dream-memory system",
+  "description": "Jarvis Server \u2014 TypeScript port of the dream-memory system",
   "author": "TanNT",
   "private": true,
   "license": "MIT",
