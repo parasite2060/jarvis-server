@@ -9,8 +9,12 @@ process.env['RUNTIME_ENV'] = 'test';
 
 jest.setTimeout(30000);
 
+// Ensure the logs directory exists (logger writes application.pid + e2e-test.log here).
+const logsDir = path.join(process.cwd(), 'logs');
+fs.mkdirSync(logsDir, { recursive: true });
+
 // Delete previous e2e-test.log file if exists
-const logFilePath = path.join(process.cwd(), 'logs', 'e2e-test.log');
+const logFilePath = path.join(logsDir, 'e2e-test.log');
 if (fs.existsSync(logFilePath)) {
   try {
     fs.unlinkSync(logFilePath);
