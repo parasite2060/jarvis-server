@@ -1,7 +1,7 @@
 {
   "name": "@parasite2060/jarvis-server",
   "version": "1.0.0",
-  "description": "Jarvis Server \u2014 TypeScript port of the dream-memory system",
+  "description": "Jarvis Server — TypeScript port of the dream-memory system",
   "author": "TanNT",
   "private": true,
   "license": "MIT",
@@ -55,6 +55,7 @@
     "@temporalio/client": "~1.17.0",
     "@temporalio/worker": "~1.17.0",
     "@temporalio/workflow": "~1.17.0",
+    "axios": "^1.17.0",
     "cache-manager": "^7.2.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -125,7 +126,7 @@
     ]
   },
   "overrides": {
-    "axios": "^1.13.2",
+    "axios": "^1.15.1",
     "protobufjs": "^7.5.6"
   }
 }
