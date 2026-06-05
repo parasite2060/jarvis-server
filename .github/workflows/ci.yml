@@ -274,12 +274,6 @@ jobs:
           echo "Checking PostgreSQL..."
           docker compose -f docker-compose.e2e.yml exec -T postgres pg_isready -U postgres -d e2e_test_db
 
-          echo "Checking MongoDB..."
-          docker compose -f docker-compose.e2e.yml exec -T mongo mongosh --eval "db.adminCommand('ping')"
-
-          echo "Checking Redpanda..."
-          docker compose -f docker-compose.e2e.yml exec -T redpanda rpk cluster health
-
           echo "Checking Redis..."
           docker compose -f docker-compose.e2e.yml exec -T redis redis-cli ping
 
@@ -441,7 +435,7 @@ jobs:
             echo "| **Quality** | ${QUALITY_EMOJI} | ${QUALITY_DETAIL} |"
             echo "| **Unit Tests** | ${UNIT_EMOJI} | ${UNIT_DETAIL} |"
             echo "| **Build** | ${BUILD_EMOJI} | NestJS dist |"
-            echo "| **E2E Tests** | ${E2E_EMOJI} | Postgres + Mongo + Redpanda + Redis |"
+            echo "| **E2E Tests** | ${E2E_EMOJI} | Postgres + Redis + Temporal |"
             echo "| **Docker Scan** | ${DOCKER_EMOJI} | Trivy CRITICAL/HIGH gate |"
             echo "| **Security** | ${SECURITY_EMOJI} | ${AUDIT_DETAIL} |"
             if [ -n "$COVERAGE_SECTION" ]; then
@@ -498,7 +492,7 @@ jobs:
           name: E2E Tests
           conclusion: ${{ needs.e2e-test.result }}
           output: |
-            {"summary": "End-to-end tests with Postgres, Mongo, Redpanda, Redis"}
+            {"summary": "End-to-end tests with Postgres, Redis, Temporal"}
 
       - name: Create Security Audit check
         if: always()
