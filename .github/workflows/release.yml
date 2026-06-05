@@ -62,7 +62,7 @@ jobs:
       - name: Check if image tag already exists
         id: check
         run: |
-          TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.version }}"
+          TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}"
           if docker manifest inspect "$TAG" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Image $TAG already exists; skipping publish."
@@ -77,9 +77,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.release-please.outputs.version }}
-            type=raw,value=${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}
-            type=raw,value=${{ needs.release-please.outputs.major }}
+            type=raw,value=${{ needs.release-please.outputs.tag_name }}
+            type=raw,value=v${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}
+            type=raw,value=v${{ needs.release-please.outputs.major }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.version=${{ needs.release-please.outputs.version }}
@@ -111,7 +111,7 @@ jobs:
             echo ""
             echo "Pull with:"
             echo "\`\`\`bash"
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.version }}"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}"
             echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
