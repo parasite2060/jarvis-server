@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/parasite2060/jarvis-server/compare/v1.1.0...v1.1.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* bump axios to patched version + clone api-mock-server in e2e CI ([5f612a9](https://github.com/parasite2060/jarvis-server/commit/5f612a997d74dbe762927b83db783f55b33a56b3))
+* **deps:** drop minimatch/path-to-regexp/multer/picomatch overrides (broke toolchain) ([93e306c](https://github.com/parasite2060/jarvis-server/commit/93e306c15346d8903ad4c863b30c99a05c3226b8))
+* repair 5 pre-existing failing test suites (CI green) ([50483d8](https://github.com/parasite2060/jarvis-server/commit/50483d8e5446744397ad50910c049be59ff1e478))
+
 ## [1.1.0](https://github.com/parasite2060/jarvis-server/compare/jarvis-server-v1.0.0...jarvis-server-v1.1.0) (2026-06-05)
 
 
