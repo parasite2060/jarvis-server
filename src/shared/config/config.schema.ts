@@ -8,6 +8,7 @@ export const configValidationSchema = Joi.object({
     .default(NodeEnvironment.DEVELOPMENT),
   HOST: Joi.string().required(),
   PORT: Joi.number().default(3000),
+  MAX_BODY_SIZE: Joi.string().default('50mb'),
 
   // CORS
   CORS_ORIGINS: Joi.string().optional(),
