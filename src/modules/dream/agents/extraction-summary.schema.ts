@@ -39,7 +39,7 @@ export type VaultTarget = z.infer<typeof VaultTargetSchema>;
  */
 export const MemoryItemSchema = z.object({
   content: z.string(),
-  reasoning: z.string().nullable().optional(),
+  reasoning: z.string().nullable(),
   vault_target: VaultTargetSchema,
   // Python regex `^\d{4}-\d{2}-\d{2}$` — YYYY-MM-DD ISO date.
   source_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -63,11 +63,27 @@ export const SessionLogEntrySchema = z.object({
   key_exchanges: z.array(z.string()).default([]),
   decisions_made: z.array(z.string()).default([]),
   lessons_learned: z.array(z.string()).default([]),
-  // `failed_lessons` is `list[dict[str, str]]` in Python — flexible string-keyed dicts.
-  failed_lessons: z.array(z.record(z.string(), z.string())).default([]),
+  // Azure gpt-5.x strict mode rejects open-ended maps (z.record renders
+  // `propertyNames`, which is not permitted). These use fixed shapes mirroring
+  // the store-tool payloads. Note: the LLM's own session_log is DISCARDED and
+  // reassembled from `deps.session_*` (see run-extraction.activity), so these
+  // shapes only need to satisfy the strict validator — the persisted JSONB is
+  // unaffected (MC5 byte-equivalence preserved).
+  failed_lessons: z
+    .array(z.object({ lesson: z.string().nullable(), outcome: z.string().nullable(), failure_reason: z.string().nullable() }))
+    .default([]),
   action_items: z.array(z.string()).default([]),
-  concepts: z.array(z.record(z.string(), z.string())).default([]),
-  connections: z.array(z.record(z.string(), z.string())).default([]),
+  concepts: z.array(z.object({ name: z.string().nullable(), description: z.string().nullable() })).default([]),
+  connections: z
+    .array(
+      z.object({
+        concept_a: z.string().nullable(),
+        concept_b: z.string().nullable(),
+        relationship: z.string().nullable(),
+        relationship_type: z.string().nullable(),
+      }),
+    )
+    .default([]),
   memories: z.array(MemoryItemSchema).default([]),
 });
 
