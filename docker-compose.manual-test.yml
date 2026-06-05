@@ -1,0 +1,233 @@
+# Tier 2 Manual Test Environment — jarvis-server-ts
+#
+# Mirrors the production homelab as closely as possible:
+#   - jarvis-server-ts built from source (Bun multi-stage Dockerfile)
+#   - Real LLM via OpenAI-compatible endpoint (JARVIS_MANUAL_OPENAI_*)
+#   - Real ai-memory GitHub repo (JARVIS_MANUAL_GH_REPO, cloned by vault-init)
+#   - Real Temporal (start-dev mode, namespace=jarvis)
+#   - Postgres 17 pgvector + Redis
+#
+# Required env vars (set in .env.manual-test or export from shell):
+#   JARVIS_MANUAL_GH_REPO      — ai-memory repo URL (HTTPS or SSH)
+#   JARVIS_MANUAL_GH_TOKEN     — GitHub PAT with repo scope
+#   JARVIS_MANUAL_OPENAI_URL   — OpenAI-compatible base URL (e.g. http://host.docker.internal:8080/v1)
+#   JARVIS_MANUAL_OPENAI_TOKEN — API key for the LLM endpoint
+#   JARVIS_MANUAL_OPENAI_MODEL — model name (e.g. gemma-4-E4B-it-Q8_0)
+#
+# Usage:
+#   cp .env.manual-test.example .env.manual-test
+#   # Fill in the five JARVIS_MANUAL_* vars
+#   docker compose -f docker-compose.manual-test.yml --env-file .env.manual-test build --no-cache jarvis-server
+#   docker compose -f docker-compose.manual-test.yml --env-file .env.manual-test up -d --wait
+#   # Jarvis server: http://localhost:8100
+#   # Temporal UI:  http://localhost:18233
+#   docker compose -f docker-compose.manual-test.yml --env-file .env.manual-test down -v  # teardown
+
+name: jarvis-manual-test
+
+services:
+
+  # ── Postgres 17 + pgvector ───────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manual-test-secret}
+      POSTGRES_DB: jarvis_manual
+    ports:
+      - "15432:5432"   # exposed on 15432 to avoid conflict with local PG
+    volumes:
+      - postgres_manual_data:/var/lib/postgresql/data
+      - ./test/setup/postgres-init.sql:/docker-entrypoint-initdb.d/01-jarvis-schema.sql:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d jarvis_manual']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "16379:6379"   # exposed on 16379 to avoid conflict with local Redis
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ── Temporal (single-node dev cluster, namespace=jarvis) ─────────────────
+  temporal:
+    image: temporalio/temporal:1.7.0
+    restart: unless-stopped
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --namespace
+      - jarvis          # matches homelab TEMPORAL_NAMESPACE
+      - --log-level
+      - warn
+    ports:
+      - "17233:7233"   # gRPC
+      - "18233:8233"   # Web UI — http://localhost:18233
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'namespace', 'describe', 'jarvis', '--address', 'localhost:7233']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ── jarvis-server-ts (built from source) ─────────────────────────────────
+  jarvis-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    ports:
+      - "8100:3000"    # http://localhost:8100
+    environment:
+      # Runtime
+      NODE_ENV: production
+      RUNTIME_ENV: test
+      HOST: 0.0.0.0
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Auth
+      API_KEY: ${JARVIS_API_KEY:-manual-test-api-key}
+
+      # Postgres
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-manual-test-secret}
+      DATABASE_NAME: jarvis_manual
+      DATABASE_SCHEMA: public
+      DATABASE_SYNCHRONIZE: "false"
+      DATABASE_POOL_SIZE: "5"
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASS: ""
+      REDIS_DB: "0"
+
+      # Vault (cloned by vault-init sidecar into the shared volume)
+      VAULT_PATH: /app/ai-memory
+      VAULT_GIT_REMOTE: ${JARVIS_MANUAL_GH_REPO}
+
+      # GitHub (vault git ops + PR creation)
+      GH_TOKEN: ${JARVIS_MANUAL_GH_TOKEN}
+
+      # Temporal
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: jarvis
+      TEMPORAL_TASK_QUEUE: jarvis-dream
+
+      # LLM — openai-compatible (hardwired for Tier 2 manual tests)
+      LLM_PROVIDER: openai-compatible
+      OPENAI_COMPATIBLE_BASE_URL: ${JARVIS_MANUAL_OPENAI_URL}
+      OPENAI_COMPATIBLE_MODEL: ${JARVIS_MANUAL_OPENAI_MODEL}
+      OPENAI_COMPATIBLE_API_KEY: ${JARVIS_MANUAL_OPENAI_TOKEN}
+
+      # Prompts (must match the volume mount below)
+      PROMPTS_PATH: /app/prompts
+
+      # Phase budgets (same as production homelab defaults)
+      JARVIS_LIGHT_EXTRACTION_MAX_TOKENS: "1500000"
+      JARVIS_LIGHT_EXTRACTION_MAX_ITERATIONS: "300"
+      JARVIS_LIGHT_RECORD_MAX_TOKENS: "1500000"
+      JARVIS_LIGHT_RECORD_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE1_MAX_TOKENS: "1500000"
+      JARVIS_DEEP_PHASE1_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE2_MAX_TOKENS: "1500000"
+      JARVIS_DEEP_PHASE2_MAX_ITERATIONS: "300"
+      JARVIS_DEEP_PHASE3_MAX_TOKENS: "2000000"
+      JARVIS_DEEP_PHASE3_MAX_ITERATIONS: "300"
+      JARVIS_HEALTH_FIX_MAX_TOKENS: "1500000"
+      JARVIS_HEALTH_FIX_MAX_ITERATIONS: "300"
+      JARVIS_WEEKLY_REVIEW_MAX_TOKENS: "1500000"
+      JARVIS_WEEKLY_REVIEW_MAX_ITERATIONS: "300"
+
+      # Vault sync interval (30 min, same as homelab)
+      VAULT_SYNC_INTERVAL_SECONDS: "1800"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    volumes:
+      - vault_data:/app/ai-memory
+      - ./prompts:/app/prompts:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'bun', '-e', "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # ── Vault init sidecar ────────────────────────────────────────────────────
+  # One-shot: clones the ai-memory repo into the shared vault_data volume.
+  # Uses JARVIS_MANUAL_GH_TOKEN to authenticate the HTTPS clone.
+  # If the volume already has a .git directory, pulls latest main instead.
+  vault-init:
+    image: alpine/git:2.43.0
+    restart: "no"
+    environment:
+      JARVIS_MANUAL_GH_TOKEN: ${JARVIS_MANUAL_GH_TOKEN}
+      JARVIS_MANUAL_GH_REPO: ${JARVIS_MANUAL_GH_REPO}
+    volumes:
+      - vault_data:/vault
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -d /vault/.git ]; then
+          echo "Vault already initialized — pulling latest main"
+          git -C /vault pull --ff-only origin main
+        else
+          echo "Cloning vault: $$JARVIS_MANUAL_GH_REPO"
+          # Normalise SSH → HTTPS and inject token
+          HTTPS_REMOTE=$$(echo "$$JARVIS_MANUAL_GH_REPO" \
+            | sed 's|git@github\.com:|https://github.com/|' \
+            | sed 's|git@personal\.github\.com:|https://github.com/|')
+          if [ -n "$$JARVIS_MANUAL_GH_TOKEN" ]; then
+            HTTPS_REMOTE=$$(echo "$$HTTPS_REMOTE" \
+              | sed "s|https://|https://$$JARVIS_MANUAL_GH_TOKEN@|")
+          fi
+          git clone "$$HTTPS_REMOTE" /vault
+        fi
+        git -C /vault config user.email "jarvis@manual-test"
+        git -C /vault config user.name  "Jarvis Manual Test"
+        # Fix "dubious ownership" error on re-use (volume already has a git repo)
+        git -C /vault config --global --add safe.directory /vault
+        # jarvis-server runs as uid 1000 (bun) — chown so it can write vault files
+        chown -R 1000:1000 /vault
+        echo "Vault ready (owned by bun):"
+        ls /vault | head -10
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_manual_data:
+  vault_data:

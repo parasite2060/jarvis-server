@@ -1,0 +1,83 @@
+{
+  // Editor
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "never"
+  },
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.rulers": [100, 120],
+
+  // Files
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/coverage": true,
+    "**/report": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/report/**": true
+  },
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // Search
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/report": true,
+    "**/.git": true,
+    "**/package-lock.json": true,
+    "**/bun.lockb": true
+  },
+
+  // ESLint
+  "eslint.validate": ["typescript"],
+  "eslint.format.enable": true,
+  "eslint.lintTask.enable": true,
+
+  // Prettier
+  "prettier.requireConfig": true,
+  "prettier.configPath": ".prettierrc",
+
+  // Jest
+  "jest.runMode": "on-demand",
+  "jest.rootPath": ".",
+
+  // Git
+  "git.ignoreLimitWarning": true,
+
+  // Terminal
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.env.osx": {
+    "NODE_ENV": "local"
+  },
+
+  // Language-specific
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.wordWrap": "on"
+  },
+
+  // Copilot
+  "github.copilot.chat.commitMessageGeneration.instructions": [{ "file": ".github/copilot-commit-instructions.md" }]
+}

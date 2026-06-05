@@ -1,0 +1,26 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "\\.(e2e|integration)-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/src/$1",
+    "^@langchain/langgraph-sdk$": "<rootDir>/test/mocks/langchain-langgraph-sdk.mock.ts"
+  },
+  "setupFilesAfterEnv": ["<rootDir>/test/setup/global-setup.ts"],
+  "testTimeout": 30000,
+  "maxWorkers": 1,
+  "forceExit": true,
+  "detectOpenHandles": true,
+  "verbose": true,
+  "collectCoverageFrom": [
+    "src/**/*.ts",
+    "!src/**/*.spec.ts",
+    "!src/**/*.module.ts",
+    "!src/main.ts"
+  ],
+  "coverageDirectory": "./coverage/e2e"
+}
