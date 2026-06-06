@@ -5,18 +5,25 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { WeeklyCommitAndPrActivity } from './commit-and-pr.activity';
 import { GitOpsService } from 'src/shared/git/git-ops.service';
+import { AppConfigService } from 'src/shared/config/config.service';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { ErrorCode } from 'src/utils/error.code';
 
 describe('WeeklyCommitAndPrActivity', () => {
   let target: WeeklyCommitAndPrActivity;
   let mockGitOps: DeepMocked<GitOpsService>;
+  let mockConfig: DeepMocked<AppConfigService>;
 
   beforeEach(async () => {
     mockGitOps = createMock<GitOpsService>();
+    mockConfig = createMock<AppConfigService>();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [WeeklyCommitAndPrActivity, { provide: GitOpsService, useValue: mockGitOps }],
+      providers: [
+        WeeklyCommitAndPrActivity,
+        { provide: GitOpsService, useValue: mockGitOps },
+        { provide: AppConfigService, useValue: mockConfig },
+      ],
     })
       .setLogger(new MockLoggerService())
       .compile();
@@ -52,7 +59,8 @@ describe('WeeklyCommitAndPrActivity', () => {
     expect(prCall.body).toContain('**Dream ID:** 12');
     expect(prCall.body).toContain('**Week:** 2026-W19');
     expect(prCall.body).toContain('- `reviews/2026-W19.md`');
-    expect(prCall.autoMerge).toBe(false);
+    // autoMerge is config-driven (DEFAULT_AUTO_MERGE=true when config.yml is absent).
+    expect(prCall.autoMerge).toBe(true);
   });
 
   it('should return no_files when both files_modified and vault_writes are empty', async () => {

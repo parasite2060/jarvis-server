@@ -133,6 +133,9 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         branch: opts.branch,
         urlPath: this.safeUrlPath(url),
       });
+      if (opts.autoMerge) {
+        await this.mergePullRequest(opts.branch, url, env);
+      }
       return { url };
     } catch (err) {
       const errno = err as NodeJS.ErrnoException & { stderr?: string; code?: string };
@@ -150,6 +153,35 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         return { url };
       }
       throw new InternalException(ErrorCode.GIT_OPS_PR_CREATION_FAILED, `gh pr create failed: ${stderr.slice(0, 200)}`);
+    }
+  }
+
+  /**
+   * Merge a dream PR immediately (merge commit + delete branch). Auto-merge is
+   * "land it, the user reviews the vault history later". On any failure
+   * (genuine conflict, failing check, transient error) the PR is LEFT OPEN and
+   * the failure is logged — never thrown — so the dream still succeeds and the
+   * user can merge manually. LLM-assisted conflict resolution is a deliberate
+   * future follow-up (see design/git-ops.md §5.2), not done here.
+   */
+  private async mergePullRequest(branch: string, url: string, env: NodeJS.ProcessEnv): Promise<void> {
+    try {
+      await execFileAsync('gh', ['pr', 'merge', branch, '--merge', '--delete-branch'], { cwd: this.vaultPath, env });
+      this.logger.log({
+        message: 'github backend: PR auto-merged',
+        event: 'backend.github.autoMerge.completed',
+        branch,
+        urlPath: this.safeUrlPath(url),
+      });
+    } catch (err) {
+      const stderr = typeof (err as { stderr?: string }).stderr === 'string' ? (err as { stderr: string }).stderr : '';
+      this.logger.warn({
+        message: 'github backend: PR auto-merge failed — leaving PR open for manual review',
+        event: 'backend.github.autoMerge.failed',
+        branch,
+        urlPath: this.safeUrlPath(url),
+        reason: stderr.slice(0, 200),
+      });
     }
   }
 

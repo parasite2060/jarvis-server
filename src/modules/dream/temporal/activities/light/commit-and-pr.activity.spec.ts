@@ -5,6 +5,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { LightCommitAndPrActivity } from './commit-and-pr.activity';
 import { GitOpsService } from 'src/shared/git/git-ops.service';
+import { AppConfigService } from 'src/shared/config/config.service';
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
@@ -12,12 +13,18 @@ import { ErrorCode } from 'src/utils/error.code';
 describe('LightCommitAndPrActivity', () => {
   let target: LightCommitAndPrActivity;
   let mockGitOps: DeepMocked<GitOpsService>;
+  let mockConfig: DeepMocked<AppConfigService>;
 
   beforeEach(async () => {
     mockGitOps = createMock<GitOpsService>();
+    mockConfig = createMock<AppConfigService>();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [LightCommitAndPrActivity, { provide: GitOpsService, useValue: mockGitOps }],
+      providers: [
+        LightCommitAndPrActivity,
+        { provide: GitOpsService, useValue: mockGitOps },
+        { provide: AppConfigService, useValue: mockConfig },
+      ],
     })
       .setLogger(new MockLoggerService())
       .compile();
