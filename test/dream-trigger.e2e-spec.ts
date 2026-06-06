@@ -71,11 +71,13 @@ describe('Dream Trigger E2E', () => {
       expect(response.body.code).toBe(ErrorCode.SUCCESS);
       expect(response.body.data.status).toBe('queued');
 
-      // Assert signal payload
+      // Assert signal payload — the deep-dream use case creates a dreams row
+      // and includes its id as dream_id in the signal (Story 13.22).
       expect(temporalSpy).toHaveBeenCalledWith('deep', {
         trigger: 'manual-backfill',
         source_date_iso: '2026-04-20',
         target_date: '2026-04-20',
+        dream_id: expect.any(Number),
       });
     });
 
@@ -88,11 +90,12 @@ describe('Dream Trigger E2E', () => {
       expect(response.body.code).toBe(ErrorCode.SUCCESS);
       expect(response.body.data.status).toBe('queued');
 
-      // Assert signal payload matches camelCase path
+      // Assert signal payload matches camelCase path (dream_id added per Story 13.22).
       expect(temporalSpy).toHaveBeenCalledWith('deep', {
         trigger: 'manual-backfill',
         source_date_iso: '2026-04-20',
         target_date: '2026-04-20',
+        dream_id: expect.any(Number),
       });
     });
 
