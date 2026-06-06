@@ -17,10 +17,7 @@ CVE-2026-26996
 CVE-2026-27903
 CVE-2026-27904
 
-# rustls-webpki DoS via panic on a malformed CRL (HIGH). This is a Rust crate
-# compiled into the Temporal SDK's native core-bridge (@temporalio/core-bridge)
-# — it is NOT a package.json dependency and cannot be bumped from here; it ships
-# only when the Temporal team rebuilds the bridge. The server connects to a
-# single trusted homelab Temporal endpoint over a private network and never
-# processes attacker-supplied CRLs, so the DoS path is not reachable.
-GHSA-82j2-j2ch-gfr8
+# Note: the rustls-webpki HIGH (GHSA-82j2-j2ch-gfr8) from
+# @temporalio/core-bridge/Cargo.lock is NOT suppressed here — it is excluded at
+# the gate level via `skip-files` on that Cargo.lock in ci.yml, because it is a
+# native Rust dep we cannot fix from package.json (same category as OS packages).
