@@ -13,3 +13,5 @@ export * from './deep-phase2.agent';
 export * from './deep-phase3.agent';
 export * from './health-fix.agent';
 export * from './weekly-review.agent';
+export * from './conflict-resolution-output.schema';
+export * from './conflict-resolver.agent';
