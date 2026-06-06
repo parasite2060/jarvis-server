@@ -6,10 +6,10 @@ import { Logger } from '@nestjs/common';
 import simpleGit, { SimpleGit } from 'simple-git';
 import { safeResolveVaultPath } from 'src/shared/utils/path-validation';
 import { IGitOpsBackend } from './git-ops.backend';
-import { CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from '../git-ops.types';
+import { applyConflictResolverOrThrow } from './apply-conflict-resolver';
+import { ConflictResolver, CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from '../git-ops.types';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
-import { GitOpsRebaseConflictError } from '../errors';
 
 const execFileAsync = promisify(execFile);
 const BRANCH_NAME_MAX_LENGTH = 200;
@@ -88,7 +88,7 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
     this.logger.log({ message: 'github backend: commit completed', event: 'backend.github.commit', sha: sha.slice(0, 7) });
   }
 
-  async push(branch: string): Promise<void> {
+  async push(branch: string, resolver?: ConflictResolver): Promise<void> {
     const remote = await this.authenticatedRemoteUrl();
     try {
       await this.git.push(remote, branch, { '-u': null });
@@ -98,7 +98,7 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         this.logger.error({ message: 'github backend: push failed', event: 'backend.github.push.failed', branch });
         throw err;
       }
-      await this.recoverFromStaleLocal(branch);
+      await this.recoverFromStaleLocal(branch, resolver);
       await this.git.push(remote, branch, { '-u': null });
       this.logger.log({ message: 'github backend: push recovered after rebase', event: 'backend.github.push.recovered', branch });
     }
@@ -193,15 +193,17 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
     await this.git.fetch(await this.authenticatedRemoteUrl(), 'main');
   }
 
-  private async recoverFromStaleLocal(branch: string): Promise<void> {
+  private async recoverFromStaleLocal(branch: string, resolver?: ConflictResolver): Promise<void> {
     this.logger.warn({ message: 'github backend: push non-FF — attempting rebase', event: 'backend.github.push.nonFastForward', branch });
     await this.git.fetch(await this.authenticatedRemoteUrl(), 'main');
     try {
       // Fetch-by-URL updates FETCH_HEAD (not the named-remote ref origin/main).
       await this.git.rebase(['FETCH_HEAD']);
     } catch (rebaseErr) {
-      await this.git.rebase(['--abort']).catch(() => undefined);
-      throw new GitOpsRebaseConflictError(branch, this.parseConflictedFiles(rebaseErr));
+      const conflictedFiles = this.parseConflictedFiles(rebaseErr);
+      await applyConflictResolverOrThrow(this.git, branch, conflictedFiles, resolver);
+      this.logger.log({ message: 'github backend: rebase conflict resolved by resolver', event: 'backend.github.push.conflictResolved', branch });
+      return;
     }
     this.logger.log({ message: 'github backend: rebase succeeded', event: 'backend.github.push.rebaseSucceeded', branch });
   }

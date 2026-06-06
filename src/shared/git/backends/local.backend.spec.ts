@@ -10,6 +10,7 @@ import simpleGit, { type SimpleGit } from 'simple-git';
 import { ErrorCode } from 'src/utils/error.code';
 import { GitOpsRebaseConflictError } from '../errors';
 import { LocalGitOpsBackend } from './local.backend';
+import type { ConflictResolver } from '../git-ops.types';
 
 jest.mock('simple-git');
 jest.mock('node:fs/promises');
@@ -246,6 +247,47 @@ describe('LocalGitOpsBackend', () => {
 
       // Act & Assert
       await expect(target.push('dream/x')).rejects.toBe(authErr);
+    });
+
+    it('should call rebase --continue (raw form) and not throw when resolver resolves all conflicts', async () => {
+      // Arrange
+      mockGit.push.mockRejectedValueOnce(new Error('non-fast-forward')).mockResolvedValueOnce({} as never);
+      mockGit.rebase.mockRejectedValueOnce(Object.assign(new Error('CONFLICT (content): Merge conflict in MEMORY.md'), { name: 'GitError' }));
+      const resolver: ConflictResolver = jest.fn().mockResolvedValueOnce({ resolved: true });
+
+      // Act
+      await expect(target.push('dream/conflict', resolver)).resolves.toBeUndefined();
+
+      // Assert
+      expect(mockGit.raw).toHaveBeenCalledWith(['-c', 'core.editor=true', 'rebase', '--continue']);
+      expect(mockGit.rebase).not.toHaveBeenCalledWith(['--abort']);
+      expect(mockGit.push).toHaveBeenCalledTimes(2);
+      expect(resolver).toHaveBeenCalledWith(['MEMORY.md']);
+    });
+
+    it('should abort rebase and throw GitOpsRebaseConflictError when resolver returns resolved=false', async () => {
+      // Arrange
+      mockGit.push.mockRejectedValueOnce(new Error('non-fast-forward'));
+      mockGit.rebase
+        .mockRejectedValueOnce(Object.assign(new Error('CONFLICT (content): Merge conflict in MEMORY.md'), { name: 'GitError' }))
+        .mockResolvedValueOnce('' as never);
+      const resolver: ConflictResolver = jest.fn().mockResolvedValueOnce({ resolved: false });
+
+      // Act & Assert
+      await expect(target.push('dream/conflict', resolver)).rejects.toBeInstanceOf(GitOpsRebaseConflictError);
+      expect(mockGit.rebase).toHaveBeenCalledWith(['--abort']);
+    });
+
+    it('should abort rebase and throw GitOpsRebaseConflictError with no resolver (back-compat)', async () => {
+      // Arrange — no resolver argument; must behave exactly as before this feature.
+      mockGit.push.mockRejectedValueOnce(new Error('non-fast-forward'));
+      mockGit.rebase
+        .mockRejectedValueOnce(Object.assign(new Error('CONFLICT (content): Merge conflict in MEMORY.md'), { name: 'GitError' }))
+        .mockResolvedValueOnce('' as never);
+
+      // Act & Assert
+      await expect(target.push('dream/conflict')).rejects.toBeInstanceOf(GitOpsRebaseConflictError);
+      expect(mockGit.rebase).toHaveBeenCalledWith(['--abort']);
     });
   });
 

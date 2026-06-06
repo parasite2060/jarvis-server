@@ -121,7 +121,22 @@ describe('GitOpsService', () => {
       await target.push(branch);
 
       // Assert
-      expect(mockFactory.getBackend('local')!.push).toHaveBeenCalledWith(branch);
+      expect(mockFactory.getBackend('local')!.push).toHaveBeenCalledWith(branch, undefined);
+    });
+
+    it('should forward the conflict resolver to the active backend when push is called with a resolver', async () => {
+      // Arrange
+      const branch = 'dream/deep-x';
+      const resolver = jest.fn().mockResolvedValue({ resolved: true });
+      mockFactory.getBackend.mockReturnValue({
+        push: jest.fn().mockResolvedValue(undefined),
+      } as unknown as IGitOpsBackend);
+
+      // Act
+      await target.push(branch, resolver);
+
+      // Assert
+      expect(mockFactory.getBackend('local')!.push).toHaveBeenCalledWith(branch, resolver);
     });
   });
 

@@ -17,7 +17,7 @@ import { Injectable } from '@nestjs/common';
 import { GitOpsBackendFactory } from './git-ops-backend.factory';
 import { IGitOpsBackend } from './backends/git-ops.backend';
 import { AppConfigService } from 'src/shared/config/config.service';
-import { CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from './git-ops.types';
+import { ConflictResolver, CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from './git-ops.types';
 
 @Injectable()
 export class GitOpsService {
@@ -46,8 +46,8 @@ export class GitOpsService {
     return this.backend().commit(message, paths);
   }
 
-  async push(branch: string): Promise<void> {
-    return this.backend().push(branch);
+  async push(branch: string, resolver?: ConflictResolver): Promise<void> {
+    return this.backend().push(branch, resolver);
   }
 
   async createPullRequest(opts: CreatePullRequestOptions): Promise<CreatePullRequestResult> {

@@ -22,3 +22,13 @@ export interface CreatePullRequestOptions {
 export interface CreatePullRequestResult {
   url: string;
 }
+
+/**
+ * Optional hook invoked by the backend when a rebase conflict occurs during
+ * push recovery. Given the conflicted file paths, it attempts resolution
+ * (e.g. AI-assisted) and stages the resolved files. Returns whether EVERY
+ * conflicted file was resolved (so the backend can `git rebase --continue`).
+ * When absent, or when it returns resolved=false, the backend aborts the
+ * rebase and throws GitOpsRebaseConflictError as before.
+ */
+export type ConflictResolver = (conflictedFiles: string[]) => Promise<{ resolved: boolean }>;
