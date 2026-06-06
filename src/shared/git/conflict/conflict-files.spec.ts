@@ -11,7 +11,9 @@ describe('readConflictVersions', () => {
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-conflict-files-'));
     git = simpleGit({ baseDir: dir });
-    await git.init();
+    // Pin the initial branch to `main` — CI runners default `git init` to
+    // `master`, so `checkout('main')` below would fail without this.
+    await git.init(['--initial-branch=main']);
     await git.addConfig('user.email', 'test@test.local');
     await git.addConfig('user.name', 'Test');
 

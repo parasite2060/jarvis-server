@@ -51,7 +51,13 @@ describe('conflictAwarePush', () => {
     it('pushes the branch exactly once with the resolver', async () => {
       const handle = makeHandle([]);
 
-      await conflictAwarePush({ gitOps: mockGitOps, config: mockConfig, branch: 'dream/light-x', auditCommitPrefix: 'dream(light):', resolverHandle: handle });
+      await conflictAwarePush({
+        gitOps: mockGitOps,
+        config: mockConfig,
+        branch: 'dream/light-x',
+        auditCommitPrefix: 'dream(light):',
+        resolverHandle: handle,
+      });
 
       expect(mockGitOps.push).toHaveBeenCalledTimes(1);
       expect(mockGitOps.push).toHaveBeenCalledWith('dream/light-x', handle.resolver);
@@ -60,7 +66,13 @@ describe('conflictAwarePush', () => {
     it('does not write or commit an audit file', async () => {
       const handle = makeHandle([]);
 
-      await conflictAwarePush({ gitOps: mockGitOps, config: mockConfig, branch: 'dream/light-x', auditCommitPrefix: 'dream(light):', resolverHandle: handle });
+      await conflictAwarePush({
+        gitOps: mockGitOps,
+        config: mockConfig,
+        branch: 'dream/light-x',
+        auditCommitPrefix: 'dream(light):',
+        resolverHandle: handle,
+      });
 
       expect(mockGitOps.writeFiles).not.toHaveBeenCalled();
       expect(mockGitOps.commit).not.toHaveBeenCalled();
@@ -87,7 +99,13 @@ describe('conflictAwarePush', () => {
     it('pushes twice — once with resolver, once for the audit commit', async () => {
       const handle = makeHandle([audit]);
 
-      await conflictAwarePush({ gitOps: mockGitOps, config: mockConfig, branch: 'dream/deep-2026-06-05', auditCommitPrefix: 'dream(deep):', resolverHandle: handle });
+      await conflictAwarePush({
+        gitOps: mockGitOps,
+        config: mockConfig,
+        branch: 'dream/deep-2026-06-05',
+        auditCommitPrefix: 'dream(deep):',
+        resolverHandle: handle,
+      });
 
       expect(mockGitOps.push).toHaveBeenCalledTimes(2);
       expect(mockGitOps.push).toHaveBeenNthCalledWith(1, 'dream/deep-2026-06-05', handle.resolver);
@@ -97,7 +115,13 @@ describe('conflictAwarePush', () => {
     it('writes and commits the audit file with the given prefix', async () => {
       const handle = makeHandle([audit]);
 
-      await conflictAwarePush({ gitOps: mockGitOps, config: mockConfig, branch: 'dream/deep-2026-06-05', auditCommitPrefix: 'dream(deep):', resolverHandle: handle });
+      await conflictAwarePush({
+        gitOps: mockGitOps,
+        config: mockConfig,
+        branch: 'dream/deep-2026-06-05',
+        auditCommitPrefix: 'dream(deep):',
+        resolverHandle: handle,
+      });
 
       expect(mockGitOps.writeFiles).toHaveBeenCalledTimes(1);
       const commitCall = mockGitOps.commit.mock.calls[0]!;
