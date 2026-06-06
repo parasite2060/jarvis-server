@@ -3,6 +3,8 @@ import { GitOpsService } from 'src/shared/git/git-ops.service';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
+import { AppConfigService } from 'src/shared/config/config.service';
+import { readAutoMergeFromVault } from 'src/shared/git/read-auto-merge';
 import type { CommitAndPRResult, WeeklyCommitAndPRInput } from '../../workflows/weekly-review.workflow';
 import { buildWeeklyReviewPRBody } from './helpers';
 
@@ -10,7 +12,10 @@ import { buildWeeklyReviewPRBody } from './helpers';
 export class WeeklyCommitAndPrActivity {
   private readonly logger = new Logger(WeeklyCommitAndPrActivity.name);
 
-  constructor(private readonly gitOps: GitOpsService) {}
+  constructor(
+    private readonly gitOps: GitOpsService,
+    private readonly config: AppConfigService,
+  ) {}
 
   @TemporalActivity('weekly.commit_and_pr')
   async commitAndPr(inp: WeeklyCommitAndPRInput): Promise<CommitAndPRResult> {
@@ -32,11 +37,12 @@ export class WeeklyCommitAndPrActivity {
         fileChanges.map((f) => f.path),
       );
       await this.gitOps.push(branch);
+      const autoMerge = await readAutoMergeFromVault(this.config.vaultPath);
       const result = await this.gitOps.createPullRequest({
         branch,
         title: commitMsg,
         body: prBody,
-        autoMerge: false,
+        autoMerge,
       });
 
       this.logger.log({

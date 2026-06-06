@@ -287,8 +287,8 @@ describe('GitHubGitOpsBackend', () => {
       expect((opts as { env: Record<string, string> }).env['GH_TOKEN']).toBe(GH_TOKEN);
     });
 
-    it('should append --label auto-merge when autoMerge is true', async () => {
-      // Arrange
+    it('should ACTUALLY merge the PR (gh pr merge --merge --delete-branch) when autoMerge is true', async () => {
+      // Arrange — both `gh pr create` and `gh pr merge` succeed.
       mockedExecFile.mockImplementation(
         (_cmd: string, _args: string[], _opts: unknown, cb: (e: Error | null, r: { stdout: string; stderr: string }) => void) => {
           cb(null, { stdout: 'https://github.com/x/y/pull/1', stderr: '' });
@@ -296,11 +296,45 @@ describe('GitHubGitOpsBackend', () => {
       );
 
       // Act
-      await target.createPullRequest({ branch: 'b', title: 't', body: 'b', autoMerge: true });
+      await target.createPullRequest({ branch: 'dream/light-s', title: 't', body: 'b', autoMerge: true });
 
-      // Assert
-      const [, args] = mockedExecFile.mock.calls[0]!;
-      expect(args).toEqual(expect.arrayContaining(['--label', 'auto-merge']));
+      // Assert — create labels for auto-merge AND a real merge call is issued.
+      const createArgs = mockedExecFile.mock.calls[0]![1];
+      expect(createArgs).toEqual(expect.arrayContaining(['--label', 'auto-merge']));
+      const mergeCall = mockedExecFile.mock.calls.find((c) => (c[1] as string[])[1] === 'merge');
+      expect(mergeCall).toBeDefined();
+      expect(mergeCall![1]).toEqual(['pr', 'merge', 'dream/light-s', '--merge', '--delete-branch']);
+    });
+
+    it('should NOT merge when autoMerge is false', async () => {
+      mockedExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: Error | null, r: { stdout: string; stderr: string }) => void) => {
+          cb(null, { stdout: 'https://github.com/x/y/pull/1', stderr: '' });
+        },
+      );
+
+      await target.createPullRequest({ branch: 'b', title: 't', body: 'b', autoMerge: false });
+
+      const mergeCall = mockedExecFile.mock.calls.find((c) => (c[1] as string[])[1] === 'merge');
+      expect(mergeCall).toBeUndefined();
+    });
+
+    it('should leave the PR open (not throw) when the merge fails', async () => {
+      // create succeeds; merge rejects (e.g. genuine conflict).
+      mockedExecFile.mockImplementation(
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: (Error & { stderr?: string }) | null, r: { stdout: string; stderr: string }) => void) => {
+          if (args[1] === 'merge') {
+            const err = new Error('merge conflict') as Error & { stderr?: string };
+            err.stderr = 'Merge conflict';
+            return cb(err, { stdout: '', stderr: 'Merge conflict' });
+          }
+          return cb(null, { stdout: 'https://github.com/x/y/pull/1', stderr: '' });
+        },
+      );
+
+      // Must resolve with the PR url, not throw.
+      const result = await target.createPullRequest({ branch: 'b', title: 't', body: 'b', autoMerge: true });
+      expect(result).toEqual({ url: 'https://github.com/x/y/pull/1' });
     });
 
     it('should fetch existing PR URL via gh pr list when PR already exists (idempotent fallback)', async () => {
