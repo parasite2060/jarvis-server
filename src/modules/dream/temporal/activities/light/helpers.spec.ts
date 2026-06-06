@@ -57,7 +57,9 @@ describe('countUserMessages', () => {
 
   it('a real multi-turn JSONL session clears the short-session threshold', () => {
     const turns = Array.from({ length: 5 }, (_, i) => JSON.stringify({ type: 'user', message: { role: 'user', content: `turn ${i}` } }));
-    const toolNoise = Array.from({ length: 20 }, () => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'x' }] } }));
+    const toolNoise = Array.from({ length: 20 }, () =>
+      JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'x' }] } }),
+    );
     const transcript = [...turns, ...toolNoise].join('\n');
 
     expect(countUserMessages(transcript)).toBe(5);
