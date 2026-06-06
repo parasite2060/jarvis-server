@@ -72,10 +72,13 @@ describe('Conversation E2E Tests', () => {
       expect(rows[0].is_continuation).toBe(false);
 
       // Coordinator signal called with kind='light' and snake_case payload.
+      // The light-dream use case creates a dreams row first and includes its id
+      // as dream_id in the signal (Story 13.22 — dreamId in the POST response).
       expect(temporalSpy).toHaveBeenCalledTimes(1);
       expect(temporalSpy).toHaveBeenCalledWith('light', {
         transcript_id: rows[0].id,
         session_id: 'sess-e2e-1',
+        dream_id: expect.any(Number),
       });
     });
 
