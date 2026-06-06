@@ -1,7 +1,11 @@
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activity.decorator';
+import { AppConfigService } from 'src/shared/config/config.service';
 import { Conversation } from 'src/shared/domain/entities/conversation.entity';
 import { Dream } from 'src/shared/domain/entities/dream.entity';
 import { TranscriptSchema } from 'src/shared/postgres/schema/transcript.schema';
@@ -10,12 +14,16 @@ import { DBConnections } from 'src/shared/postgres/utils/constaint';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
 import type { LoadTranscriptInput, LoadTranscriptResult } from '../../workflows/light-dream.workflow';
+import { countUserMessages } from './helpers';
 
 @Injectable()
 export class LoadTranscriptActivity {
   private readonly logger = new Logger(LoadTranscriptActivity.name);
 
-  constructor(@InjectDataSource(DBConnections.INTERNAL) private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource(DBConnections.INTERNAL) private readonly dataSource: DataSource,
+    private readonly config: AppConfigService,
+  ) {}
 
   @TemporalActivity('light.load_transcript')
   async loadTranscript(inp: LoadTranscriptInput): Promise<LoadTranscriptResult> {
@@ -24,7 +32,7 @@ export class LoadTranscriptActivity {
     }
     const transcriptId: number = inp.transcript_id;
 
-    return this.dataSource.transaction(async (manager) => {
+    const loaded = await this.dataSource.transaction(async (manager) => {
       const transcriptRepo = manager.getRepository(TranscriptSchema);
       const dreamRepo = manager.getRepository(DreamSchema);
       const transcript = await transcriptRepo.findOne({ where: { id: transcriptId } });
@@ -58,23 +66,48 @@ export class LoadTranscriptActivity {
         await transcriptRepo.update({ id: transcriptId }, { lightDreamId: dreamId } satisfies Partial<Conversation>);
       }
 
-      this.logger.log({
-        message: 'light dream load_transcript completed',
-        event: 'lightDream.loadTranscript.completed',
-        dreamId,
-        transcriptId: inp.transcript_id,
-        sessionId: inp.session_id,
-      });
-
       return {
-        dream_id: dreamId,
-        parsed_text: transcript.parsedText ?? transcript.rawContent ?? '',
+        dreamId,
+        text: transcript.parsedText ?? transcript.rawContent ?? '',
         project: transcript.project ?? null,
-        token_count: transcript.tokenCount ?? null,
-        created_at_iso: transcript.createdAt?.toISOString() ?? null,
-        segment_end_line: transcript.segmentEndLine ?? 0,
-        is_continuation: transcript.isContinuation ?? false,
+        tokenCount: transcript.tokenCount ?? null,
+        createdAtIso: transcript.createdAt?.toISOString() ?? null,
+        segmentEndLine: transcript.segmentEndLine ?? 0,
+        isContinuation: transcript.isContinuation ?? false,
       };
     });
+
+    const userMessageCount = countUserMessages(loaded.text);
+
+    // Write AFTER the txn commits so a rollback never orphans a file. The
+    // transcript file is removed by the post-dream cleanup (T3); a Temporal
+    // retry of this activity may still orphan one, which is acceptable.
+    const rand = crypto.randomUUID().slice(0, 8);
+    const fileName = `${transcriptId}_${rand}.txt`;
+    const relPath = `transcripts/${fileName}`;
+    const absPath = path.join(this.config.vaultPath, 'transcripts', fileName);
+    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    await fs.writeFile(absPath, loaded.text, 'utf-8');
+
+    this.logger.log({
+      message: 'light dream load_transcript completed',
+      event: 'lightDream.loadTranscript.completed',
+      dreamId: loaded.dreamId,
+      transcriptId: inp.transcript_id,
+      sessionId: inp.session_id,
+      transcriptFile: relPath,
+      userMessageCount,
+    });
+
+    return {
+      dream_id: loaded.dreamId,
+      transcript_file: relPath,
+      user_message_count: userMessageCount,
+      project: loaded.project,
+      token_count: loaded.tokenCount,
+      created_at_iso: loaded.createdAtIso,
+      segment_end_line: loaded.segmentEndLine,
+      is_continuation: loaded.isContinuation,
+    };
   }
 }

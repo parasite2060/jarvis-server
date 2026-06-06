@@ -76,7 +76,10 @@ export interface LoadTranscriptInput {
 
 export interface LoadTranscriptResult {
   dream_id: number;
-  parsed_text: string;
+  /** Vault-relative path to the transcript file the extraction agent reads. Null for manual/empty. */
+  transcript_file: string | null;
+  /** User-message count, computed at load time (so run-extraction doesn't need the full text). */
+  user_message_count: number;
   project: string | null;
   token_count: number | null;
   /** ISO-8601 timestamp of transcript-row creation. */
@@ -91,8 +94,10 @@ export interface ExtractionInput {
   parsed_text: string;
   project: string | null;
   token_count: number | null;
-  /** Optional vault-relative path to a copy of the transcript for the agent. */
+  /** Vault-relative path to the transcript file the agent reads. */
   transcript_file: string | null;
+  /** User-message count pre-computed at load time; drives the short-session gate. */
+  user_message_count: number;
 }
 
 export interface ExtractionAgentOutput {
@@ -303,6 +308,7 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
       project: null,
       token_count: null,
       transcript_file: null,
+      user_message_count: 0,
     });
 
     if (extractionOutput.no_extract) {
@@ -370,10 +376,11 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
   const extractionOutput = await acts.runExtraction({
     dream_id: dreamId,
     session_id: payload.session_id,
-    parsed_text: loadResult.parsed_text,
+    parsed_text: '',
     project: loadResult.project,
     token_count: loadResult.token_count,
-    transcript_file: null,
+    transcript_file: loadResult.transcript_file,
+    user_message_count: loadResult.user_message_count,
   });
 
   // Step 3: short-session no_extract branch.

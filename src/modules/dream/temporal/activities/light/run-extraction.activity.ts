@@ -10,7 +10,7 @@ import { buildLightExtractionAgent, type DreamDeps } from '../../../agents/light
 import { emptySessionLog, type SessionLogEntry } from '../../../agents/extraction-summary.schema';
 import { type VaultToolDeps } from '../../../agents/vault-tools';
 import type { ExtractionAgentOutput, ExtractionInput } from '../../workflows/light-dream.workflow';
-import { SHORT_SESSION_THRESHOLD, buildExtractionRunPrompt, buildExtractionToolFactories, countUserMessages } from './helpers';
+import { SHORT_SESSION_THRESHOLD, buildExtractionRunPrompt, buildExtractionToolFactories } from './helpers';
 
 @Injectable()
 export class RunExtractionActivity {
@@ -26,7 +26,7 @@ export class RunExtractionActivity {
   @TemporalActivity('light.run_extraction')
   async runExtraction(inp: ExtractionInput): Promise<ExtractionAgentOutput> {
     const startedAt = new Date();
-    const userMessageCount = countUserMessages(inp.parsed_text);
+    const userMessageCount = inp.user_message_count;
 
     if (userMessageCount < SHORT_SESSION_THRESHOLD) {
       this.logger.log({
