@@ -47,6 +47,7 @@ class TestThrowModule {}
 
 describe('Error envelope E2E', () => {
   let app: INestApplication;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(60000);
 
@@ -85,7 +86,7 @@ describe('Error envelope E2E', () => {
   describe('flat envelope shape', () => {
     it('should respond to an unknown route with the flat envelope', async () => {
       // When
-      const response = await request(app.getHttpServer()).get('/__definitely-not-a-real-route__');
+      const response = await request(app.getHttpServer()).get('/__definitely-not-a-real-route__').set('x-api-key', apiKey);
 
       // Then
       expect(response.status).toBeGreaterThanOrEqual(400);
@@ -106,7 +107,7 @@ describe('Error envelope E2E', () => {
 
       try {
         // When
-        const response = await request(app.getHttpServer()).get('/__test__/internal');
+        const response = await request(app.getHttpServer()).get('/__test__/internal').set('x-api-key', apiKey);
 
         // Then
         expect(response.status).toBe(500);

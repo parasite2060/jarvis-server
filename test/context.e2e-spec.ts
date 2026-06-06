@@ -33,6 +33,7 @@ const MEMORY_LINES = Array.from({ length: 250 }, (_, i) => `memory-line-${i + 1}
 describe('Context E2E Tests', () => {
   let setup: E2ETestSetup;
   let commandBus: CommandBus;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(60_000);
 
@@ -67,7 +68,7 @@ describe('Context E2E Tests', () => {
   describe('GET /memory/context', () => {
     it('cache miss on first request — returns 200 with all 9 vault sections + MEMORY TOOLS in fixed order', async () => {
       // Act
-      const response = await request(setup.httpServer).get('/memory/context');
+      const response = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -100,13 +101,13 @@ describe('Context E2E Tests', () => {
 
     it('cache hit on second request — returns cached:true with byte-identical context and faster latency', async () => {
       // Arrange — warm the cache.
-      const first = await request(setup.httpServer).get('/memory/context');
+      const first = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
       expect(first.status).toBe(200);
       expect(first.body.data.cached).toBe(false);
 
       // Act — second call.
       const start = Date.now();
-      const second = await request(setup.httpServer).get('/memory/context');
+      const second = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
       const elapsedMs = Date.now() - start;
 
       // Assert
@@ -120,14 +121,14 @@ describe('Context E2E Tests', () => {
 
     it('cache invalidation — InvalidateContextCacheCommand clears cache; next request rebuilds', async () => {
       // Arrange — warm the cache.
-      const warm = await request(setup.httpServer).get('/memory/context');
+      const warm = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
       expect(warm.body.data.cached).toBe(false);
-      const verifyHit = await request(setup.httpServer).get('/memory/context');
+      const verifyHit = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
       expect(verifyHit.body.data.cached).toBe(true);
 
       // Act — dispatch the invalidation command.
       await commandBus.execute(new InvalidateContextCacheCommand({ reason: 'manual', timestamp: new Date() }));
-      const afterInvalidation = await request(setup.httpServer).get('/memory/context');
+      const afterInvalidation = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       expect(afterInvalidation.body.data.cached).toBe(false);
@@ -138,7 +139,7 @@ describe('Context E2E Tests', () => {
       await removeFile(`dailys/${YESTERDAY}.md`);
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/context');
+      const response = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -154,7 +155,7 @@ describe('Context E2E Tests', () => {
       // Arrange — vault already seeded with 250-line MEMORY.md.
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/context');
+      const response = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       const ctx: string = response.body.data.context;
@@ -180,7 +181,7 @@ describe('Context E2E Tests', () => {
       );
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/context');
+      const response = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       expect(response.status).toBe(200);
@@ -197,7 +198,7 @@ describe('Context E2E Tests', () => {
       );
 
       // Act
-      const response = await request(setup.httpServer).get('/memory/context');
+      const response = await request(setup.httpServer).get('/memory/context').set('x-api-key', apiKey);
 
       // Assert
       expect(response.body.data.context).not.toContain('## VAULT HEALTH');

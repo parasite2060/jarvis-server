@@ -16,6 +16,7 @@ import { TemporalClientService } from '../src/shared/temporal/temporal-client.se
 describe('Conversation E2E Tests', () => {
   let setup: E2ETestSetup;
   let temporalSpy: jest.SpyInstance;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(30000);
 
@@ -52,7 +53,7 @@ describe('Conversation E2E Tests', () => {
       };
 
       // Act
-      const response = await request(setup.httpServer).post('/conversations').send(body);
+      const response = await request(setup.httpServer).post('/conversations').set('x-api-key', apiKey).send(body);
 
       // Assert
       expect(response.status).toBe(202);
@@ -81,13 +82,13 @@ describe('Conversation E2E Tests', () => {
     it('should return 200 with duplicate=true on a second POST within the dedup window', async () => {
       // Arrange — first ingest
       const body = { sessionId: 'sess-e2e-2', transcript: 'first', source: 'stop' };
-      const first = await request(setup.httpServer).post('/conversations').send(body);
+      const first = await request(setup.httpServer).post('/conversations').set('x-api-key', apiKey).send(body);
       expect(first.status).toBe(202);
       const firstId = first.body.data.transcriptId;
       temporalSpy.mockClear();
 
       // Act — duplicate within 60s
-      const second = await request(setup.httpServer).post('/conversations').send(body);
+      const second = await request(setup.httpServer).post('/conversations').set('x-api-key', apiKey).send(body);
 
       // Assert
       expect(second.status).toBe(200);
@@ -101,11 +102,15 @@ describe('Conversation E2E Tests', () => {
 
     it('should persist is_continuation=true when prior transcripts exist for the session', async () => {
       // Arrange — first ingest with one source
-      await request(setup.httpServer).post('/conversations').send({ sessionId: 'sess-e2e-3', transcript: 'first', source: 'stop' });
+      await request(setup.httpServer)
+        .post('/conversations')
+        .set('x-api-key', apiKey)
+        .send({ sessionId: 'sess-e2e-3', transcript: 'first', source: 'stop' });
 
       // Act — second ingest with a different source (skips dedup; chain count > 0 → continuation)
       const second = await request(setup.httpServer)
         .post('/conversations')
+        .set('x-api-key', apiKey)
         .send({ sessionId: 'sess-e2e-3', transcript: 'second', source: 'compact' });
       expect(second.status).toBe(202);
 
@@ -122,7 +127,7 @@ describe('Conversation E2E Tests', () => {
   describe('GET /conversations/position', () => {
     it('should return last_line=0 with status 200 (NOT 404) when no transcript exists', async () => {
       // Act
-      const response = await request(setup.httpServer).get('/conversations/position').query({ session_id: 'sess-missing' });
+      const response = await request(setup.httpServer).get('/conversations/position').set('x-api-key', apiKey).query({ session_id: 'sess-missing' });
 
       // Assert — RAW snake_case body (NOT wrapped in HttpApiResponse) per MC1.
       expect(response.status).toBe(200);
@@ -131,11 +136,14 @@ describe('Conversation E2E Tests', () => {
 
     it('should return the persisted last_processed_line value when set via SQL fixture', async () => {
       // Arrange — POST then bump last_processed_line directly (mimicking Story 13.10).
-      await request(setup.httpServer).post('/conversations').send({ sessionId: 'sess-e2e-pos', transcript: 'x', source: 'stop' });
+      await request(setup.httpServer)
+        .post('/conversations')
+        .set('x-api-key', apiKey)
+        .send({ sessionId: 'sess-e2e-pos', transcript: 'x', source: 'stop' });
       await setup.dataSource.query(`UPDATE jarvis.transcripts SET last_processed_line = 250 WHERE session_id = $1`, ['sess-e2e-pos']);
 
       // Act
-      const response = await request(setup.httpServer).get('/conversations/position').query({ session_id: 'sess-e2e-pos' });
+      const response = await request(setup.httpServer).get('/conversations/position').set('x-api-key', apiKey).query({ session_id: 'sess-e2e-pos' });
 
       // Assert
       expect(response.status).toBe(200);

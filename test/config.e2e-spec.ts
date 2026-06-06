@@ -38,6 +38,7 @@ async function seedConfigYml(overrides: Record<string, unknown> = {}): Promise<v
 
 describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
   let setup: E2ETestSetup;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(30_000);
 
@@ -59,7 +60,7 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
 
   describe('GET /config', () => {
     it('(a) returns all four config fields with defaults', async () => {
-      const res = await request(setup.httpServer).get('/config');
+      const res = await request(setup.httpServer).get('/config').set('x-api-key', apiKey);
 
       expect(res.status).toBe(200);
       expect(res.body.data ?? res.body).toMatchObject({
@@ -72,7 +73,7 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
 
     it('(f) weeklyReviewCron is included (Python bug fix — Story 13.13)', async () => {
       await seedConfigYml({ weekly_review_cron: '30 21 * * 0' });
-      const res = await request(setup.httpServer).get('/config');
+      const res = await request(setup.httpServer).get('/config').set('x-api-key', apiKey);
 
       expect(res.status).toBe(200);
       const body = res.body.data ?? res.body;
@@ -85,19 +86,19 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
 
   describe('PATCH /config', () => {
     it('(b) updates autoMerge and returns updated config', async () => {
-      const res = await request(setup.httpServer).patch('/config').send({ autoMerge: false });
+      const res = await request(setup.httpServer).patch('/config').set('x-api-key', apiKey).send({ autoMerge: false });
 
       expect(res.status).toBe(200);
       const body = res.body.data ?? res.body;
       expect(body.autoMerge).toBe(false);
 
       // Verify persisted — GET /config should return new value
-      const getRes = await request(setup.httpServer).get('/config');
+      const getRes = await request(setup.httpServer).get('/config').set('x-api-key', apiKey);
       expect((getRes.body.data ?? getRes.body).autoMerge).toBe(false);
     });
 
     it('(c) updates deepDreamCron and returns updated config', async () => {
-      const res = await request(setup.httpServer).patch('/config').send({ deepDreamCron: '0 22 * * *' });
+      const res = await request(setup.httpServer).patch('/config').set('x-api-key', apiKey).send({ deepDreamCron: '0 22 * * *' });
 
       expect(res.status).toBe(200);
       const body = res.body.data ?? res.body;
@@ -105,19 +106,19 @@ describe('Config endpoints E2E (GET /config, PATCH /config)', () => {
     });
 
     it('(d) rejects invalid cron string with 400', async () => {
-      const res = await request(setup.httpServer).patch('/config').send({ deepDreamCron: 'not-a-cron' });
+      const res = await request(setup.httpServer).patch('/config').set('x-api-key', apiKey).send({ deepDreamCron: 'not-a-cron' });
 
       expect(res.status).toBe(400);
     });
 
     it('(e) rejects maxMemoryLines below minimum (50) with 400', async () => {
-      const res = await request(setup.httpServer).patch('/config').send({ maxMemoryLines: 10 });
+      const res = await request(setup.httpServer).patch('/config').set('x-api-key', apiKey).send({ maxMemoryLines: 10 });
 
       expect(res.status).toBe(400);
     });
 
     it('(e) rejects maxMemoryLines above maximum (500) with 400', async () => {
-      const res = await request(setup.httpServer).patch('/config').send({ maxMemoryLines: 999 });
+      const res = await request(setup.httpServer).patch('/config').set('x-api-key', apiKey).send({ maxMemoryLines: 999 });
 
       expect(res.status).toBe(400);
     });

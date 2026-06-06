@@ -23,6 +23,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
   let setup: E2ETestSetup;
   let signalSpy: jest.SpyInstance;
   const mock = new ApiMockHelper();
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   beforeAll(async () => {
     setup = new E2ETestSetup();
@@ -46,7 +47,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
   });
 
   it('should queue a submitLight signal when POST /conversations is called with a valid transcript', async () => {
-    const response = await request(setup.httpServer).post('/conversations').send({
+    const response = await request(setup.httpServer).post('/conversations').set('x-api-key', apiKey).send({
       sessionId: 'test-light-001',
       transcript: 'User: Let me test the light dream pipeline.\nAssistant: Testing the pipeline.',
       source: 'stop',
@@ -83,7 +84,7 @@ describe('LightDreamWorkflow E2E (Story 13.16 AC1)', () => {
         'Assistant: Correct. Strict mode catches null reference errors at compile time.',
       ].join('\n');
 
-      const ingestResponse = await request(setup.httpServer).post('/conversations').send({
+      const ingestResponse = await request(setup.httpServer).post('/conversations').set('x-api-key', apiKey).send({
         sessionId,
         transcript,
         source: 'stop',
