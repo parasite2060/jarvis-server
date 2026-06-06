@@ -230,6 +230,9 @@ jobs:
           ignore-unfixed: true
           vuln-type: library
           severity: CRITICAL,HIGH
+          # Honour repo-root .trivyignore (justified CVE suppressions — minimatch
+          # build-time ReDoS that can't be overridden without breaking ESLint).
+          trivyignores: .trivyignore
 
       # OS-package CVEs come from the oven/bun:1-debian base image and are the
       # base-image maintainer's responsibility (Dependabot tracks the base image
