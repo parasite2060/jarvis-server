@@ -1,0 +1,18 @@
+# Trivy ignore file — suppressions with justification.
+# Reviewed: 2026-06-06.
+
+# minimatch ReDoS CVEs (HIGH). The only vulnerable minimatch@9.0.5 in the tree
+# is pulled transitively via typeorm's `glob` (and dev-only via jest /
+# typescript-eslint). It is a denial-of-service via a crafted glob PATTERN —
+# Jarvis never feeds attacker-controlled glob patterns to these libraries
+# (globs are internal/build-time only), so there is no runtime attack surface.
+#
+# We cannot bump it via a package.json override: forcing minimatch to 9.0.6
+# also forces @eslint/eslintrc's required minimatch@^3 to 9.x, which has no
+# default export and crashes ESLint ("does not provide an export named
+# 'default'"). Pinning via lock-regeneration floats unrelated transitives
+# (e.g. uuid → 14 ESM) and breaks the Jest transform. Suppressing the specific
+# CVEs is the lowest-risk option given the non-existent runtime exposure.
+CVE-2026-26996
+CVE-2026-27903
+CVE-2026-27904
