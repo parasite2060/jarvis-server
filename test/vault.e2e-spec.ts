@@ -46,6 +46,7 @@ async function seed(relPath: string, content: string): Promise<void> {
 
 describe('Vault E2E Tests', () => {
   let setup: E2ETestSetup;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(120_000);
 
@@ -72,7 +73,7 @@ describe('Vault E2E Tests', () => {
   describe('GET /memory/files/manifest', () => {
     it('happy path — HTTP 200 with camelCase envelope (manifestHash + fileCount + generatedAt + per-file path/hash/size/updatedAt)', async () => {
       // WHEN
-      const response = await request(setup.httpServer).get('/memory/files/manifest');
+      const response = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
 
       // THEN
       expect(response.status).toBe(200);
@@ -96,7 +97,7 @@ describe('Vault E2E Tests', () => {
 
     it('excludes anti-patterns — .git, node_modules, transcripts (txt), hidden files, non-vault extensions', async () => {
       // WHEN
-      const response = await request(setup.httpServer).get('/memory/files/manifest');
+      const response = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
 
       // THEN
       const responsePaths: string[] = response.body.data.files.map((f: { path: string }) => f.path);
@@ -107,8 +108,8 @@ describe('Vault E2E Tests', () => {
 
     it('manifestHash deterministic across calls with same vault state', async () => {
       // WHEN
-      const first = await request(setup.httpServer).get('/memory/files/manifest');
-      const second = await request(setup.httpServer).get('/memory/files/manifest');
+      const first = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
+      const second = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
 
       // THEN
       expect(first.body.data.manifestHash).toBe(second.body.data.manifestHash);
@@ -116,13 +117,13 @@ describe('Vault E2E Tests', () => {
 
     it('manifestHash changes when a file is added to the vault', async () => {
       // GIVEN
-      const before = await request(setup.httpServer).get('/memory/files/manifest');
+      const before = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
       const h1 = before.body.data.manifestHash;
       const newFile = 'patterns/new-file.md';
       await seed(newFile, '# new file');
 
       // WHEN
-      const after = await request(setup.httpServer).get('/memory/files/manifest');
+      const after = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
 
       // THEN
       expect(after.body.data.manifestHash).not.toBe(h1);
@@ -137,7 +138,7 @@ describe('Vault E2E Tests', () => {
       await setup.dataSource.query('TRUNCATE jarvis.file_manifest CASCADE');
 
       // WHEN
-      await request(setup.httpServer).get('/memory/files/manifest');
+      await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
 
       // THEN
       let rows: { count: string }[] = [];
@@ -154,7 +155,7 @@ describe('Vault E2E Tests', () => {
   describe('GET /memory/files/*path', () => {
     it('happy path — returns content + filePath + hash + size (camelCase)', async () => {
       // WHEN
-      const response = await request(setup.httpServer).get('/memory/files/dailys/2026-05-08.md');
+      const response = await request(setup.httpServer).get('/memory/files/dailys/2026-05-08.md').set('x-api-key', apiKey);
 
       // THEN
       expect(response.status).toBe(200);
@@ -167,7 +168,7 @@ describe('Vault E2E Tests', () => {
 
     it('400 on path traversal', async () => {
       // WHEN
-      const response = await request(setup.httpServer).get('/memory/files/dailys/../../../etc/passwd');
+      const response = await request(setup.httpServer).get('/memory/files/dailys/../../../etc/passwd').set('x-api-key', apiKey);
 
       // THEN
       expect([400, 404]).toContain(response.status);
@@ -180,7 +181,7 @@ describe('Vault E2E Tests', () => {
 
     it('404 on missing file', async () => {
       // WHEN
-      const response = await request(setup.httpServer).get('/memory/files/dailys/2099-01-01.md');
+      const response = await request(setup.httpServer).get('/memory/files/dailys/2099-01-01.md').set('x-api-key', apiKey);
 
       // THEN
       expect(response.status).toBe(404);
@@ -213,7 +214,7 @@ describe('Vault E2E Tests', () => {
     it('manifest with 1100+ files completes in <1s wall-clock at the controller', async () => {
       // WHEN
       const start = Date.now();
-      const response = await request(setup.httpServer).get('/memory/files/manifest');
+      const response = await request(setup.httpServer).get('/memory/files/manifest').set('x-api-key', apiKey);
       const elapsedMs = Date.now() - start;
 
       // THEN

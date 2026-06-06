@@ -16,6 +16,7 @@ import { TemporalClientService } from '../src/shared/temporal/temporal-client.se
 describe('Dream Trigger E2E', () => {
   let setup: E2ETestSetup;
   let temporalSpy: jest.SpyInstance;
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   jest.setTimeout(30000);
 
@@ -40,7 +41,7 @@ describe('Dream Trigger E2E', () => {
   describe('POST /dream', () => {
     it('empty body — returns 202 + queued status, signals coord-singleton with manual trigger', async () => {
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({});
+      const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({});
 
       // Assert HTTP response
       expect(response.status).toBe(202);
@@ -63,7 +64,7 @@ describe('Dream Trigger E2E', () => {
 
     it('with sourceDate (camelCase) — returns 202 + queued status, signals with manual-backfill trigger', async () => {
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({ sourceDate: '2026-04-20' });
+      const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate: '2026-04-20' });
 
       // Assert HTTP response
       expect(response.status).toBe(202);
@@ -80,7 +81,7 @@ describe('Dream Trigger E2E', () => {
 
     it('with source_date (snake_case — plugin wire compatibility, Q7 SM pick)', async () => {
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({ source_date: '2026-04-20' });
+      const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ source_date: '2026-04-20' });
 
       // Assert HTTP response
       expect(response.status).toBe(202);
@@ -97,7 +98,7 @@ describe('Dream Trigger E2E', () => {
 
     it('invalid sourceDate format — returns 400 (ValidationPipe)', async () => {
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({ sourceDate: 'not-a-date' });
+      const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate: 'not-a-date' });
 
       // Assert
       expect(response.status).toBe(400);
@@ -108,7 +109,7 @@ describe('Dream Trigger E2E', () => {
       const outOfRangeDate = '2026-13-99';
 
       // Act
-      const response = await request(setup.httpServer).post('/dream').send({ sourceDate: outOfRangeDate });
+      const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate: outOfRangeDate });
 
       // Assert
       expect(response.status).toBe(202);
