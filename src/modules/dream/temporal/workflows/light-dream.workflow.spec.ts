@@ -19,6 +19,7 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { deriveSourceDate, deriveSessionStart } from './light-dream.workflow';
 import { emptySessionLog, type SessionLogEntry } from '../../agents/extraction-summary.schema';
 import type {
+  CleanupTranscriptInput,
   CommitAndPRInput,
   CommitAndPRResult,
   ExtractionAgentOutput,
@@ -91,6 +92,7 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
       updateTranscriptPosition: (inp: UpdatePositionInput) => Promise<void>;
       invalidateContextCache: (inp: InvalidateCacheInput) => Promise<void>;
       commitAndPr: (inp: CommitAndPRInput) => Promise<CommitAndPRResult>;
+      cleanupTranscript: (inp: CleanupTranscriptInput) => Promise<void>;
       markDreamOutcome: (inp: MarkDreamOutcomeInput) => Promise<void>;
     }> = {},
   ): {
@@ -101,6 +103,7 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
     'light.update_transcript_position': (inp: UpdatePositionInput) => Promise<void>;
     'light.invalidate_cache': (inp: InvalidateCacheInput) => Promise<void>;
     'light.commit_and_pr': (inp: CommitAndPRInput) => Promise<CommitAndPRResult>;
+    'light.cleanup_transcript': (inp: CleanupTranscriptInput) => Promise<void>;
     'light.mark_dream_outcome': (inp: MarkDreamOutcomeInput) => Promise<void>;
   } {
     return {
@@ -143,6 +146,7 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
           git_pr_url: 'https://github.com/test/repo/pull/1',
           git_pr_status: 'created',
         })),
+      'light.cleanup_transcript': overrides.cleanupTranscript ?? (async () => {}),
       'light.mark_dream_outcome': overrides.markDreamOutcome ?? (async () => {}),
     };
   }
@@ -213,6 +217,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
       invalidateContextCache: async () => {
         calls.push('invalidate');
       },
+      cleanupTranscript: async () => {
+        calls.push('cleanup');
+      },
       markDreamOutcome: async () => {
         calls.push('outcome');
       },
@@ -224,7 +231,7 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
     // Assert
     expect(result.dream_id).toBe(42);
     expect(result.pr_url).toBe('http://pr');
-    expect(calls).toEqual(['load', 'extract', 'persist', 'record', 'updatePos', 'commit', 'invalidate', 'outcome']);
+    expect(calls).toEqual(['load', 'extract', 'persist', 'record', 'updatePos', 'commit', 'invalidate', 'cleanup', 'outcome']);
   }, 60_000);
 
   it('short-session skip: no_extract=true returns early without persistSessionLog/runRecord/commit', async () => {
@@ -257,6 +264,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         calls.push('record');
         throw new Error('should not run');
       },
+      cleanupTranscript: async () => {
+        calls.push('cleanup');
+      },
       markDreamOutcome: async () => {
         calls.push('outcome');
       },
@@ -268,7 +278,7 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
     // Assert
     expect(result.dream_id).toBe(7);
     expect(result.pr_url).toBeNull();
-    expect(calls).toEqual(['load', 'extract', 'outcome']);
+    expect(calls).toEqual(['load', 'extract', 'cleanup', 'outcome']);
   }, 60_000);
 
   it('empty files_modified: skips commitAndPr and invalidateContextCache', async () => {
@@ -312,6 +322,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         calls.push('invalidate');
         throw new Error('should not run');
       },
+      cleanupTranscript: async () => {
+        calls.push('cleanup');
+      },
       markDreamOutcome: async () => {
         calls.push('outcome');
       },
@@ -323,6 +336,6 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
     // Assert
     expect(result.dream_id).toBe(99);
     expect(result.pr_url).toBeNull();
-    expect(calls).toEqual(['load', 'extract', 'persist', 'record', 'updatePos', 'outcome']);
+    expect(calls).toEqual(['load', 'extract', 'persist', 'record', 'updatePos', 'cleanup', 'outcome']);
   }, 60_000);
 });

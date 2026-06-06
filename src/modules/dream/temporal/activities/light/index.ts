@@ -6,6 +6,7 @@ import { UpdateTranscriptPositionActivity } from './update-transcript-position.a
 import { LightInvalidateContextCacheActivity } from './invalidate-context-cache.activity';
 import { LightCommitAndPrActivity } from './commit-and-pr.activity';
 import { MarkDreamOutcomeActivity } from './mark-dream-outcome.activity';
+import { CleanupTranscriptActivity } from './cleanup-transcript.activity';
 
 export const Activities = [
   LoadTranscriptActivity,
@@ -16,4 +17,5 @@ export const Activities = [
   LightInvalidateContextCacheActivity,
   LightCommitAndPrActivity,
   MarkDreamOutcomeActivity,
+  CleanupTranscriptActivity,
 ];
