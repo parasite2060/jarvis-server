@@ -104,6 +104,7 @@ describe('dreamCoordinatorWorkflow (unit, mocked @temporalio/workflow)', () => {
     await new Promise((r) => setImmediate(r));
 
     // Assert — executeChild called with PascalCase wire type + light-${session_id} child ID
+    // and the per-budget workflowRunTimeout (light ≤ 15 min).
     expect(executeChildCalls).toHaveLength(1);
     expect(executeChildCalls[0]).toEqual({
       workflowType: 'LightDream',
@@ -112,6 +113,7 @@ describe('dreamCoordinatorWorkflow (unit, mocked @temporalio/workflow)', () => {
         taskQueue: 'jarvis-dream-test',
         args: [{ session_id: 's1', transcript_id: 't1' }],
         retry: { maximumAttempts: 1 },
+        workflowRunTimeout: '15 minutes',
       },
     });
 
@@ -133,9 +135,10 @@ describe('dreamCoordinatorWorkflow (unit, mocked @temporalio/workflow)', () => {
       await new Promise((r) => setImmediate(r));
     }
 
-    // Assert — three executeChild calls in submission order
+    // Assert — three executeChild calls in submission order with per-budget run timeouts
     expect(executeChildCalls.map((c) => c.workflowType)).toEqual(['LightDream', 'DeepDream', 'WeeklyReview']);
     expect(executeChildCalls.map((c) => (c.opts as { workflowId: string }).workflowId)).toEqual(['light-c1', 'deep-2026-05-08', 'weekly-2026-W18']);
+    expect(executeChildCalls.map((c) => (c.opts as { workflowRunTimeout: string }).workflowRunTimeout)).toEqual(['15 minutes', '30 minutes', '30 minutes']);
 
     runPromise.catch(() => undefined);
   });
