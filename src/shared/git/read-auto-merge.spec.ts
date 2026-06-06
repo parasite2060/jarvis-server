@@ -78,28 +78,19 @@ describe('readConflictConfig', () => {
   });
 
   it('uses allowGlobs override from ai_conflict_resolution_files', async () => {
-    await fs.writeFile(
-      path.join(vaultDir, 'config.yml'),
-      'ai_conflict_resolution_files:\n  - dailys/*\n',
-    );
+    await fs.writeFile(path.join(vaultDir, 'config.yml'), 'ai_conflict_resolution_files:\n  - dailys/*\n');
     const result = await readConflictConfig(vaultDir);
     expect(result.allowGlobs).toEqual(['dailys/*']);
   });
 
   it('uses protectedFiles override from ai_conflict_resolution_protected', async () => {
-    await fs.writeFile(
-      path.join(vaultDir, 'config.yml'),
-      'ai_conflict_resolution_protected:\n  - MEMORY.md\n',
-    );
+    await fs.writeFile(path.join(vaultDir, 'config.yml'), 'ai_conflict_resolution_protected:\n  - MEMORY.md\n');
     const result = await readConflictConfig(vaultDir);
     expect(result.protectedFiles).toEqual(['MEMORY.md']);
   });
 
   it('uses autoMergeResolved: false from ai_conflict_resolution_auto_merge: false', async () => {
-    await fs.writeFile(
-      path.join(vaultDir, 'config.yml'),
-      'ai_conflict_resolution_auto_merge: false\n',
-    );
+    await fs.writeFile(path.join(vaultDir, 'config.yml'), 'ai_conflict_resolution_auto_merge: false\n');
     const result = await readConflictConfig(vaultDir);
     expect(result.autoMergeResolved).toBe(false);
   });
@@ -116,19 +107,13 @@ describe('readConflictConfig', () => {
   });
 
   it('falls back to default allowGlobs when ai_conflict_resolution_files is not an array of strings', async () => {
-    await fs.writeFile(
-      path.join(vaultDir, 'config.yml'),
-      'ai_conflict_resolution_files: not-an-array\n',
-    );
+    await fs.writeFile(path.join(vaultDir, 'config.yml'), 'ai_conflict_resolution_files: not-an-array\n');
     const result = await readConflictConfig(vaultDir);
     expect(result.allowGlobs).toEqual(DEFAULT_CONFLICT_ALLOW_GLOBS);
   });
 
   it('falls back to default protectedFiles when ai_conflict_resolution_protected is not an array of strings', async () => {
-    await fs.writeFile(
-      path.join(vaultDir, 'config.yml'),
-      'ai_conflict_resolution_protected: 42\n',
-    );
+    await fs.writeFile(path.join(vaultDir, 'config.yml'), 'ai_conflict_resolution_protected: 42\n');
     const result = await readConflictConfig(vaultDir);
     expect(result.protectedFiles).toEqual(DEFAULT_PROTECTED_FILES);
   });

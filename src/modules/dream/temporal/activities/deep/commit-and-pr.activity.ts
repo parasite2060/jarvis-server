@@ -4,9 +4,13 @@ import { TemporalActivity } from 'src/shared/temporal/decorators/temporal-activi
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
 import { AppConfigService } from 'src/shared/config/config.service';
-import { readAutoMergeFromVault } from 'src/shared/git/read-auto-merge';
+import { DeepAgentFactory } from 'src/shared/agents/deep-agent.factory';
+import { PromptCacheService } from 'src/shared/agents/prompt-cache.service';
 import type { CommitAndPRResult, DeepCommitAndPRInput } from '../../workflows/deep-dream.workflow';
 import { buildDeepPRBody } from './helpers';
+import { buildConflictResolverCallback } from '../shared/build-conflict-resolver';
+import { buildConflictAuditSection } from '../shared/conflict-audit';
+import { conflictAwarePush } from '../shared/conflict-aware-push';
 
 @Injectable()
 export class DeepCommitAndPrActivity {
@@ -15,6 +19,8 @@ export class DeepCommitAndPrActivity {
   constructor(
     private readonly gitOps: GitOpsService,
     private readonly config: AppConfigService,
+    private readonly agentFactory: DeepAgentFactory,
+    private readonly promptCache: PromptCacheService,
   ) {}
 
   @TemporalActivity('deep.commit_and_pr')
@@ -25,7 +31,6 @@ export class DeepCommitAndPrActivity {
     }
 
     const commitMsg = `dream(deep): consolidate ${inp.target_date_iso}`;
-    const prBody = buildDeepPRBody(inp);
 
     try {
       await this.gitOps.pullLatestMain();
@@ -36,8 +41,21 @@ export class DeepCommitAndPrActivity {
         commitMsg,
         fileChanges.map((f) => f.path),
       );
-      await this.gitOps.push(branch);
-      const autoMerge = await readAutoMergeFromVault(this.config.vaultPath);
+
+      const handle = buildConflictResolverCallback({
+        vaultPath: this.config.vaultPath,
+        agentFactory: this.agentFactory,
+        promptCache: this.promptCache,
+      });
+      const { audits, autoMerge } = await conflictAwarePush({
+        gitOps: this.gitOps,
+        config: this.config,
+        branch,
+        auditCommitPrefix: 'dream(deep):',
+        resolverHandle: handle,
+      });
+
+      const prBody = buildDeepPRBody(inp) + buildConflictAuditSection(audits);
       const result = await this.gitOps.createPullRequest({
         branch,
         title: commitMsg,

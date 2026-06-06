@@ -42,6 +42,9 @@ const REQUIRED_PROMPTS = [
   // kebab-case + camelCase tool-name body adjustments per 13.10 Q3 pattern;
   // `readVaultIndex` mention preserved per Q4 (TS port registers the tool).
   'weekly-review',
+  // CR-6: AI conflict-resolution system prompt — must be present at boot so
+  // push callbacks can retrieve it synchronously during rebase conflict handling.
+  'conflict-resolution',
 ] as const;
 
 @Injectable()

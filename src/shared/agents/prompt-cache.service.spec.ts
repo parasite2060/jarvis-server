@@ -26,6 +26,8 @@ describe('PromptCacheService', () => {
     fs.writeFileSync(path.join(tempDir, 'deep-dream-health-fix.md'), 'HEALTH-FIX-PROMPT');
     // Story 13.12 added the weekly-review prompt to REQUIRED_PROMPTS.
     fs.writeFileSync(path.join(tempDir, 'weekly-review.md'), 'WEEKLY-REVIEW-PROMPT');
+    // CR-6 added the conflict-resolution prompt to REQUIRED_PROMPTS.
+    fs.writeFileSync(path.join(tempDir, 'conflict-resolution.md'), 'CONFLICT-RESOLUTION-PROMPT');
 
     mockConfig = createMock<AppConfigService>();
     Object.defineProperty(mockConfig, 'promptsPath', { get: () => tempDir });
