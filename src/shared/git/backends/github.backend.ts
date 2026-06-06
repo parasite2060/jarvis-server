@@ -137,9 +137,25 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         throw err;
       }
       await this.recoverFromStaleLocal(branch, resolver);
-      await this.git.push(remote, branch, { '-u': null });
+      // After rebasing onto main, the dream branch legitimately diverges from any
+      // stale remote dream branch left by a prior failed attempt. Force-with-lease
+      // overwrites that disposable, server-owned branch. NEVER force a non-dream
+      // branch (main is only ever fast-forwarded — hard boundary).
+      await this.pushBranch(remote, branch);
       this.logger.log({ message: 'github backend: push recovered after rebase', event: 'backend.github.push.recovered', branch });
     }
+  }
+
+  private async pushBranch(remote: string, branch: string): Promise<void> {
+    if (this.isDreamBranch(branch)) {
+      await this.git.push(remote, branch, { '-u': null, '--force-with-lease': null });
+    } else {
+      await this.git.push(remote, branch, { '-u': null });
+    }
+  }
+
+  private isDreamBranch(branch: string): boolean {
+    return branch.startsWith('dream/');
   }
 
   /**

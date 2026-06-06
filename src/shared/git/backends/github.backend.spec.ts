@@ -349,6 +349,35 @@ describe('GitHubGitOpsBackend', () => {
       await expect(target.push('dream/conflict')).rejects.toBeInstanceOf(GitOpsRebaseConflictError);
       expect(mockGit.rebase).toHaveBeenCalledWith(['--abort']);
     });
+
+    it('should use --force-with-lease on the recovery re-push when the branch is a dream/* branch', async () => {
+      // Arrange — initial push fails non-FF; rebase succeeds; recovery re-push must force-with-lease
+      // so that a stale remote dream branch (orphaned from a prior failed attempt) is safely overwritten.
+      const nonFfErr = new Error('! [rejected] non-fast-forward');
+      mockGit.push.mockRejectedValueOnce(nonFfErr).mockResolvedValueOnce({} as never);
+
+      // Act
+      await target.push('dream/light-xxx');
+
+      // Assert — second push call (recovery) must include --force-with-lease
+      expect(mockGit.push).toHaveBeenCalledTimes(2);
+      expect(mockGit.push).toHaveBeenNthCalledWith(2, AUTH_URL, 'dream/light-xxx', { '-u': null, '--force-with-lease': null });
+    });
+
+    it('should NOT use --force-with-lease on the recovery re-push when the branch is not a dream/* branch', async () => {
+      // Arrange — non-dream branches (including main) must never be force-pushed;
+      // the recovery re-push for main must remain a plain fast-forward push.
+      const nonFfErr = new Error('! [rejected] non-fast-forward');
+      mockGit.push.mockRejectedValueOnce(nonFfErr).mockResolvedValueOnce({} as never);
+
+      // Act
+      await target.push('main');
+
+      // Assert — second push call must be a plain push without --force-with-lease
+      expect(mockGit.push).toHaveBeenCalledTimes(2);
+      expect(mockGit.push).toHaveBeenNthCalledWith(2, AUTH_URL, 'main', { '-u': null });
+      expect(mockGit.push).not.toHaveBeenCalledWith(AUTH_URL, 'main', expect.objectContaining({ '--force-with-lease': null }));
+    });
   });
 
   // ── createPullRequest ──────────────────────────────────────────────────────
