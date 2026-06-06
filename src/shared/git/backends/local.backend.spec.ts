@@ -29,6 +29,28 @@ describe('LocalGitOpsBackend', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // ── resetToCleanMain ───────────────────────────────────────────────────────
+
+  describe('resetToCleanMain', () => {
+    it('should checkout main, reset --hard, and clean -fd when resetToCleanMain is called', async () => {
+      // Act
+      await target.resetToCleanMain();
+
+      // Assert
+      expect(mockGit.checkout).toHaveBeenCalledWith('main');
+      expect(mockGit.raw).toHaveBeenCalledWith(['reset', '--hard']);
+      expect(mockGit.raw).toHaveBeenCalledWith(['clean', '-fd']);
+    });
+
+    it('should not throw when checkout fails so local mode without a remote is non-fatal', async () => {
+      // Arrange
+      mockGit.checkout.mockRejectedValueOnce(new Error('pathspec main did not match any file(s) known to git'));
+
+      // Act & Assert — must resolve without throwing
+      await expect(target.resetToCleanMain()).resolves.toBeUndefined();
+    });
+  });
+
   // ── pullLatestMain ─────────────────────────────────────────────────────────
 
   describe('pullLatestMain', () => {

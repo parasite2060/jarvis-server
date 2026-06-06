@@ -27,6 +27,22 @@ export class LocalGitOpsBackend implements IGitOpsBackend {
     return this.gitInstance;
   }
 
+  async resetToCleanMain(): Promise<void> {
+    try {
+      await this.git.checkout('main');
+      await this.git.raw(['reset', '--hard']);
+      await this.git.raw(['clean', '-fd']);
+      this.logger.log({ message: 'local backend: reset to clean main', event: 'backend.local.resetToCleanMain' });
+    } catch (err) {
+      // Local mode without a real remote / no main yet — non-fatal, mirror pullLatestMain.
+      this.logger.log({
+        message: 'local backend: resetToCleanMain skipped',
+        event: 'backend.local.resetToCleanMain.skipped',
+        reason: String((err as { message?: string })?.message ?? '').slice(0, 120),
+      });
+    }
+  }
+
   async pullLatestMain(): Promise<void> {
     try {
       await this.git.checkout('main');

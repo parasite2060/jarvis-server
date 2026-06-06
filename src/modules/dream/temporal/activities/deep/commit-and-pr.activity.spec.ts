@@ -42,6 +42,30 @@ describe('DeepCommitAndPrActivity', () => {
     jest.clearAllMocks();
   });
 
+  it('should call resetToCleanMain before createBranch on every dream to prevent dirty-tree PR failures', async () => {
+    mockGitOps.resetToCleanMain.mockResolvedValue();
+    mockGitOps.pullLatestMain.mockResolvedValue();
+    mockGitOps.createBranch.mockResolvedValue();
+    mockGitOps.writeFiles.mockResolvedValue();
+    mockGitOps.commit.mockResolvedValue();
+    mockGitOps.push.mockResolvedValue();
+    mockGitOps.createPullRequest.mockResolvedValue({ url: 'https://github.com/test/pr/2' });
+
+    await target.commitAndPr({
+      dream_id: 2,
+      target_date_iso: '2026-05-08',
+      files_modified: [{ path: 'decisions/d.md', action: 'create' }],
+      vault_writes: [{ path: 'decisions/d.md', content: 'body', action: 'create' }],
+      stats: {},
+    });
+
+    expect(mockGitOps.resetToCleanMain).toHaveBeenCalledTimes(1);
+    // resetToCleanMain must be called before createBranch
+    const resetOrder = mockGitOps.resetToCleanMain.mock.invocationCallOrder[0]!;
+    const branchOrder = mockGitOps.createBranch.mock.invocationCallOrder[0]!;
+    expect(resetOrder).toBeLessThan(branchOrder);
+  });
+
   it('should return no_files when both vault_writes and files_modified are empty', async () => {
     const result = await target.commitAndPr({
       dream_id: 1,

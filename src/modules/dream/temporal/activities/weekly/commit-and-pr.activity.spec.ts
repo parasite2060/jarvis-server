@@ -42,6 +42,29 @@ describe('WeeklyCommitAndPrActivity', () => {
     jest.clearAllMocks();
   });
 
+  it('should call resetToCleanMain before createBranch on every dream to prevent dirty-tree PR failures', async () => {
+    mockGitOps.resetToCleanMain.mockResolvedValue();
+    mockGitOps.pullLatestMain.mockResolvedValue();
+    mockGitOps.createBranch.mockResolvedValue();
+    mockGitOps.writeFiles.mockResolvedValue();
+    mockGitOps.commit.mockResolvedValue();
+    mockGitOps.push.mockResolvedValue();
+    mockGitOps.createPullRequest.mockResolvedValue({ url: 'https://github.com/x/y/pull/42' });
+
+    await target.commitAndPr({
+      dream_id: 12,
+      week_iso: '2026-W19',
+      files_modified: [{ path: 'reviews/2026-W19.md', action: 'create' }],
+      vault_writes: [{ path: 'reviews/2026-W19.md', content: 'BODY', action: 'create' }],
+    });
+
+    expect(mockGitOps.resetToCleanMain).toHaveBeenCalledTimes(1);
+    // resetToCleanMain must be called before createBranch
+    const resetOrder = mockGitOps.resetToCleanMain.mock.invocationCallOrder[0]!;
+    const branchOrder = mockGitOps.createBranch.mock.invocationCallOrder[0]!;
+    expect(resetOrder).toBeLessThan(branchOrder);
+  });
+
   it('should write files and create PR with correct body when vault_writes has entries', async () => {
     mockGitOps.createPullRequest.mockResolvedValue({ url: 'https://github.com/x/y/pull/42' });
 

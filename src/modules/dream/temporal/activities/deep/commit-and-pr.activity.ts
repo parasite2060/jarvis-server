@@ -33,6 +33,7 @@ export class DeepCommitAndPrActivity {
     const commitMsg = `dream(deep): consolidate ${inp.target_date_iso}`;
 
     try {
+      await this.gitOps.resetToCleanMain();
       await this.gitOps.pullLatestMain();
       await this.gitOps.createBranch(branch);
       const fileChanges = inp.vault_writes.map((t) => ({ path: t.path, content: t.content }));

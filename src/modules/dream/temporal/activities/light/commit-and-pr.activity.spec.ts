@@ -43,6 +43,32 @@ describe('LightCommitAndPrActivity', () => {
     jest.clearAllMocks();
   });
 
+  it('should call resetToCleanMain before createBranch on every dream to prevent dirty-tree PR failures', async () => {
+    mockGitOps.resetToCleanMain.mockResolvedValue();
+    mockGitOps.pullLatestMain.mockResolvedValue();
+    mockGitOps.createBranch.mockResolvedValue();
+    mockGitOps.writeFiles.mockResolvedValue();
+    mockGitOps.commit.mockResolvedValue();
+    mockGitOps.push.mockResolvedValue();
+    mockGitOps.createPullRequest.mockResolvedValue({ url: 'https://github.com/test/pr/1' });
+
+    await target.commitAndPr({
+      dream_id: 1,
+      session_id: 'abc',
+      source_date_iso: '2026-05-08',
+      summary: '',
+      files_modified: ['dailys/2026-05-08.md'],
+      extraction_summary: '',
+      session_log_writes: [{ path: 'dailys/2026-05-08.md', content: 'log', action: 'create' }],
+    });
+
+    expect(mockGitOps.resetToCleanMain).toHaveBeenCalledTimes(1);
+    // resetToCleanMain must be called before createBranch
+    const resetOrder = mockGitOps.resetToCleanMain.mock.invocationCallOrder[0]!;
+    const branchOrder = mockGitOps.createBranch.mock.invocationCallOrder[0]!;
+    expect(resetOrder).toBeLessThan(branchOrder);
+  });
+
   it('should return no_changes when session_log_writes is empty', async () => {
     const result = await target.commitAndPr({
       dream_id: 1,
