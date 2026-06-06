@@ -176,6 +176,11 @@ export interface MarkDreamOutcomeInput {
   outcome: 'success' | 'partial' | 'failed';
 }
 
+/** FR44 — transcript file to delete after the dream completes. */
+export interface CleanupTranscriptInput {
+  transcript_file: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Activity proxies — multiple policy groups per Q10.
 //
@@ -192,6 +197,7 @@ interface QuickActs {
   'light.update_transcript_position'(inp: UpdatePositionInput): Promise<void>;
   'light.invalidate_cache'(inp: InvalidateCacheInput): Promise<void>;
   'light.mark_dream_outcome'(inp: MarkDreamOutcomeInput): Promise<void>;
+  'light.cleanup_transcript'(inp: CleanupTranscriptInput): Promise<void>;
 }
 
 const quickProxy = proxyActivities<QuickActs>({
@@ -257,6 +263,7 @@ const acts = {
   invalidateContextCache: quickProxy['light.invalidate_cache'],
   commitAndPr: commitProxy['light.commit_and_pr'],
   markDreamOutcome: quickProxy['light.mark_dream_outcome'],
+  cleanupTranscript: quickProxy['light.cleanup_transcript'],
 };
 
 // ---------------------------------------------------------------------------
@@ -391,6 +398,7 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
 
   // Step 3: short-session no_extract branch.
   if (extractionOutput.no_extract) {
+    await acts.cleanupTranscript({ transcript_file: loadResult.transcript_file });
     await acts.markDreamOutcome({ dream_id: dreamId, outcome: 'success' });
     return { dream_id: dreamId, pr_url: null };
   }
@@ -467,6 +475,7 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
   }
 
   // Step 9: outcome update (Q13 8th activity).
+  await acts.cleanupTranscript({ transcript_file: loadResult.transcript_file });
   const outcome: 'success' | 'partial' = softFailed ? 'partial' : 'success';
   await acts.markDreamOutcome({ dream_id: dreamId, outcome });
   if (softFailed) {
