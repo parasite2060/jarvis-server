@@ -25,7 +25,8 @@
  *   10. return { dream_id, pr_url }
  *
  * # Q10 RESOLVED: per-policy proxyActivities groups
- *   - quickActs   (timeout 30s, retries 3-5): load, persist, updatePosition, invalidate, markOutcome
+ *   - loadActs    (timeout 5min, retries 3): load_transcript (file read can exceed 30s)
+ *   - quickActs   (timeout 30s, retries 3-5): persist, updatePosition, invalidate, markOutcome
  *   - extractionActs (timeout 10min, retries 2): runExtraction
  *   - recordActs   (timeout 5min, retries 2): runRecord
  *   - commitActs   (timeout 2min, retries 3): commitAndPr
@@ -191,8 +192,23 @@ export interface CleanupTranscriptInput {
 // camelCase symbols are aliased into local consts immediately after.
 // ---------------------------------------------------------------------------
 
-interface QuickActs {
+// Separated from quickProxy: transcript file read (with JSONL parsing) can
+// exceed 30s on large sessions, causing StartToClose timeouts + 5 retries.
+interface LoadActs {
   'light.load_transcript'(inp: LoadTranscriptInput): Promise<LoadTranscriptResult>;
+}
+
+const loadProxy = proxyActivities<LoadActs>({
+  startToCloseTimeout: '5 minutes',
+  retry: {
+    initialInterval: '1s',
+    backoffCoefficient: 2,
+    maximumInterval: '30s',
+    maximumAttempts: 3,
+  },
+});
+
+interface QuickActs {
   'light.persist_session_log'(inp: PersistSessionLogInput): Promise<void>;
   'light.update_transcript_position'(inp: UpdatePositionInput): Promise<void>;
   'light.invalidate_cache'(inp: InvalidateCacheInput): Promise<void>;
@@ -255,7 +271,7 @@ const commitProxy = proxyActivities<CommitActs>({
 // Local TS-idiomatic aliases — keep workflow body readable without leaking
 // snake_case wire names below.
 const acts = {
-  loadTranscript: quickProxy['light.load_transcript'],
+  loadTranscript: loadProxy['light.load_transcript'],
   runExtraction: extractionProxy['light.run_extraction'],
   persistSessionLog: quickProxy['light.persist_session_log'],
   runRecord: recordProxy['light.run_record'],

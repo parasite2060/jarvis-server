@@ -55,10 +55,11 @@ export const submitWeeklySignal = defineSignal<[Record<string, unknown>]>('submi
 
 // Child workflow type names + payload ID keys — match Python `_KIND_CONFIG`
 // (coordinator.py:41-45). PascalCase wire names per Python `@workflow.defn(name=...)`.
-const KIND_CONFIG: Record<DreamKind, { workflowType: string; idKey: string }> = {
-  light: { workflowType: 'LightDream', idKey: 'session_id' },
-  deep: { workflowType: 'DeepDream', idKey: 'target_date' },
-  weekly: { workflowType: 'WeeklyReview', idKey: 'week_start' },
+// runTimeout enforces TanNT's per-dream budgets: light ≤ 15 min, deep/weekly ≤ 30 min.
+const KIND_CONFIG: Record<DreamKind, { workflowType: string; idKey: string; runTimeout: string }> = {
+  light: { workflowType: 'LightDream', idKey: 'session_id', runTimeout: '15 minutes' },
+  deep: { workflowType: 'DeepDream', idKey: 'target_date', runTimeout: '30 minutes' },
+  weekly: { workflowType: 'WeeklyReview', idKey: 'week_start', runTimeout: '30 minutes' },
 };
 
 export async function dreamCoordinatorWorkflow(): Promise<void> {
@@ -117,6 +118,7 @@ async function dispatchChild(req: DreamRequest, taskQueue: string): Promise<void
       taskQueue,
       args: [req.payload],
       retry: { maximumAttempts: 1 },
+      workflowRunTimeout: cfg.runTimeout,
     });
   } catch (err) {
     // Swallow child failure — log for observability, continue processing queue.
