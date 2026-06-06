@@ -16,6 +16,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { E2ETestSetup } from '../setup/e2e-setup';
 import { TemporalClientService } from '../../src/shared/temporal/temporal-client.service';
+import { TriggerWeeklyReviewUseCase } from '../../src/modules/dream/usecases/trigger-weekly-review.usecase';
 import { ApiMockHelper } from '../helpers';
 import { weeklyReviewStub } from '../fixtures/llm-stubs';
 
@@ -85,15 +86,21 @@ describe('WeeklyReviewWorkflow E2E (Story 13.16 AC3)', () => {
 
       const testStartedAt = new Date();
 
-      // WHEN: Trigger the weekly workflow via signal
-      await temporal.signalCoordinator('weekly', { week_start: '2026-05-06', trigger: 'auto' });
+      // WHEN: Trigger via the real use case (creates the dreams row and signals
+      // the coordinator WITH dream_id). Signalling the coordinator directly would
+      // omit dream_id, and the weekly activities insert dream_phases.dream_id
+      // (NOT NULL) — so the pipeline must go through the use case, mirroring the
+      // deep-dream pipeline test which triggers via POST /dream.
+      const triggerWeekly = setup.app.get(TriggerWeeklyReviewUseCase);
+      await triggerWeekly.execute({ weekStart: '2026-05-06', trigger: 'auto' });
 
-      // THEN: Wait for the weekly_review dream row to complete
+      // THEN: Wait for the weekly-review dream row to complete. The dream `type`
+      // value is 'weekly-review' (hyphen) as created by the use case.
       const startMs = Date.now();
       let dream: { type: string; outcome: string } | null = null;
       while (Date.now() - startMs < 120_000) {
         const rows = await setup.dataSource.query(
-          `SELECT type, outcome FROM jarvis.dreams WHERE type = 'weekly_review' AND created_at >= $1 LIMIT 1`,
+          `SELECT type, outcome FROM jarvis.dreams WHERE type = 'weekly-review' AND created_at >= $1 LIMIT 1`,
           [testStartedAt],
         );
         if (rows.length > 0 && rows[0].outcome !== null) {
@@ -104,7 +111,7 @@ describe('WeeklyReviewWorkflow E2E (Story 13.16 AC3)', () => {
       }
 
       expect(dream).not.toBeNull();
-      expect(dream!.type).toBe('weekly_review');
+      expect(dream!.type).toBe('weekly-review');
       expect(dream!.outcome).toBe('completed');
     });
   });
