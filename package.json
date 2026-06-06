@@ -1,6 +1,6 @@
 {
   "name": "@parasite2060/jarvis-server",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Jarvis Server — TypeScript port of the dream-memory system",
   "author": "TanNT",
   "private": true,

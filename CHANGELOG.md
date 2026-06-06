@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.0](https://github.com/parasite2060/jarvis-server/compare/v1.1.1...v1.2.0) (2026-06-06)
+
+
+### Features
+
+* add MAX_BODY_SIZE env (default 50mb) with typed accessor ([07b9049](https://github.com/parasite2060/jarvis-server/commit/07b9049c8d9cd9810158c847d82cee8fd5ad764f))
+* **dream:** auto-merge dream PRs when config.auto_merge is true ([8f3aefd](https://github.com/parasite2060/jarvis-server/commit/8f3aefd1a131bc6ab32ac34b22db3252f2725a03))
+* **dream:** conflict-resolver deepagents agent + prompt + strict output schema ([f4485e9](https://github.com/parasite2060/jarvis-server/commit/f4485e945724fe6d8b61dd7162e96e7292bcb728))
+* **dream:** wire AI conflict resolver into commit-and-pr (audit + PR annotation + auto-merge) ([8e2eb7b](https://github.com/parasite2060/jarvis-server/commit/8e2eb7b1be339f5c36985747481ccc40154c0a17))
+* **git:** bounded, protected-aware conflict resolve orchestrator ([153c900](https://github.com/parasite2060/jarvis-server/commit/153c900265c39599d5e621a44cf58de654cbfca2))
+* **git:** config flags for AI conflict resolution (default off) ([e0a6a2e](https://github.com/parasite2060/jarvis-server/commit/e0a6a2ed22cd966737684805c11cd42c06dbbb80))
+* **git:** optional resolver callback in rebase recovery (gated conflict resolution) ([0c201f6](https://github.com/parasite2060/jarvis-server/commit/0c201f6fa05d1a861b0a3f91ba0eb9863e49ef3e))
+* **git:** read base/ours/theirs of conflicted files during rebase ([5a2f53f](https://github.com/parasite2060/jarvis-server/commit/5a2f53fba11938e28fc921c41509003d9b452734))
+
+
+### Bug Fixes
+
+* **dream:** count user turns in raw JSONL transcripts (short-session gate) ([fa13746](https://github.com/parasite2060/jarvis-server/commit/fa1374637a833e2ad802a77c9168bfb4271c49b4))
+* **dream:** default light-dream trigger to 'session' (NOT NULL violation) ([0e6192d](https://github.com/parasite2060/jarvis-server/commit/0e6192ddca99231281583ffe16e9ba20d6579629))
+* **dream:** replace z.record with fixed shapes in extraction output schema ([b84242f](https://github.com/parasite2060/jarvis-server/commit/b84242f793dd91d127be8e956f898f88d8aadc1c))
+* **dream:** use .nullable() not .optional() on extraction tool schemas ([729a3f8](https://github.com/parasite2060/jarvis-server/commit/729a3f86ff2b2fe902e0944f8452d7d10587110e))
+
 ## [1.1.1](https://github.com/parasite2060/jarvis-server/compare/v1.1.0...v1.1.1) (2026-06-05)
 
 
