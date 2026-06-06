@@ -4,10 +4,10 @@ import { Logger } from '@nestjs/common';
 import simpleGit, { SimpleGit } from 'simple-git';
 import { safeResolveVaultPath } from 'src/shared/utils/path-validation';
 import { IGitOpsBackend } from './git-ops.backend';
-import { CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from '../git-ops.types';
+import { applyConflictResolverOrThrow } from './apply-conflict-resolver';
+import { ConflictResolver, CreatePullRequestOptions, CreatePullRequestResult, WriteFileChange } from '../git-ops.types';
 import { InternalException } from 'src/shared/common/models/exception';
 import { ErrorCode } from 'src/utils/error.code';
-import { GitOpsRebaseConflictError } from '../errors';
 
 const BRANCH_NAME_MAX_LENGTH = 200;
 const FORBIDDEN_TRAILER_REGEX = /^Co-Authored-By:\s*(?:Claude|AI)/im;
@@ -85,14 +85,14 @@ export class LocalGitOpsBackend implements IGitOpsBackend {
     this.logger.log({ message: 'local backend: commit completed', event: 'backend.local.commit', sha: sha.slice(0, 7) });
   }
 
-  async push(branch: string): Promise<void> {
+  async push(branch: string, resolver?: ConflictResolver): Promise<void> {
     try {
       await this.git.push('origin', branch, { '-u': null });
       this.logger.log({ message: 'local backend: push completed', event: 'backend.local.push', branch });
     } catch (err) {
       const msg = (err as { message?: string })?.message ?? '';
       if (NON_FAST_FORWARD_REGEX.test(msg)) {
-        await this.recoverFromStaleLocal(branch);
+        await this.recoverFromStaleLocal(branch, resolver);
         await this.git.push('origin', branch, { '-u': null });
         this.logger.log({ message: 'local backend: push recovered after rebase', event: 'backend.local.push.recovered', branch });
         return;
@@ -113,7 +113,7 @@ export class LocalGitOpsBackend implements IGitOpsBackend {
     return /not a git repository|could not read|couldn't find remote/i.test(msg);
   }
 
-  private async recoverFromStaleLocal(branch: string): Promise<void> {
+  private async recoverFromStaleLocal(branch: string, resolver?: ConflictResolver): Promise<void> {
     this.logger.warn({ message: 'local backend: push non-FF — attempting rebase', event: 'backend.local.push.nonFastForward', branch });
     // Fetch the specific branch from origin so we can rebase onto its current state,
     // handling the case where the branch already exists on remote with divergent history.
@@ -121,8 +121,10 @@ export class LocalGitOpsBackend implements IGitOpsBackend {
     try {
       await this.git.rebase([`origin/${branch}`]);
     } catch (rebaseErr) {
-      await this.git.rebase(['--abort']).catch(() => undefined);
-      throw new GitOpsRebaseConflictError(branch, this.parseConflictedFiles(rebaseErr));
+      const conflictedFiles = this.parseConflictedFiles(rebaseErr);
+      await applyConflictResolverOrThrow(this.git, branch, conflictedFiles, resolver);
+      this.logger.log({ message: 'local backend: rebase conflict resolved by resolver', event: 'backend.local.push.conflictResolved', branch });
+      return;
     }
     this.logger.log({ message: 'local backend: rebase succeeded', event: 'backend.local.push.rebaseSucceeded', branch });
   }
