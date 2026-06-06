@@ -17,6 +17,9 @@ const FORBIDDEN_TRAILER_REGEX = /^Co-Authored-By:\s*(?:Claude|AI)/im;
 const NON_FAST_FORWARD_REGEX = /non-fast-forward|! \[rejected\]|tip of your current branch is behind/i;
 const REBASE_CONFLICT_FILE_REGEX = /CONFLICT \([^)]+\): Merge conflict in (\S+)/g;
 const GH_EXISTING_PR_STDERR_REGEX = /a pull request for branch/i;
+// The auto-merge label is decorative; actual merging is done via `gh pr merge`.
+// Repos may not have the label provisioned, so we detect and recover gracefully.
+const GH_LABEL_NOT_FOUND_STDERR_REGEX = /could not add label/i;
 
 export class GitHubGitOpsBackend implements IGitOpsBackend {
   readonly mode = 'github' as const;
@@ -153,25 +156,12 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
   }
 
   async createPullRequest(opts: CreatePullRequestOptions): Promise<CreatePullRequestResult> {
-    const args = ['pr', 'create', '--head', opts.branch, '--base', 'main', '--title', opts.title, '--body', opts.body];
-    if (opts.autoMerge) {
-      args.push('--label', 'auto-merge');
-    }
-
+    const baseArgs = ['pr', 'create', '--head', opts.branch, '--base', 'main', '--title', opts.title, '--body', opts.body];
     const env = { ...process.env, GH_TOKEN: this.ghToken };
+
     try {
-      const result = await execFileAsync('gh', args, { cwd: this.vaultPath, env });
-      const url = result.stdout.trim();
-      this.logger.log({
-        message: 'github backend: PR created',
-        event: 'backend.github.createPullRequest',
-        branch: opts.branch,
-        urlPath: this.safeUrlPath(url),
-      });
-      if (opts.autoMerge) {
-        await this.mergePullRequest(opts.branch, url, env);
-      }
-      return { url };
+      const args = opts.autoMerge ? [...baseArgs, '--label', 'auto-merge'] : baseArgs;
+      return await this.runPrCreate(args, opts, env);
     } catch (err) {
       const errno = err as NodeJS.ErrnoException & { stderr?: string; code?: string };
       if (errno.code === 'ENOENT') {
@@ -187,8 +177,38 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
         });
         return { url };
       }
+      // The auto-merge label is decorative (merging is done via gh pr merge); if the
+      // repo lacks the label, retry once without it rather than failing the dream.
+      if (opts.autoMerge && GH_LABEL_NOT_FOUND_STDERR_REGEX.test(stderr)) {
+        this.logger.warn({
+          message: 'github backend: auto-merge label missing — retrying PR create without label',
+          event: 'backend.github.createPullRequest.labelMissing',
+          branch: opts.branch,
+        });
+        try {
+          return await this.runPrCreate(baseArgs, opts, env);
+        } catch (retryErr) {
+          const retryStderr = typeof (retryErr as { stderr?: string }).stderr === 'string' ? (retryErr as { stderr: string }).stderr : '';
+          throw new InternalException(ErrorCode.GIT_OPS_PR_CREATION_FAILED, `gh pr create failed: ${retryStderr.slice(0, 200)}`);
+        }
+      }
       throw new InternalException(ErrorCode.GIT_OPS_PR_CREATION_FAILED, `gh pr create failed: ${stderr.slice(0, 200)}`);
     }
+  }
+
+  private async runPrCreate(args: string[], opts: CreatePullRequestOptions, env: NodeJS.ProcessEnv): Promise<CreatePullRequestResult> {
+    const result = await execFileAsync('gh', args, { cwd: this.vaultPath, env });
+    const url = result.stdout.trim();
+    this.logger.log({
+      message: 'github backend: PR created',
+      event: 'backend.github.createPullRequest',
+      branch: opts.branch,
+      urlPath: this.safeUrlPath(url),
+    });
+    if (opts.autoMerge) {
+      await this.mergePullRequest(opts.branch, url, env);
+    }
+    return { url };
   }
 
   /**

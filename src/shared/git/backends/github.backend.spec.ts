@@ -489,6 +489,51 @@ describe('GitHubGitOpsBackend', () => {
         code: ErrorCode.GIT_OPS_PR_CREATION_FAILED,
       });
     });
+
+    it('should retry PR create without --label and still merge when auto-merge label is missing in the repo', async () => {
+      // Arrange — first call (with --label auto-merge) rejects with label-not-found;
+      //            second call (without --label) and the subsequent gh pr merge both succeed.
+      const PR_URL = 'https://github.com/x/y/pull/42';
+      mockedExecFile.mockImplementationOnce(
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r: { stdout: string; stderr: string }) => void) => {
+          if ((args as string[]).includes('--label')) {
+            const err = Object.assign(new Error('gh pr create failed'), {
+              code: 1,
+              stderr: "could not add label: 'auto-merge' not found",
+              stdout: '',
+            });
+            return cb(err, { stdout: '', stderr: err.stderr });
+          }
+          return cb(null, { stdout: `${PR_URL}\n`, stderr: '' });
+        },
+      );
+      // Second call: gh pr create without --label
+      mockedExecFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: Error | null, r: { stdout: string; stderr: string }) => void) => {
+          cb(null, { stdout: `${PR_URL}\n`, stderr: '' });
+        },
+      );
+      // Third call: gh pr merge
+      mockedExecFile.mockImplementationOnce(
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: Error | null, r: { stdout: string; stderr: string }) => void) => {
+          cb(null, { stdout: '', stderr: '' });
+        },
+      );
+
+      // Act
+      const result = await target.createPullRequest({ branch: 'dream/x', title: 't', body: 'b', autoMerge: true });
+
+      // Assert — resolves with the url
+      expect(result).toEqual({ url: PR_URL });
+      // Second gh pr create call must NOT contain --label
+      const retryArgs = mockedExecFile.mock.calls[1]![1] as string[];
+      expect(retryArgs).not.toContain('--label');
+      expect(retryArgs).toEqual(expect.arrayContaining(['pr', 'create', '--head', 'dream/x']));
+      // gh pr merge was invoked (merge still runs on the label-less PR)
+      const mergeCall = mockedExecFile.mock.calls.find((c) => (c[1] as string[])[1] === 'merge');
+      expect(mergeCall).toBeDefined();
+      expect(mergeCall![1]).toEqual(['pr', 'merge', 'dream/x', '--merge', '--delete-branch']);
+    });
   });
 
   // ── mergeBranch ─────────────────────────────────────────────────────────────
