@@ -33,6 +33,7 @@ export class WeeklyCommitAndPrActivity {
     const commitMsg = `dream(weekly): review ${inp.week_iso}`;
 
     try {
+      await this.gitOps.resetToCleanMain();
       await this.gitOps.pullLatestMain();
       await this.gitOps.createBranch(branch);
       const fileChanges = inp.vault_writes.map((t) => ({ path: t.path, content: t.content }));

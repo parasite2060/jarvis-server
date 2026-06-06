@@ -30,6 +30,10 @@ export class GitOpsService {
     return this.factory.getBackend(this.appConfig.memoryStorageMode);
   }
 
+  async resetToCleanMain(): Promise<void> {
+    return this.backend().resetToCleanMain();
+  }
+
   async pullLatestMain(): Promise<void> {
     return this.backend().pullLatestMain();
   }

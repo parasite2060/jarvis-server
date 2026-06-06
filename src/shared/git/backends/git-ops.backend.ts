@@ -5,6 +5,7 @@ export const GIT_OPS_BACKEND_MODE = Symbol('GIT_OPS_BACKEND_MODE') as unknown;
 export interface IGitOpsBackend {
   readonly mode: 'local' | 'github';
 
+  resetToCleanMain(): Promise<void>;
   pullLatestMain(): Promise<void>;
   createBranch(name: string): Promise<void>;
   writeFiles(changes: WriteFileChange[]): Promise<void>;

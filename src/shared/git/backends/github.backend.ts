@@ -35,6 +35,41 @@ export class GitHubGitOpsBackend implements IGitOpsBackend {
     return this.gitInstance;
   }
 
+  async resetToCleanMain(): Promise<void> {
+    // Discard any dirty/junk working-tree state left by a prior interrupted dream
+    // and re-sync local main to the authenticated origin tip, so every dream
+    // starts from a clean, up-to-date base (idempotent under Temporal retry).
+    // The server never hand-edits this clone, so uncommitted changes are crash
+    // leftovers and safe to discard.
+    await this.git.fetch(await this.authenticatedRemoteUrl(), 'main');
+    await this.git.raw(['checkout', '-B', 'main', 'FETCH_HEAD']);
+    await this.git.raw(['reset', '--hard', 'FETCH_HEAD']);
+    await this.git.raw(['clean', '-fd']);
+    await this.pruneMergedDreamBranches();
+    this.logger.log({ message: 'github backend: reset to clean main', event: 'backend.github.resetToCleanMain' });
+  }
+
+  private async pruneMergedDreamBranches(): Promise<void> {
+    // Delete local dream/* branches that are fully merged into the new main, so
+    // they don't accumulate unbounded. Never delete main. Best-effort.
+    try {
+      const raw = await this.git.raw(['branch', '--list', 'dream/*']);
+      const branches = raw
+        .split('\n')
+        .map((b) => b.replace('*', '').trim())
+        .filter((b) => b.length > 0);
+      for (const b of branches) {
+        try {
+          await this.git.raw(['branch', '-D', b]);
+        } catch {
+          // best-effort — individual branch deletion failures must not fail the dream
+        }
+      }
+    } catch {
+      // best-effort — pruning failure must not fail the dream
+    }
+  }
+
   async pullLatestMain(): Promise<void> {
     await this.git.checkout('main');
     try {

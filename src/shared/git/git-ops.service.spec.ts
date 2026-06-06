@@ -31,6 +31,22 @@ describe('GitOpsService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('resetToCleanMain', () => {
+    it('should delegate resetToCleanMain to the active backend when called', async () => {
+      // Arrange
+      mockFactory.getBackend.mockReturnValue({
+        resetToCleanMain: jest.fn().mockResolvedValue(undefined),
+      } as unknown as IGitOpsBackend);
+
+      // Act
+      await target.resetToCleanMain();
+
+      // Assert
+      expect(mockFactory.getBackend).toHaveBeenCalledWith('local');
+      expect(mockFactory.getBackend('local')!.resetToCleanMain).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('pullLatestMain', () => {
     it('should delegate to the local backend when memoryStorageMode is local', async () => {
       // Arrange

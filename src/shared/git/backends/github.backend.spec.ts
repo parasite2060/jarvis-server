@@ -40,6 +40,54 @@ describe('GitHubGitOpsBackend', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // ── resetToCleanMain ───────────────────────────────────────────────────────
+
+  describe('resetToCleanMain', () => {
+    it('should fetch origin with auth URL and force-checkout FETCH_HEAD, reset --hard, clean -fd when resetToCleanMain is called', async () => {
+      // Arrange
+      mockGit.raw.mockResolvedValue('');
+
+      // Act
+      await target.resetToCleanMain();
+
+      // Assert
+      expect(mockGit.fetch).toHaveBeenCalledWith(AUTH_URL, 'main');
+      expect(mockGit.raw).toHaveBeenCalledWith(['checkout', '-B', 'main', 'FETCH_HEAD']);
+      expect(mockGit.raw).toHaveBeenCalledWith(['reset', '--hard', 'FETCH_HEAD']);
+      expect(mockGit.raw).toHaveBeenCalledWith(['clean', '-fd']);
+    });
+
+    it('should attempt to prune dream/* branches and force-delete each one when resetToCleanMain is called', async () => {
+      // Arrange — branch --list returns two dream branches
+      mockGit.raw.mockImplementation(((args: string[]) => {
+        if (Array.isArray(args) && args[0] === 'branch' && args[1] === '--list') {
+          return Promise.resolve('  dream/light-abc\n* dream/deep-2026-05-08\n');
+        }
+        return Promise.resolve('');
+      }) as never);
+
+      // Act
+      await target.resetToCleanMain();
+
+      // Assert — each branch is force-deleted
+      expect(mockGit.raw).toHaveBeenCalledWith(['branch', '-D', 'dream/light-abc']);
+      expect(mockGit.raw).toHaveBeenCalledWith(['branch', '-D', 'dream/deep-2026-05-08']);
+    });
+
+    it('should not throw when branch pruning fails so the dream is not blocked', async () => {
+      // Arrange — branch --list throws to simulate git error
+      mockGit.raw.mockImplementation(((args: string[]) => {
+        if (Array.isArray(args) && args[0] === 'branch' && args[1] === '--list') {
+          return Promise.reject(new Error('git error'));
+        }
+        return Promise.resolve('');
+      }) as never);
+
+      // Act & Assert — must resolve without throwing
+      await expect(target.resetToCleanMain()).resolves.toBeUndefined();
+    });
+  });
+
   // ── pullLatestMain ─────────────────────────────────────────────────────────
 
   describe('pullLatestMain', () => {

@@ -33,6 +33,7 @@ export class LightCommitAndPrActivity {
     const commitMsg = `dream(light): extract session ${inp.source_date_iso}`;
 
     try {
+      await this.gitOps.resetToCleanMain();
       await this.gitOps.pullLatestMain();
       await this.gitOps.createBranch(branch);
       const fileChanges = inp.session_log_writes.map((t) => ({ path: t.path, content: t.content }));
