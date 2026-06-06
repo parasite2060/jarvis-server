@@ -138,7 +138,11 @@ describe('dreamCoordinatorWorkflow (unit, mocked @temporalio/workflow)', () => {
     // Assert — three executeChild calls in submission order with per-budget run timeouts
     expect(executeChildCalls.map((c) => c.workflowType)).toEqual(['LightDream', 'DeepDream', 'WeeklyReview']);
     expect(executeChildCalls.map((c) => (c.opts as { workflowId: string }).workflowId)).toEqual(['light-c1', 'deep-2026-05-08', 'weekly-2026-W18']);
-    expect(executeChildCalls.map((c) => (c.opts as { workflowRunTimeout: string }).workflowRunTimeout)).toEqual(['15 minutes', '30 minutes', '30 minutes']);
+    expect(executeChildCalls.map((c) => (c.opts as { workflowRunTimeout: string }).workflowRunTimeout)).toEqual([
+      '15 minutes',
+      '30 minutes',
+      '30 minutes',
+    ]);
 
     runPromise.catch(() => undefined);
   });
