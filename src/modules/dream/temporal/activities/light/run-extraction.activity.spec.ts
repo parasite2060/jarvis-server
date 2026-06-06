@@ -11,6 +11,7 @@ import { DREAM_PHASE_REPOSITORY, IDreamPhaseRepository } from 'src/shared/domain
 import { MockLoggerService } from 'src/shared/logger/services/mock-logger.service';
 import { emptySessionLog } from '../../../agents/extraction-summary.schema';
 import * as extractionAgent from '../../../agents/light-extraction.agent';
+import type { BuildLightExtractionAgentOptions } from '../../../agents/light-extraction.agent';
 
 describe('RunExtractionActivity', () => {
   let target: RunExtractionActivity;
@@ -61,6 +62,7 @@ describe('RunExtractionActivity', () => {
       token_count: null,
       transcript_file: 'transcripts/1_abcd1234.txt',
       user_message_count: 1,
+      line_count: 10,
     });
 
     // Assert
@@ -72,8 +74,9 @@ describe('RunExtractionActivity', () => {
   it('proceeds with extraction when user_message_count >= threshold (even with empty parsed_text)', async () => {
     // Arrange — empty parsed_text again; a count >= 3 must drive the agent run.
     mockDreamPhaseRepo.recordPhase.mockResolvedValue({} as never);
+    mockPromptCache.getPrompt.mockReturnValue('Read the file at {transcriptFile} and also search {transcriptFile} patterns.');
     const invoke = jest.fn().mockResolvedValue({ summary: 'did work', no_extract: false, session_log: emptySessionLog() });
-    jest.spyOn(extractionAgent, 'buildLightExtractionAgent').mockReturnValue({ invoke } as never);
+    const buildSpy = jest.spyOn(extractionAgent, 'buildLightExtractionAgent').mockReturnValue({ invoke } as never);
 
     // Act
     const result = await target.runExtraction({
@@ -84,11 +87,17 @@ describe('RunExtractionActivity', () => {
       token_count: null,
       transcript_file: 'transcripts/2_abcd1234.txt',
       user_message_count: 5,
+      line_count: 120,
     });
 
     // Assert — extraction was NOT skipped: the agent ran and a real summary came back.
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(result.no_extract).toBe(false);
     expect(result.summary).toBe('did work');
+
+    // Assert — {transcriptFile} placeholder is fully substituted; no literal remains.
+    const [, opts] = buildSpy.mock.calls[0] as [unknown, BuildLightExtractionAgentOptions];
+    expect(opts.systemPrompt).not.toContain('{transcriptFile}');
+    expect(opts.systemPrompt).toContain('transcripts/2_abcd1234.txt');
   });
 });

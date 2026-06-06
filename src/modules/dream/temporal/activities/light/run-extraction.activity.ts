@@ -66,8 +66,13 @@ export class RunExtractionActivity {
     const toolDeps: VaultToolDeps = { vaultPath: this.config.vaultPath };
     const baseToolFactories = buildExtractionToolFactories(toolDeps);
 
+    // transcript_file is always non-null here: manual and short sessions are gated out
+    // earlier (no_extract / short-session branch), so the '' fallback is dead-defensive.
+    const transcriptFile = inp.transcript_file ?? '';
+    const systemPrompt = this.promptCache.getPrompt('light-extraction').split('{transcriptFile}').join(transcriptFile);
+
     const agent = buildLightExtractionAgent(this.agentFactory, {
-      systemPrompt: this.promptCache.getPrompt('light-extraction'),
+      systemPrompt,
       deps,
       baseToolFactories,
       usageLimits: {

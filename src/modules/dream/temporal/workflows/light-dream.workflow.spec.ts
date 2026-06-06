@@ -108,6 +108,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         overrides.loadTranscript ??
         (async () => ({
           dream_id: 42,
+          transcript_file: 'transcripts/1_abcd1234.txt',
+          user_message_count: 4,
+          line_count: 4,
           parsed_text: 'User: hello\nAssistant: hi\nUser: again\nUser: still here\n',
           project: 'test',
           token_count: 100,
@@ -173,6 +176,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         calls.push('load');
         return {
           dream_id: 42,
+          transcript_file: 'transcripts/1_abcd1234.txt',
+          user_message_count: 4,
+          line_count: 4,
           parsed_text: 'User: a\nUser: b\nUser: c\nUser: d\n',
           project: null,
           token_count: null,
@@ -229,6 +235,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         calls.push('load');
         return {
           dream_id: 7,
+          transcript_file: 'transcripts/1_abcd1234.txt',
+          user_message_count: 1,
+          line_count: 1,
           parsed_text: 'User: hi\n',
           project: null,
           token_count: null,
@@ -270,6 +279,9 @@ describe('lightDreamWorkflow — Temporal scenarios', () => {
         calls.push('load');
         return {
           dream_id: 99,
+          transcript_file: 'transcripts/1_abcd1234.txt',
+          user_message_count: 3,
+          line_count: 3,
           parsed_text: 'User: a\nUser: b\nUser: c\n',
           project: null,
           token_count: null,
