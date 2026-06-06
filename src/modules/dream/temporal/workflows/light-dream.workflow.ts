@@ -80,6 +80,8 @@ export interface LoadTranscriptResult {
   transcript_file: string | null;
   /** User-message count, computed at load time (so run-extraction doesn't need the full text). */
   user_message_count: number;
+  /** Total newline-delimited lines in the transcript; drives the agent's size-tiered reading playbook. */
+  line_count: number;
   project: string | null;
   token_count: number | null;
   /** ISO-8601 timestamp of transcript-row creation. */
@@ -98,6 +100,8 @@ export interface ExtractionInput {
   transcript_file: string | null;
   /** User-message count pre-computed at load time; drives the short-session gate. */
   user_message_count: number;
+  /** Total newline-delimited lines in the transcript; drives the agent's size-tiered reading playbook. */
+  line_count: number;
 }
 
 export interface ExtractionAgentOutput {
@@ -309,6 +313,7 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
       token_count: null,
       transcript_file: null,
       user_message_count: 0,
+      line_count: 0,
     });
 
     if (extractionOutput.no_extract) {
@@ -381,6 +386,7 @@ export async function lightDreamWorkflow(payload: LightDreamPayload): Promise<Li
     token_count: loadResult.token_count,
     transcript_file: loadResult.transcript_file,
     user_message_count: loadResult.user_message_count,
+    line_count: loadResult.line_count,
   });
 
   // Step 3: short-session no_extract branch.

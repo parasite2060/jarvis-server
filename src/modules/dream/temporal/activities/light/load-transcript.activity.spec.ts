@@ -110,6 +110,9 @@ describe('LoadTranscriptActivity', () => {
 
     // Assert — user message count is precomputed correctly (4 real turns)
     expect(result.user_message_count).toBe(4);
+
+    // Assert — line_count is the real newline-delimited line total (4 JSONL lines, no trailing newline)
+    expect(result.line_count).toBe(4);
   });
 
   it('does NOT include parsed_text in the result', async () => {
@@ -151,6 +154,9 @@ describe('LoadTranscriptActivity', () => {
     const onDisk = await fs.readFile(absPath, 'utf-8');
     expect(onDisk).toBe('');
     expect(result.user_message_count).toBe(0);
+
+    // Assert — an empty string split on '\n' yields one element, so line_count is 1
+    expect(result.line_count).toBe(1);
   });
 
   it('reuses an existing recent dream row instead of creating a new one', async () => {

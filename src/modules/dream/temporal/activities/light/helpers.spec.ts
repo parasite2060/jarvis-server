@@ -5,7 +5,8 @@
  * real session was skipped (no extraction, no PR). These tests pin the JSONL
  * counting and the plaintext fallback.
  */
-import { countUserMessages, SHORT_SESSION_THRESHOLD } from './helpers';
+import { buildExtractionRunPrompt, countUserMessages, SHORT_SESSION_THRESHOLD } from './helpers';
+import type { ExtractionInput } from '../../workflows/light-dream.workflow';
 
 describe('countUserMessages', () => {
   it('counts JSONL user turns with string content', () => {
@@ -64,5 +65,41 @@ describe('countUserMessages', () => {
 
     expect(countUserMessages(transcript)).toBe(5);
     expect(countUserMessages(transcript)).toBeGreaterThanOrEqual(SHORT_SESSION_THRESHOLD);
+  });
+});
+
+describe('buildExtractionRunPrompt', () => {
+  const baseInput: ExtractionInput = {
+    dream_id: 7,
+    session_id: 'sess-abc',
+    parsed_text: '',
+    project: 'jarvis',
+    token_count: 4200,
+    transcript_file: 'transcripts/7_deadbeef.txt',
+    user_message_count: 12,
+    line_count: 1500,
+  };
+
+  it('emits ## Transcript Shape section', () => {
+    const prompt = buildExtractionRunPrompt(baseInput, 12);
+    expect(prompt).toContain('## Transcript Shape');
+  });
+
+  it('includes the real transcript_file path in the prompt', () => {
+    const prompt = buildExtractionRunPrompt(baseInput, 12);
+    expect(prompt).toContain('transcripts/7_deadbeef.txt');
+  });
+
+  it('emits Total using the real line_count, not the user-message count', () => {
+    const prompt = buildExtractionRunPrompt(baseInput, 12);
+    expect(prompt).toContain('Total: 1500 lines');
+    expect(prompt).toContain('User messages: 12');
+  });
+
+  it('falls back gracefully when transcript_file is null', () => {
+    const prompt = buildExtractionRunPrompt({ ...baseInput, transcript_file: null }, 5);
+    expect(prompt).toContain('## Transcript Shape');
+    expect(prompt).toContain('Transcript file: (none)');
+    expect(prompt).toContain('Total: 1500 lines');
   });
 });

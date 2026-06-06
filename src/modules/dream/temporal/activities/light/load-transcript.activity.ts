@@ -78,6 +78,7 @@ export class LoadTranscriptActivity {
     });
 
     const userMessageCount = countUserMessages(loaded.text);
+    const lineCount = loaded.text.split('\n').length;
 
     // Write AFTER the txn commits so a rollback never orphans a file. The
     // transcript file is removed by the post-dream cleanup (T3); a Temporal
@@ -103,6 +104,7 @@ export class LoadTranscriptActivity {
       dream_id: loaded.dreamId,
       transcript_file: relPath,
       user_message_count: userMessageCount,
+      line_count: lineCount,
       project: loaded.project,
       token_count: loaded.tokenCount,
       created_at_iso: loaded.createdAtIso,
