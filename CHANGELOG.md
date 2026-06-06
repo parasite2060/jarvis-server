@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.3.0](https://github.com/parasite2060/jarvis-server/compare/v1.2.0...v1.3.0) (2026-06-06)
+
+
+### Features
+
+* **dream:** delete transcript file after light dream (FR44 cleanup) ([d304487](https://github.com/parasite2060/jarvis-server/commit/d304487661a4857c8e863085928fc1bdc9495314))
+* **dream:** load_transcript writes file + returns path/count (drops 19MB payload) ([02bf528](https://github.com/parasite2060/jarvis-server/commit/02bf528bf045eb556e73a14a7f445a69c97ac5e2))
+
+
+### Bug Fixes
+
+* **ci:** correct dep fix — restore lock, trivyignore minimatch, keep uuid CJS ([b3a83f9](https://github.com/parasite2060/jarvis-server/commit/b3a83f9a65f4a071c6cebdfe976b83e8debaf2c0))
+* **ci:** format spec + pin conflict-files test to main branch ([8f4d1e5](https://github.com/parasite2060/jarvis-server/commit/8f4d1e5325fcf003d0e9f0f6d056ccc7e0748221))
+* **ci:** point Trivy at .trivyignore (trivy-action doesn't auto-read it) ([8c98b72](https://github.com/parasite2060/jarvis-server/commit/8c98b72c0d305c514e17ce9eaaaea78f48045623))
+* **ci:** scope blocking Trivy gate to npm deps, skip native Rust bridge ([9c4075b](https://github.com/parasite2060/jarvis-server/commit/9c4075b44c969417c5d2f2a54bab6a44ae434ea9))
+* **ci:** trivyignore rustls-webpki GHSA — native Temporal-bridge Rust CVE ([52e9419](https://github.com/parasite2060/jarvis-server/commit/52e94197dd6b5edea523ee68f8a9fef1b35bf2da))
+* **dream:** load_transcript own 5m proxy + per-dream workflowRunTimeout (light 15m, deep 30m) ([fefbae4](https://github.com/parasite2060/jarvis-server/commit/fefbae489243b3e33d39badee36ab902e6f1ac15))
+* **dream:** substitute transcript_file path into extraction agent prompt (agent finally reads the transcript) ([4d739cc](https://github.com/parasite2060/jarvis-server/commit/4d739cccda553ba8f2b2668ccba78a27ea49fb0b))
+* **e2e:** add x-api-key to remaining temporal + integration e2e specs ([c06bd6a](https://github.com/parasite2060/jarvis-server/commit/c06bd6a9f6ebb29d44ee5b11c486d8aaad1df3f7))
+* **e2e:** send x-api-key header so guarded endpoints return real status not 401 ([b2317dd](https://github.com/parasite2060/jarvis-server/commit/b2317ddadcb1cac7b0bcbc3c52a7286b36c71171))
+* **e2e:** update stale assertions — dream_id in signal, encoded traversal, latency ([3473ae9](https://github.com/parasite2060/jarvis-server/commit/3473ae9a8895a7dc68e3aee4dc71be4d613f6806))
+* **e2e:** weekly-review pipeline — trigger via use case (supplies dream_id) ([6e0fd57](https://github.com/parasite2060/jarvis-server/commit/6e0fd575ed41d0d0f36cb76032ca3e3704a1fe85))
+* **git:** force-with-lease re-push for dream branches (overwrites stale orphan, never main) ([1b03915](https://github.com/parasite2060/jarvis-server/commit/1b039154f09916203baad8ba54bd3f61f823f6f4))
+* **git:** resetToCleanMain — start each dream from a clean origin/main (fixes dirty-tree PR failures) ([32693c1](https://github.com/parasite2060/jarvis-server/commit/32693c1c435a619cd2ea6f7aafcd6f4d7f7a95ae))
+* **git:** retry PR create without label when auto-merge label is missing ([30b02b2](https://github.com/parasite2060/jarvis-server/commit/30b02b2b779c604e041aa21b24ea1b972f1911fa))
+* **security:** bump multer override to 2.1.1 (CVE-2026-3520) ([bdb8462](https://github.com/parasite2060/jarvis-server/commit/bdb8462223752d1e3d9d4e52bb821cfdcc7d23ef))
+* **security:** drop minimatch override — it broke ESLint, and 9.0.9 patches the CVE ([de94653](https://github.com/parasite2060/jarvis-server/commit/de9465337646bf0d67d6c7aeffdb88188992952d))
+* **security:** pin transitive deps to patched versions (Trivy HIGH CVEs) ([ca9bf04](https://github.com/parasite2060/jarvis-server/commit/ca9bf04dc69cbd524f1ee4a00699c8100191be30))
+
 ## [1.2.0](https://github.com/parasite2060/jarvis-server/compare/v1.1.1...v1.2.0) (2026-06-06)
 
 
