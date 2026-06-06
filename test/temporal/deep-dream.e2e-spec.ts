@@ -35,6 +35,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
   let setup: E2ETestSetup;
   let signalSpy: jest.SpyInstance;
   const mock = new ApiMockHelper();
+  const apiKey = process.env['API_KEY'] ?? 'e2e-test-api-key';
 
   beforeAll(async () => {
     // Seed dailys for the deep-dream test window (past 30 days to ensure coverage)
@@ -67,7 +68,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
 
   it('should return 202 with queued status when POST /dream is called', async () => {
     // WHEN
-    const response = await request(setup.httpServer).post('/dream').send({});
+    const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({});
 
     // THEN
     expect(response.status).toBe(202);
@@ -79,7 +80,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
     const sourceDate = '2026-04-20';
 
     // WHEN
-    const response = await request(setup.httpServer).post('/dream').send({ sourceDate });
+    const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate });
 
     // THEN
     expect(response.status).toBe(202);
@@ -95,7 +96,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
 
   it('should return 400 when POST /dream is called with invalid sourceDate format', async () => {
     // WHEN
-    const response = await request(setup.httpServer).post('/dream').send({ sourceDate: 'not-a-date' });
+    const response = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate: 'not-a-date' });
 
     // THEN
     expect(response.status).toBe(400);
@@ -123,7 +124,7 @@ describe('DeepDreamWorkflow E2E (Story 13.16 AC2)', () => {
       const sourceDate = '2026-05-07';
 
       // WHEN: Trigger deep dream pipeline via HTTP
-      const triggerResponse = await request(setup.httpServer).post('/dream').send({ sourceDate });
+      const triggerResponse = await request(setup.httpServer).post('/dream').set('x-api-key', apiKey).send({ sourceDate });
       expect(triggerResponse.status).toBe(202);
 
       // THEN: Poll until all three phases complete
