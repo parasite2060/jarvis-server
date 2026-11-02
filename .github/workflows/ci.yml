@@ -464,7 +464,7 @@ jobs:
 
       - name: Create Quality Gate check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Quality Gate
@@ -474,7 +474,7 @@ jobs:
 
       - name: Create Test Suite check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Test Suite
@@ -484,7 +484,7 @@ jobs:
 
       - name: Create Build check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Build Verification
@@ -494,7 +494,7 @@ jobs:
 
       - name: Create E2E Tests check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: E2E Tests
@@ -504,7 +504,7 @@ jobs:
 
       - name: Create Security Audit check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Security Audit
@@ -514,7 +514,7 @@ jobs:
 
       - name: Create Docker Scan check
         if: always()
-        uses: LouisBrunner/checks-action@v1.6.1
+        uses: LouisBrunner/checks-action@v3.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Docker Image Scan
